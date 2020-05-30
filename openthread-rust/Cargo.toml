@@ -3,8 +3,22 @@ name = "openthread-rust"
 version = "0.1.0"
 authors = ["Markus Becker <markus@bec-ker.de>"]
 edition = "2018"
+links = "openthread"
+license = "BSD-3-Clause"
+description = "Sample for Rust bindings for OpenThread"
+keywords = ["openthread", "thread"]
+categories = ["external-ffi-bindings", "embedded"]
+# TODO: add no-std to categories, when done
+homepage = "https://gitlab.com/markushx/opentrust/"
+repository = "https://gitlab.com/markushx/opentrust/"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-openthread-sys = { path = "../openthread-sys" }
+openthread-sys = "0.1.0"
+#openthread-sys = { path = "../openthread-sys" }
+
+[badges]
+gitlab = { repository = "https://gitlab.com/markushx/opentrust" }
+maintenance = { status = "experimental" }
