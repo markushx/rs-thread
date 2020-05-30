@@ -1,0 +1,64 @@
+// API files
+#include <openthread/commissioner.h>
+#include <openthread/backbone_router.h>
+#include <openthread/backbone_router_ftd.h>
+#include <openthread/border_agent.h>
+#include <openthread/border_router.h>
+#include <openthread/child_supervision.h>
+#include <openthread/cli.h>
+#include <openthread/coap.h>
+#include <openthread/coap_secure.h>
+#include <openthread/commissioner.h>
+#include <openthread/channel_manager.h>
+#include <openthread/channel_monitor.h>
+//#include <openthread/config.h>
+#include <openthread/crypto.h>
+#include <openthread/dataset.h>
+#include <openthread/dataset_ftd.h>
+#include <openthread/diag.h>
+#include <openthread/dns.h>
+//#include <openthread/entropy.h> // requires mbedtls
+#include <openthread/error.h>
+#include <openthread/heap.h>
+#include <openthread/icmp6.h>
+#include <openthread/instance.h>
+#include <openthread/ip6.h>
+#include <openthread/jam_detection.h>
+#include <openthread/joiner.h>
+#include <openthread/link.h>
+#include <openthread/link_raw.h>
+#include <openthread/logging.h>
+#include <openthread/message.h>
+#include <openthread/ncp.h>
+#include <openthread/netdata.h>
+#include <openthread/netdiag.h>
+#include <openthread/network_time.h>
+//#include <openthread/random_crypto.h> // requires mbedtls
+#include <openthread/random_noncrypto.h>
+#include <openthread/server.h>
+#include <openthread/sntp.h>
+#include <openthread/tasklet.h>
+#include <openthread/thread.h>
+#include <openthread/thread_ftd.h>
+#include <openthread/udp.h>
+
+// platform files
+#include <openthread/platform/alarm-milli.h>
+#include <openthread/platform/alarm-micro.h>
+#include <openthread/platform/ble.h>
+#include <openthread/platform/debug_uart.h>
+#include <openthread/platform/diag.h>
+#include <openthread/platform/entropy.h>
+#include <openthread/platform/flash.h>
+#include <openthread/platform/logging.h>
+#include <openthread/platform/messagepool.h>
+#include <openthread/platform/memory.h>
+#include <openthread/platform/misc.h>
+#include <openthread/platform/otns.h>
+#include <openthread/platform/radio.h>
+#include <openthread/platform/settings.h>
+#include <openthread/platform/spi-slave.h>
+#include <openthread/platform/time.h>
+#include <openthread/platform/toolchain.h>
+#include <openthread/platform/uart.h>
+#include <openthread/platform/udp.h>

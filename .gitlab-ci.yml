@@ -1,0 +1,17 @@
+image: "rust:latest"
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+# Install a C compiler, cmake and git into the container.
+before_script:
+  - apt-get update -yqq
+  - apt-get install -yqq --no-install-recommends build-essential
+
+test:cargo:
+  script:
+    - rustc --version && cargo --version  # Print version info for debugging
+    - cd openthread-sys
+    - cargo build --all --verbose
+    - cd ../openthread-rust
+    - cargo test --all --verbose
