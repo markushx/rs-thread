@@ -8,17 +8,20 @@ before_script:
   - apt-get update -yqq
   - apt-get install -yqq --no-install-recommends build-essential
   - apt-get install -yqq --no-install-recommends llvm-dev libclang-dev clang
+  # Print version info for debugging
+  - rustc --version && cargo --version
 
-test:cargo:
+test:cargo:sys:
   script:
-    # Print version info for debugging
-    - rustc --version && cargo --version
     # currently there is a test in openthread-sys, but that fails because
     # the platform adaptation is not included in openthread-sys
     - cd openthread-sys
     - cargo build --all --verbose
+
+test:cargo:rust:
+  script:
     # currently there is no test in openthread-rust
     # cargo run currently fails because the platform adaptation is returning
     # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
-    - cd ../openthread-rust
+    - cd openthread-rust
     - cargo test --all --verbose
