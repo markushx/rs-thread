@@ -11,8 +11,14 @@ before_script:
 
 test:cargo:
   script:
-    - rustc --version && cargo --version  # Print version info for debugging
+    # Print version info for debugging
+    - rustc --version && cargo --version
+    # currently there is a test in openthread-sys, but that fails because
+    # the platform adaptation is not included in openthread-sys
     - cd openthread-sys
     - cargo build --all --verbose
+    # currently there is no test in openthread-rust
+    # cargo run currently fails because the platform adaptation is returning
+    # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
     - cd ../openthread-rust
     - cargo test --all --verbose
