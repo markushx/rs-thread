@@ -9,6 +9,8 @@ Work in Progress
 ### Features
 
 - [x] Build Script
-  - [ ] Configurable Device Type (MTD/FTD/NCP/RCP)
+  - [ ] gitignore more files
+  - [ ] Build scripts should not modify anything outside of OUT_DIR.
+  - [ ] Configurable Device Type (MTD/FTD/NCP/RCP) as cargo features
 - [ ] no-std support
 - [ ] cross-compiling support

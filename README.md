@@ -9,3 +9,7 @@ Sample Usage: <openthread-rust/README.md>
 ## Status
 
 Work in Progress
+
+### Features
+
+- [x] cargo workspaces?
