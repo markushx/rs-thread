@@ -13,14 +13,11 @@ fn main() {
     let out_plat_dir = PathBuf::from("./vendor/openthread/src/lib/platform/");
     let out_mbed_dir = PathBuf::from("./vendor/openthread/third_party/mbedtls/");
 
+    // not packaged yet
     //./vendor/openthread/src/lib/spinel/libopenthread-spinel-ncp.a
     //./vendor/openthread/src/lib/hdlc/libopenthread-hdlc.a
 
     println!("cargo:include={}", fs::canonicalize(&include).unwrap().display());
-
-    // Tell cargo to tell rustc to link the system bzip2
-    // shared library.
-    //println!("cargo:rustc-link-lib=bz2");
 
     // Tell cargo to invalidate the built crate whenever the wrapper changes
     println!("cargo:rerun-if-changed=wrapper.h");
@@ -30,7 +27,7 @@ fn main() {
     .arg("-c")
     .arg("./bootstrap")
     .output()
-    .expect("failed to execute process");
+    .expect("failed to execute bootstrap");
     println!("mab:bootstrap_done stdout: {:}", std::str::from_utf8(&output.stdout).unwrap());
     println!("mab:bootstrap_done stderr: {:}", std::str::from_utf8(&output.stderr).unwrap());
 
@@ -39,14 +36,14 @@ fn main() {
     .arg("-c")
     .arg("./configure --enable-cli --enable-ftd")
     .output()
-    .expect("failed to execute process");
+    .expect("failed to execute configure");
     println!("mab:configure_done stdout: {:}", std::str::from_utf8(&output.stdout).unwrap());
     println!("mab:configure_done stderr: {:}", std::str::from_utf8(&output.stderr).unwrap());
 
     let output = Command::new("make")
     .current_dir(&src)
     .output()
-    .expect("failed to execute process");
+    .expect("failed to execute make");
     println!("mab:make_done stdout: {:}", std::str::from_utf8(&output.stdout).unwrap());
     println!("mab:make_done stderr: {:}", std::str::from_utf8(&output.stderr).unwrap());
 
