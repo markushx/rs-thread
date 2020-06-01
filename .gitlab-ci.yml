@@ -16,7 +16,7 @@ test:cargo:sys:
     # currently there is a test in openthread-sys, but that fails because
     # the platform adaptation is not included in openthread-sys
     - cd openthread-sys
-    - cargo build --all --verbose
+    - cargo build --verbose
 
 test:cargo:rust:
   script:
@@ -24,4 +24,4 @@ test:cargo:rust:
     # cargo run currently fails because the platform adaptation is returning
     # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
     - cd openthread-rust
-    - cargo test --all --verbose
+    - cargo test --verbose
