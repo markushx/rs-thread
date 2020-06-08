@@ -34,14 +34,16 @@ fn main() {
     let output = Command::new("sh")
     .current_dir(&src)
     .arg("-c")
-    .arg("./configure --enable-cli --enable-ftd")
+    .arg("./configure --enable-cli --enable-ftd --with-examples=no --disable-tools --disable-docs")
     .output()
     .expect("failed to execute configure");
     println!("mab:configure_done stdout: {:}", std::str::from_utf8(&output.stdout).unwrap());
     println!("mab:configure_done stderr: {:}", std::str::from_utf8(&output.stderr).unwrap());
 
-    let output = Command::new("make")
+    let output = Command::new("sh")
     .current_dir(&src)
+    .arg("-c")
+    .arg("make")
     .output()
     .expect("failed to execute make");
     println!("mab:make_done stdout: {:}", std::str::from_utf8(&output.stdout).unwrap());
@@ -52,9 +54,13 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", fs::canonicalize(&out_plat_dir).unwrap().display());
     println!("cargo:rustc-link-search=native={}", fs::canonicalize(&out_mbed_dir).unwrap().display());
 
-//    println!("rustc-link-lib=openthread");
-    println!("cargo:rustc-link-lib=openthread-ftd");
-    println!("cargo:rustc-link-lib=openthread-cli-ftd");
+    // println!("rustc-link-lib=openthread");
+    if cfg!(feature = "ftd") {
+        println!("cargo:rustc-link-lib=openthread-ftd");
+        if cfg!(feature = "cli") {
+            println!("cargo:rustc-link-lib=openthread-cli-ftd");
+        }
+    }
     println!("cargo:rustc-link-lib=openthread-platform");
     println!("cargo:rustc-link-lib=mbedcrypto");
 
