@@ -1,6 +1,6 @@
 [package]
 name = "openthread-sys"
-version = "0.1.0"
+version = "0.1.4"
 authors = ["Markus Becker <markus@bec-ker.de>"]
 edition = "2018"
 build = "build.rs"
@@ -13,34 +13,48 @@ categories = ["api-bindings", "embedded"]
 homepage = "https://gitlab.com/markushx/opentrust/"
 repository = "https://gitlab.com/markushx/opentrust/"
 readme = "README.md"
-exclude = [
-    "vendor/openthread/**/*.a",
-    "vendor/openthread/**/*.o",
-    "vendor/openthread/autom4te.cache/*",
-    "vendor/openthread/doc/*",
-    "vendor/openthread/etc/*",
-    "vendor/openthread/examples/*",
-    "vendor/openthread/script/*",
-    "vendor/openthread/tests/*",
-    "vendor/openthread/third_party/jlink/*",
-    "vendor/openthread/third_party/microchip/*",
-    "vendor/openthread/third_party/NordicSemiconductor/*",
-    "vendor/openthread/third_party/nxp/*",
-    "vendor/openthread/third_party/openthread-test-driver/*",
-    "vendor/openthread/third_party/Qorvo/*",
-    "vendor/openthread/third_party/silabs/*",
-    "vendor/openthread/third_party/ti/*",
-    # ignore only certain parts of mbedtls of third_party/
-    "vendor/openthread/third_party/mbedtls/repo/library/*.o",
-    "vendor/openthread/third_party/mbedtls/repo/visualc",
-    "vendor/openthread/third_party/mbedtls/repo/tests",
-    "vendor/openthread/third_party/mbedtls/repo/programs",
-    "vendor/openthread/third_party/mbedtls/repo/configs",
-    "vendor/openthread/third_party/mbedtls/repo/scripts",
-    "vendor/openthread/third_party/mbedtls/repo/doxygen",
-    # do not ignore nlbuild-autotools of third_party/
-    "vendor/openthread/tools/*",
+
+include = [
+    "Cargo.toml",
+    "wrapper.h",
+    "build.rs",
+    "src/lib.rs",
+
+    "vendor/openthread/LICENSE",
+    "vendor/openthread/.default-version",
+    "vendor/openthread/bootstrap",
+    "vendor/openthread/configure.ac",
+
+    "vendor/openthread/third_party/nlbuild-autotools",
+    "vendor/openthread/third_party/mbedtls/**/*.c",
+    "vendor/openthread/third_party/mbedtls/**/*.h",
+
+    "vendor/openthread/examples/**/Makefile.platform.am",
+
+    "vendor/openthread/**/Makefile.am",
+    "vendor/openthread/include/**/*.h",
+    "vendor/openthread/include/**/*.h.in",
+    "vendor/openthread/src/lib/common.am",
+    "vendor/openthread/src/**/*.c",
+    "vendor/openthread/src/**/*.h",
+    "vendor/openthread/src/**/*.cpp",
+    "vendor/openthread/src/**/*.hpp",
+
 ]
+
+[features]
+default = ["cli", "ftd"]
+
+cli = []
+# ncp = []
+ftd = []
+mtd = []
+# radio-only = []
+
+# A feature with no dependencies is used mainly for conditional compilation,
+# like `#[cfg(feature = "go-faster")]`.
+go-faster = []
+
 [dependencies]
 
 [build-dependencies]
