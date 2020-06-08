@@ -1,6 +1,6 @@
 [package]
 name = "openthread-rust"
-version = "0.1.0"
+version = "0.1.4"
 authors = ["Markus Becker <markus@bec-ker.de>"]
 edition = "2018"
 license = "BSD-3-Clause"
