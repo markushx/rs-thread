@@ -13,8 +13,10 @@ repository = "https://gitlab.com/markushx/opentrust/"
 readme = "README.md"
 
 [dependencies]
-openthread-sys = "0.1.0"
+openthread-sys = "0.1.4"
+#openthread-sys = { git = "https://gitlab.com/markushx/opentrust/" }
 #openthread-sys = { path = "../openthread-sys" }
+#openthread-sys = { path = "../openthread-sys/target/package/openthread-sys-0.1.4" }
 
 [badges]
 gitlab = { repository = "https://gitlab.com/markushx/opentrust" }
