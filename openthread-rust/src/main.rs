@@ -31,6 +31,20 @@ pub extern "C" fn otPlatSettingsInit(
 
 #[link(name = "openthread-ftd")]
 #[no_mangle]
+pub unsafe extern "C" fn otPlatSettingsDeinit(
+    _aInstance: *mut otInstance
+) {
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatSettingsWipe(
+    _aInstance: *mut otInstance
+) {
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
 pub unsafe extern "C" fn otPlatSettingsGet(
     _aInstance: *mut otInstance, 
     _aKey: u16, 
@@ -157,6 +171,14 @@ pub unsafe extern "C" fn otPlatRadioSetExtendedAddress(
 
 #[link(name = "openthread-ftd")]
 #[no_mangle]
+pub unsafe extern "C" fn otPlatRadioGetIeeeEui64(
+    _aInstance: *mut otInstance, 
+    _aIeeeEui64: *mut u8
+) {
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
 pub unsafe extern "C" fn otPlatRadioGetReceiveSensitivity(
     _aInstance: *mut otInstance
 ) -> i8 {
@@ -177,6 +199,22 @@ pub unsafe extern "C" fn otPlatRadioGetRssi(
     _aInstance: *mut otInstance
 ) -> i8 {
     0
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatReset(
+    _aInstance: *mut otInstance
+) -> i8 {
+    0
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatRadioDisable(
+    _aInstance: *mut otInstance
+) -> otError {
+    otError_OT_ERROR_NOT_IMPLEMENTED
 }
 
 #[link(name = "openthread-ftd")]
@@ -205,10 +243,12 @@ pub unsafe extern "C" fn otPlatRadioGetTransmitBuffer(
 */
     let aRxInfo = otRadioFrame__bindgen_ty_1__bindgen_ty_2 {
         mTimestamp: 0,
+        mAckFrameCounter: 0,
+        mAckKeyId: 0,
         mRssi: 0,
         mLqi: 0,
         _bitfield_1: __BindgenBitfieldUnit::new([1]),
-        __bindgen_padding_0: [0; 5]
+        //__bindgen_padding_0: [0; 5]
     };
 
     let aInfo = otRadioFrame__bindgen_ty_1 {
