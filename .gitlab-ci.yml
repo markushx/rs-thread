@@ -1,5 +1,12 @@
 image: "rust:latest"
 
+stages:
+  - build
+  - test 
+  - lint
+  - format
+  - dependency_scanning
+
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
@@ -11,17 +18,79 @@ before_script:
   # Print version info for debugging
   - rustc --version && cargo --version
 
-test:cargo:sys:
+build:sys:
+  stage: build
   script:
     # currently there is a test in openthread-sys, but that fails because
     # the platform adaptation is not included in openthread-sys
     - cd openthread-sys
     - cargo build --verbose
+  artifacts:
+    paths:
+      - target/
 
-test:cargo:rust:
+build:rust:
+  stage: build
+  script:
+    - cd openthread-rust
+    - cargo build --verbose
+  artifacts:
+    paths:
+      - target/
+
+test:sys:
+  stage: test
+  script:
+    - cd openthread-sys
+    - cargo test --verbose
+
+test:rust:
+  stage: test
   script:
     # currently there is no test in openthread-rust
     # cargo run currently fails because the platform adaptation is returning
     # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
     - cd openthread-rust
     - cargo test --verbose
+
+lint:sys:
+  stage: lint
+  script:
+    - cd openthread-sys
+    - cargo clippy -- -D warnings
+
+lint:rust:
+  stage: lint
+  script:
+    - cd openthread-rust
+    - cargo clippy -- -D warnings
+
+format:sys:
+  stage: format
+  script:
+    - cd openthread-sys
+    - cargo fmt -- --check
+
+format:rust:
+  stage: format
+  script:
+    - cd openthread-rust
+    - cargo fmt -- --check
+
+dependency_scanning:sys:
+  stage: dependency_scanning
+  script:
+    - cd openthread-sys
+    - cargo audit
+
+dependency_scanning:rust:
+  stage: dependency_scanning
+  script:
+    - cd openthread-rust
+    - cargo audit
+
+#publish:
+#  stage: publish
+#  script:
+#    - cargo login
+#    - cargo publish
