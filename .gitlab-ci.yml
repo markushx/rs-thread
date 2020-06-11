@@ -25,6 +25,7 @@ build:sys:
     # the platform adaptation is not included in openthread-sys
     - cd openthread-sys
     - cargo build --verbose
+    - ls -la target/
   artifacts:
     paths:
       - target/
@@ -34,6 +35,7 @@ build:rust:
   script:
     - cd openthread-rust
     - cargo build --verbose
+    - ls -la target/
   artifacts:
     paths:
       - target/
