@@ -28,7 +28,7 @@ build:sys:
     - ls -la target/
   artifacts:
     paths:
-      - target
+      - target/*
 
 build:rust:
   stage: build
@@ -38,7 +38,7 @@ build:rust:
     - ls -la target/
   artifacts:
     paths:
-      - target
+      - target/*
 
 test:sys:
   stage: test
