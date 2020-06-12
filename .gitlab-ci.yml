@@ -6,15 +6,19 @@ stages:
   - lint
   - format
   - dependency_scanning
+  - publish
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
-# Install a C compiler, cmake and git into the container.
 before_script:
+  # Install a C compiler, cmake and git into the container.
   - apt-get update -yqq
   - apt-get install -yqq --no-install-recommends build-essential
   - apt-get install -yqq --no-install-recommends llvm-dev libclang-dev clang
+  # more cargo tools
+  - rustup component add clippy
+  - rustup component add rustfmt
   # Print version info for debugging
   - rustc --version && cargo --version
 
@@ -30,15 +34,15 @@ build:sys:
     paths:
       - target/*
 
-build:rust:
-  stage: build
-  script:
-    - cd openthread-rust
-    - cargo build --verbose
-    - ls -la target/
-  artifacts:
-    paths:
-      - target/*
+# build:rust:
+#   stage: build
+#   script:
+#     - cd openthread-rust
+#     - cargo build --verbose
+#     - ls -la target/
+#   artifacts:
+#     paths:
+#       - target/*
 
 test:sys:
   stage: test
@@ -46,14 +50,14 @@ test:sys:
     - cd openthread-sys
     - cargo test --verbose
 
-test:rust:
-  stage: test
-  script:
-    # currently there is no test in openthread-rust
-    # cargo run currently fails because the platform adaptation is returning
-    # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
-    - cd openthread-rust
-    - cargo test --verbose
+# test:rust:
+#   stage: test
+#   script:
+#     # currently there is no test in openthread-rust
+#     # cargo run currently fails because the platform adaptation is returning
+#     # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
+#     - cd openthread-rust
+#     - cargo test --verbose
 
 lint:sys:
   stage: lint
@@ -61,11 +65,11 @@ lint:sys:
     - cd openthread-sys
     - cargo clippy -- -D warnings
 
-lint:rust:
-  stage: lint
-  script:
-    - cd openthread-rust
-    - cargo clippy -- -D warnings
+# lint:rust:
+#   stage: lint
+#   script:
+#     - cd openthread-rust
+#     - cargo clippy -- -D warnings
 
 format:sys:
   stage: format
@@ -73,11 +77,11 @@ format:sys:
     - cd openthread-sys
     - cargo fmt -- --check
 
-format:rust:
-  stage: format
-  script:
-    - cd openthread-rust
-    - cargo fmt -- --check
+# format:rust:
+#   stage: format
+#   script:
+#     - cd openthread-rust
+#     - cargo fmt -- --check
 
 dependency_scanning:sys:
   stage: dependency_scanning
@@ -85,11 +89,11 @@ dependency_scanning:sys:
     - cd openthread-sys
     - cargo audit
 
-dependency_scanning:rust:
-  stage: dependency_scanning
-  script:
-    - cd openthread-rust
-    - cargo audit
+# dependency_scanning:rust:
+#   stage: dependency_scanning
+#   script:
+#     - cd openthread-rust
+#     - cargo audit
 
 #publish:
 #  stage: publish
