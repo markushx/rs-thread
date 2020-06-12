@@ -1,4 +1,4 @@
-image: "rust:latest"
+image: "registry.gitlab.com/markushx/docker-rust:add-tools"
 
 stages:
   - build
@@ -19,17 +19,8 @@ cache:
     - $CI_PROJECT_DIR/.cargo/
     - target/
 
-before_script:
-  # Install a C compiler, cmake and git into the container.
-  - apt-get update -yqq
-  - apt-get install -yqq --no-install-recommends build-essential
-  - apt-get install -yqq --no-install-recommends llvm-dev libclang-dev clang
-  # more cargo tools
-  - rustup component add clippy
-  - rustup component add rustfmt
-  - cargo install cargo-audit
-  # Print version info for debugging
-  - rustc --version && cargo --version
+#before_script:
+#  - apt-get install -yqq --no-install-recommends kcov
 
 build:sys:
   stage: build
