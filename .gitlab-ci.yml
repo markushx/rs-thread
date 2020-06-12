@@ -32,7 +32,8 @@ build:sys:
     - ls -la target/
   artifacts:
     paths:
-      - target/
+      - openthread-sys/target/
+    expire_in: 1 week
 
 # build:rust:
 #   stage: build
@@ -49,6 +50,10 @@ test:sys:
   script:
     - cd openthread-sys
     - cargo test --verbose
+  artifacts:
+    paths:
+      - openthread-sys/target/
+    expire_in: 1 week
 
 # test:rust:
 #   stage: test
