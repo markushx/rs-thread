@@ -27,6 +27,7 @@ before_script:
   # more cargo tools
   - rustup component add clippy
   - rustup component add rustfmt
+  - cargo install cargo-audit
   # Print version info for debugging
   - rustc --version && cargo --version
 
