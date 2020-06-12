@@ -32,7 +32,7 @@ build:sys:
     - ls -la target/
   artifacts:
     paths:
-      - target/*
+      - target/debug/*
 
 # build:rust:
 #   stage: build
