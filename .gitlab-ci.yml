@@ -64,6 +64,7 @@ lint:sys:
   script:
     - cd openthread-sys
     - cargo clippy -- -D warnings
+  allow_failure: true
 
 # lint:rust:
 #   stage: lint
@@ -76,6 +77,7 @@ format:sys:
   script:
     - cd openthread-sys
     - cargo fmt -- --check
+  allow_failure: true
 
 # format:rust:
 #   stage: format
