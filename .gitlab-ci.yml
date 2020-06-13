@@ -1,27 +1,64 @@
-image: "rust:latest"
+image: "registry.gitlab.com/markushx/docker-rust:latest"
+
+stages:
+  - build
+  - test 
+  - lint
+  - format
+  - dependency_scanning
+  - publish
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
+  CARGO_HOME: $CI_PROJECT_DIR/cargo
 
-# Install a C compiler, cmake and git into the container.
-before_script:
-  - apt-get update -yqq
-  - apt-get install -yqq --no-install-recommends build-essential
-  - apt-get install -yqq --no-install-recommends llvm-dev libclang-dev clang
-  # Print version info for debugging
-  - rustc --version && cargo --version
+cache:
+    key: "$CI_JOB_NAME"
+    untracked: true
+    paths:
+    - $CI_PROJECT_DIR/.cargo/
+    - target/
 
-test:cargo:sys:
+build:
+  stage: build
   script:
     # currently there is a test in openthread-sys, but that fails because
     # the platform adaptation is not included in openthread-sys
-    - cd openthread-sys
-    - cargo build --verbose
+    - cargo build --workspace --verbose
+    - ls -la target/
+  artifacts:
+    paths:
+      - target/
+    expire_in: 1 week
 
-test:cargo:rust:
+test:
+  stage: test
   script:
-    # currently there is no test in openthread-rust
-    # cargo run currently fails because the platform adaptation is returning
-    # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
-    - cd openthread-rust
-    - cargo test --verbose
+    - cargo test --workspace --verbose
+  artifacts:
+    paths:
+      - target/
+    expire_in: 1 week
+
+lint:
+  stage: lint
+  script:
+    - cargo clippy --workspace -- -D warnings
+  allow_failure: true
+
+format:
+  stage: format
+  script:
+    - cargo fmt -- --check
+  allow_failure: true
+
+dependency_scanning:sys:
+  stage: dependency_scanning
+  script:
+    - cargo audit
+
+#publish:
+#  stage: publish
+#  script:
+#    - cargo login
+#    - cargo publish
