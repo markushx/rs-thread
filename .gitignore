@@ -1,6 +1,2 @@
-openthread-sys/target/
+/target
 Cargo.lock
-.DS_Store
-openthread-sys/ltmain.sh
-openthread-sys/vendor/config.log
-openthread-sys/vendor/config.status
