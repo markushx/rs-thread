@@ -1,4 +1,4 @@
-image: "registry.gitlab.com/markushx/docker-rust:add-tools"
+image: "registry.gitlab.com/markushx/docker-rust:latest"
 
 stages:
   - build
@@ -19,88 +19,43 @@ cache:
     - $CI_PROJECT_DIR/.cargo/
     - target/
 
-#before_script:
-#  - apt-get install -yqq --no-install-recommends kcov
-
-build:sys:
+build:
   stage: build
   script:
     # currently there is a test in openthread-sys, but that fails because
     # the platform adaptation is not included in openthread-sys
-    - cd openthread-sys
-    - cargo build --verbose
+    - cargo build --workspace --verbose
     - ls -la target/
   artifacts:
     paths:
-      - openthread-sys/target/
+      - target/
     expire_in: 1 week
 
-# build:rust:
-#   stage: build
-#   script:
-#     - cd openthread-rust
-#     - cargo build --verbose
-#     - ls -la target/
-#   artifacts:
-#     paths:
-#       - target/*
-
-test:sys:
+test:
   stage: test
   script:
-    - cd openthread-sys
-    - cargo test --verbose
+    - cargo test --workspace --verbose
   artifacts:
     paths:
-      - openthread-sys/target/
+      - target/
     expire_in: 1 week
 
-# test:rust:
-#   stage: test
-#   script:
-#     # currently there is no test in openthread-rust
-#     # cargo run currently fails because the platform adaptation is returning
-#     # otError_OT_ERROR_NOT_IMPLEMENTED for several functions
-#     - cd openthread-rust
-#     - cargo test --verbose
-
-lint:sys:
+lint:
   stage: lint
   script:
-    - cd openthread-sys
-    - cargo clippy -- -D warnings
+    - cargo clippy --workspace -- -D warnings
   allow_failure: true
 
-# lint:rust:
-#   stage: lint
-#   script:
-#     - cd openthread-rust
-#     - cargo clippy -- -D warnings
-
-format:sys:
+format:
   stage: format
   script:
-    - cd openthread-sys
     - cargo fmt -- --check
   allow_failure: true
-
-# format:rust:
-#   stage: format
-#   script:
-#     - cd openthread-rust
-#     - cargo fmt -- --check
 
 dependency_scanning:sys:
   stage: dependency_scanning
   script:
-    - cd openthread-sys
     - cargo audit
-
-# dependency_scanning:rust:
-#   stage: dependency_scanning
-#   script:
-#     - cd openthread-rust
-#     - cargo audit
 
 #publish:
 #  stage: publish
