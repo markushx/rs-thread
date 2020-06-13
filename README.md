@@ -12,4 +12,4 @@ Work in Progress
 
 ### Features
 
-- [ ] cargo workspaces?
+- [x] cargo workspaces
