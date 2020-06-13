@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "openthread-sys",
+    "openthread-rust",
+]
