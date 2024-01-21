@@ -106,11 +106,12 @@ fn main() {
         .header("wrapper.h")
         .clang_arg("-Ivendor/openthread/include")
         .clang_arg("-Ivendor/openthread/include/platform")
-        .whitelist_function("ot.*")
-        .whitelist_var("OT.*")
+        .allowlist_function("ot.*")
+        .allowlist_var("OT.*")
+        .use_core()
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.
