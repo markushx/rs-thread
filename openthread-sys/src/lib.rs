@@ -224,6 +224,7 @@ mod tests {
             mAckKeyId: 0,
             mRssi: 0,
             mLqi: 0,
+            _bitfield_align_1: Default::default(),
             _bitfield_1: __BindgenBitfieldUnit::new([1]),
             //__bindgen_padding_0: [0; 5]
         };
@@ -237,6 +238,7 @@ mod tests {
             mPsdu: &mut *aPsdu,
             mLength: 128,
             mChannel: 0,
+            mRadioType: 0,
             mInfo: aInfo,
         };
         let rawFrame = &mut aFrame as *mut otRadioFrame;
