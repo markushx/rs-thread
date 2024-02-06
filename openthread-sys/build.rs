@@ -8,14 +8,14 @@ use std::process::Command;
 fn main() {
     let src = PathBuf::from("./vendor/openthread/");
     let include = PathBuf::from("./vendor/openthread/include");
-    let out_core_dir = PathBuf::from("./vendor/openthread/src/core/");
-    let out_cli_dir = PathBuf::from("./vendor/openthread/src/cli/");
-    let out_plat_dir = PathBuf::from("./vendor/openthread/src/lib/platform/");
-    let out_mbed_dir = PathBuf::from("./vendor/openthread/third_party/mbedtls/");
+    let out_core_dir = PathBuf::from("./vendor/openthread/build/simulation/src/core/");
+    let out_cli_dir = PathBuf::from("./vendor/openthread/build/simulation/src/cli/");
+    let out_plat_dir = PathBuf::from("./vendor/openthread/build/simulation/src/lib/platform/");
+    let out_mbed_dir = PathBuf::from("./vendor/openthread/build/simulation/third_party/mbedtls/repo/library");
 
     // not packaged yet
-    //./vendor/openthread/src/lib/spinel/libopenthread-spinel-ncp.a
-    //./vendor/openthread/src/lib/hdlc/libopenthread-hdlc.a
+    //./vendor/openthread/build/simulation/src/lib/spinel/libopenthread-spinel-ncp.a
+    //./vendor/openthread/build/simulation/src/lib/hdlc/libopenthread-hdlc.a
 
     println!(
         "cargo:include={}",
@@ -28,7 +28,7 @@ fn main() {
     let output = Command::new("sh")
         .current_dir(&src)
         .arg("-c")
-        .arg("./bootstrap")
+        .arg("./script/bootstrap")
         .output()
         .expect("failed to execute bootstrap");
     println!(
@@ -41,32 +41,17 @@ fn main() {
     );
 
     let output = Command::new("sh")
-    .current_dir(&src)
-    .arg("-c")
-    .arg("./configure --enable-cli --enable-ftd --with-examples=no --disable-tools --disable-docs")
-    .output()
-    .expect("failed to execute configure");
-    println!(
-        "mab:configure_done stdout: {:}",
-        std::str::from_utf8(&output.stdout).unwrap()
-    );
-    println!(
-        "mab:configure_done stderr: {:}",
-        std::str::from_utf8(&output.stderr).unwrap()
-    );
-
-    let output = Command::new("sh")
         .current_dir(&src)
         .arg("-c")
-        .arg("make")
+        .arg("./script/cmake-build simulation")
         .output()
-        .expect("failed to execute make");
+        .expect("failed to execute cmake-build");
     println!(
-        "mab:make_done stdout: {:}",
+        "mab:cmake-build_done stdout: {:}",
         std::str::from_utf8(&output.stdout).unwrap()
     );
     println!(
-        "mab:make_done stderr: {:}",
+        "mab:cmake-build_done stderr: {:}",
         std::str::from_utf8(&output.stderr).unwrap()
     );
 
