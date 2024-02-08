@@ -12,6 +12,7 @@ fn main() {
     let out_cli_dir = PathBuf::from("./vendor/openthread/build/simulation/src/cli/");
     let out_plat_dir = PathBuf::from("./vendor/openthread/build/simulation/src/lib/platform/");
     let out_mbed_dir = PathBuf::from("./vendor/openthread/build/simulation/third_party/mbedtls/repo/library");
+    let out_tcplp_dir = PathBuf::from("./vendor/openthread/build/simulation/third_party/tcplp");
 
     // not packaged yet
     //./vendor/openthread/build/simulation/src/lib/spinel/libopenthread-spinel-ncp.a
@@ -71,15 +72,25 @@ fn main() {
         "cargo:rustc-link-search=native={}",
         fs::canonicalize(&out_mbed_dir).unwrap().display()
     );
+    println!(
+        "cargo:rustc-link-search=native={}",
+        fs::canonicalize(&out_tcplp_dir).unwrap().display()
+    );
 
-    // println!("rustc-link-lib=openthread");
+    println!("cargo:rustc-link-lib=openthread-radio");
     if cfg!(feature = "ftd") {
         println!("cargo:rustc-link-lib=openthread-ftd");
+        println!("cargo:rustc-link-lib=tcplp-ftd");
         if cfg!(feature = "cli") {
             println!("cargo:rustc-link-lib=openthread-cli-ftd");
+            println!("cargo:rustc-link-lib=openthread-radio-cli");
         }
     }
     println!("cargo:rustc-link-lib=openthread-platform");
+    println!("cargo:rustc-link-lib=mbedcrypto");
+    println!("cargo:rustc-link-lib=gcov");
+    println!("cargo:rustc-link-lib=mbedtls");
+    println!("cargo:rustc-link-lib=mbedx509");
     println!("cargo:rustc-link-lib=mbedcrypto");
 
     // The bindgen::Builder is the main entry point
