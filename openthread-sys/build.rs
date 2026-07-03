@@ -11,7 +11,8 @@ fn main() {
     let out_core_dir = PathBuf::from("./vendor/openthread/build/simulation/src/core/");
     let out_cli_dir = PathBuf::from("./vendor/openthread/build/simulation/src/cli/");
     let out_plat_dir = PathBuf::from("./vendor/openthread/build/simulation/src/lib/platform/");
-    let out_mbed_dir = PathBuf::from("./vendor/openthread/build/simulation/third_party/mbedtls/repo/library");
+    let out_mbed_dir =
+        PathBuf::from("./vendor/openthread/build/simulation/third_party/mbedtls/repo/library");
     let out_tcplp_dir = PathBuf::from("./vendor/openthread/build/simulation/third_party/tcplp");
 
     // not packaged yet

@@ -341,7 +341,12 @@ mod tests {
 
     #[link(name = "openthread-ftd")]
     #[no_mangle]
-    pub unsafe extern "C" fn otPlatAlarmMicroStartAt(_aInstance: *mut otInstance, aT0: u32, aDt: u32) {}
+    pub unsafe extern "C" fn otPlatAlarmMicroStartAt(
+        _aInstance: *mut otInstance,
+        aT0: u32,
+        aDt: u32,
+    ) {
+    }
 
     #[link(name = "openthread-ftd")]
     #[no_mangle]
