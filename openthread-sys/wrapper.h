@@ -60,5 +60,4 @@
 #include <openthread/platform/spi-slave.h>
 #include <openthread/platform/time.h>
 #include <openthread/platform/toolchain.h>
-#include <openthread/platform/uart.h>
 #include <openthread/platform/udp.h>

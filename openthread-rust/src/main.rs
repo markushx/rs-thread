@@ -211,6 +211,7 @@ pub unsafe extern "C" fn otPlatRadioGetTransmitBuffer(
         mAckKeyId: 0,
         mRssi: 0,
         mLqi: 0,
+        _bitfield_align_1: Default::default(),
         _bitfield_1: __BindgenBitfieldUnit::new([1]),
         //__bindgen_padding_0: [0; 5]
     };
@@ -224,6 +225,7 @@ pub unsafe extern "C" fn otPlatRadioGetTransmitBuffer(
         mPsdu: &mut *aPsdu,
         mLength: 128,
         mChannel: 0,
+        mRadioType: 0,
         mInfo: aInfo,
     };
     let rawFrame = &mut aFrame as *mut otRadioFrame;
@@ -303,3 +305,45 @@ pub unsafe extern "C" fn otPlatAlarmMilliGetNow() -> u32 {
 pub unsafe extern "C" fn otPlatEntropyGet(_aOutput: *mut u8, _aOutputLength: u16) -> otError {
     otError_OT_ERROR_NOT_IMPLEMENTED
 }
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatRadioIsEnabled(_aInstance: *mut otInstance) -> bool {
+    true
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatAlarmMicroGetNow() -> u32 {
+    0
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatAlarmMicroStartAt(_aInstance: *mut otInstance, aT0: u32, aDt: u32) {}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatAlarmMicroStop(_aInstance: *mut otInstance) {}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatDiagChannelSet(aChannel: u8) {}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatDiagModeSet(aMode: bool) {}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatDiagModeGet() -> bool {
+    false
+}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatDiagTxPowerSet(aTxPower: i8) {}
+
+#[link(name = "openthread-ftd")]
+#[no_mangle]
+pub unsafe extern "C" fn otPlatDiagAlarmCallback(_aInstance: *mut otInstance) {}
