@@ -18,6 +18,8 @@ log = ["dep:log", "opentrust-core/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
