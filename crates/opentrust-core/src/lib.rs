@@ -7,6 +7,9 @@ mod fmt;
 
 pub mod bytes;
 pub mod error;
+pub mod time;
+pub mod timer;
+pub mod trickle;
 pub mod types;
 
 pub use error::{Error, Result};
