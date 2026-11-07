@@ -53,9 +53,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [x] `opentrust_core::crypto`: `CryptoBackend` trait, CCM* (M=0/4/8/16), MAC/MLE nonces, MAC/MLE/TREL keys, HKDF, TLS 1.2 PRF, KEK, PBKDF2-AES-CMAC-PRF-128/PSKc, `soft-crypto` backend; spec + OT unit-test vectors
   - [ ] HW backends (Phase 12), EC-JPAKE + DTLS 1.2 (Phase 5, see ADR 0001)
   - [ ] Cross-check TREL key, KEK and MLE-message vectors (self-generated) against `openthread-sys` (Phase 11)
-  - [ ] Decide whether secret key types should drop `Copy` (zeroize-on-drop)
+  - [x] Secret key types are not `Copy`, zeroize on drop, constant-time `==`
 - [x] Entropy: `opentrust_platform::Entropy` = `rand_core::CryptoRng` (0.10, same as rs-matter/esp-rs openthread)
-- [x] Decide EC-JPAKE / DTLS 1.2 source (→ [ADR 0001](docs/decisions/0001-ecjpake-dtls.md): Rust EC-JPAKE on `p256` + minimal sans-IO DTLS 1.2, mbedTLS only as test oracle): no mainstream Rust crate implements the EC-JPAKE TLS cipher suite (draft-cragie-tls-ecjpake-01) → port from mbedTLS vs. own implementation on RustCrypto `p256`; check whether rs-matter's `Crypto` trait can be shared
+- [x] Decide EC-JPAKE / DTLS 1.2 source (→ [ADR 0001](docs/decisions/0001-ecjpake-dtls.md), accepted: Rust EC-JPAKE on `p256` + minimal sans-IO DTLS 1.2, mbedTLS only as test oracle): no mainstream Rust crate implements the EC-JPAKE TLS cipher suite (draft-cragie-tls-ecjpake-01) → port from mbedTLS vs. own implementation on RustCrypto `p256`; check whether rs-matter's `Crypto` trait can be shared
 
 ## Phase 2 – IEEE 802.15.4 MAC (§3, 802.15.4-2015/2006)
 

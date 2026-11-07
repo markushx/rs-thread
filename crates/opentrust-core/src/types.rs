@@ -12,11 +12,15 @@ fn write_hex(f: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
     Ok(())
 }
 
-/// Defines a fixed-size byte-array newtype. `public` types get a hex
-/// `Debug`/`Display`; `secret` types redact their contents in `Debug`.
+/// Defines a fixed-size byte-array newtype.
+///
+/// `public` types are `Copy` and get a hex `Debug`/`Display`.
+/// `secret` types are deliberately not `Copy` (copies must be explicit via
+/// `clone()`), redact their contents in `Debug`/`defmt`, compare in
+/// constant time, and wipe their bytes on drop.
 macro_rules! byte_array_type {
     ($(#[$m:meta])* $name:ident, $n:expr, public) => {
-        byte_array_type!(@common $(#[$m])* $name, $n);
+        byte_array_type!(@common $(#[$m])* #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)] $name, $n);
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write_hex(f, &self.0)
@@ -37,14 +41,27 @@ macro_rules! byte_array_type {
         }
     };
     ($(#[$m:meta])* $name:ident, $n:expr, secret) => {
-        byte_array_type!(@common $(#[$m])* $name, $n);
+        byte_array_type!(@common $(#[$m])* #[derive(Clone, Default)] $name, $n);
+        /// Constant-time comparison.
+        impl PartialEq for $name {
+            fn eq(&self, other: &Self) -> bool {
+                use subtle::ConstantTimeEq;
+                self.0.ct_eq(&other.0).into()
+            }
+        }
+        impl Eq for $name {}
+        impl Drop for $name {
+            fn drop(&mut self) {
+                zeroize::Zeroize::zeroize(&mut self.0);
+            }
+        }
+        impl zeroize::ZeroizeOnDrop for $name {}
         impl fmt::Debug for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(concat!(stringify!($name), "(<redacted>)"))
             }
         }
-        /// Wipes the key bytes. The type is `Copy`, so copies are not
-        /// wiped automatically; call this on every copy that held a secret.
+        /// Wipes the key bytes (also done automatically on drop).
         impl zeroize::Zeroize for $name {
             fn zeroize(&mut self) {
                 self.0.zeroize();
@@ -59,7 +76,6 @@ macro_rules! byte_array_type {
     };
     (@common $(#[$m:meta])* $name:ident, $n:expr) => {
         $(#[$m])*
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
         pub struct $name(pub [u8; $n]);
 
         impl $name {
@@ -494,5 +510,22 @@ mod tests {
         let e = ExtAddress([1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(format!("{e}"), "0102030405060708");
         assert_eq!(ExtAddress::from_slice(&[0; 7]), Err(Error::InvalidArgs));
+    }
+
+    #[test]
+    fn secrets_zeroize_and_compare() {
+        fn zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+        zeroize_on_drop::<NetworkKey>();
+        zeroize_on_drop::<Pskc>();
+        zeroize_on_drop::<MacKey>();
+        zeroize_on_drop::<MleKey>();
+        zeroize_on_drop::<Kek>();
+
+        let a = NetworkKey([0x11; 16]);
+        let mut b = a.clone();
+        assert_eq!(a, b);
+        zeroize::Zeroize::zeroize(&mut b);
+        assert_eq!(b.0, [0; 16]);
+        assert_ne!(a, b);
     }
 }

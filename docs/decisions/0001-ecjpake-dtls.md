@@ -1,6 +1,6 @@
 # ADR 0001: EC-JPAKE and DTLS 1.2 for Thread commissioning
 
-- Status: proposed (leaning recommendation; to be confirmed before Phase 5 work starts)
+- Status: accepted (2026-11-07): option (a)
 - Date: 2026-11-07
 - Scope: Phase 1 (crypto foundations), Phase 5 (CoAPS), Phase 8 (Joiner/Commissioner)
 
