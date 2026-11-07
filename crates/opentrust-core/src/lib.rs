@@ -5,6 +5,12 @@
 
 mod fmt;
 
+pub mod bytes;
+pub mod error;
+pub mod types;
+
+pub use error::{Error, Result};
+
 #[cfg(test)]
 mod tests {
     #[test]

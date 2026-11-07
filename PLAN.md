@@ -13,6 +13,7 @@ Spec: `spec/Threadv1.4.1SpecificationFinal_5345_1.pdf` (chapter refs below as "�
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Guiding principles
+
 - `#![no_std]`, `heapless`/fixed-capacity buffers; optional `alloc`/`std` features for host & sim.
 - Sans-IO core: protocol state machines take frames/timers in, emit frames/timers out. No executor dependency in core (mirrors OpenThread's single-threaded tasklet/timer/callback model, which is also not async).
 - First-class async facade on top (`opentrust-embassy`): executor-agnostic `async` API using `embassy-sync` primitives, matching what rs-matter expects; this is the primary user-facing API.
@@ -21,6 +22,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - Feature-gated device roles: `mtd` (MED/SED), `ftd` (REED/Router/Leader), `ssed`, `border-router`.
 
 ## Phase 0 – Repository groundwork
+
 - [x] Relicense to Apache-2.0: replace `LICENSE`, update `license` fields in all `Cargo.toml`s
 - [x] Decide fate of old code: `openthread-sys` moved to `tools/openthread-sys` (test/interop oracle, not a default workspace member), `openthread-rust` sample removed
   - [ ] Fix `tools/openthread-sys/build.rs`: stop running `script/bootstrap` (installs system packages) and building inside the source tree; build into `OUT_DIR`; regenerate bindings against the new OpenThread headers (Phase 11)
@@ -38,6 +40,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] Per-module second pass for constants that live only in prose (ch. 4/5)
 
 ## Phase 1 – Foundations
+
 - [ ] Core types: `ExtAddress`, `ShortAddress (RLOC16)`, `PanId`, `ExtPanId`, `NetworkKey`, `Pskc`, `MeshLocalPrefix`, `Channel`, `Ipv6Addr` helpers
 - [ ] Error type, result conventions, zero-copy byte reader/writer (`bytes`-like, no alloc)
 - [ ] Timer service: monotonic ms/µs clock trait, timer wheel/queue, Trickle timer (RFC 6206)
@@ -48,6 +51,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Decide EC-JPAKE / DTLS 1.2 source: no mainstream Rust crate implements the EC-JPAKE TLS cipher suite (draft-cragie-tls-ecjpake-01) → port from mbedTLS vs. own implementation on RustCrypto `p256`; check whether rs-matter's `Crypto` trait can be shared
 
 ## Phase 2 – IEEE 802.15.4 MAC (§3, 802.15.4-2015/2006)
+
 - [ ] Frame parse/build: header IEs, payload IEs, security header, versions 2006/2015
 - [ ] MAC security: frame counters, key ID mode 1/2, key sequence rotation (§7)
 - [ ] Radio trait (rx/tx/energy scan/CCA/ack, src-match, CSL/enh-ack optional) — align with esp-rs/openthread `Radio`
@@ -58,23 +62,27 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Unit tests against OT frame vectors (`tests/unit/test_mac_frame.cpp` vectors)
 
 ## Phase 3 – 6LoWPAN adaptation (§3.3–3.5, RFC 4944/6282)
+
 - [ ] IPHC / NHC (UDP) compression & decompression with context IDs
 - [ ] Mesh header, fragmentation header, reassembly with timeouts
 - [ ] Mesh forwarding (mesh header) for FTD
 - [ ] Port OT `test_lowpan.cpp` vectors as Rust tests
 
 ## Phase 4 – IPv6 / UDP / ICMPv6 core (§5)
+
 - [ ] Own minimal IPv6 stack, modeled on OpenThread's `src/core/net` (which has its own IPv6/UDP/ICMPv6/MPL stack); `smoltcp` lacks Thread specifics (RLOC/ALOC, MPL, mesh-local scoping) and only re-evaluate if it saves real effort: addresses (link-local, ML-EID, RLOC, ALOC, GUA/SLAAC), multicast subscriptions, MPL (RFC 7731) for realm-local multicast
 - [ ] UDP sockets API, ICMPv6 echo, errors
 - [ ] Address resolution: Address Query/Notification/Error (`/a/aq`, `/a/an`, `/a/ae`), EID-to-RLOC cache (§5.x)
 - [ ] DHCPv6 / SLAAC (as needed for BR prefixes), DUA (§5.x, 1.2)
 
 ## Phase 5 – CoAP / CoAPS
+
 - [ ] CoAP (RFC 7252) no_std: messages, options, confirmable/retransmit, block-wise optional
 - [ ] TMF resource dispatcher (port 61631)
 - [ ] DTLS 1.2 + EC-JPAKE (CoAPS for commissioning)
 
 ## Phase 6 – MLE (§4)
+
 - [ ] MLE message codec + all TLVs, MLE security (AES-CCM with key derivation)
 - [ ] Attach: Parent Request/Response, Child ID Request/Response, parent selection (link quality, connectivity)
 - [ ] Child Update Request/Response, keep-alive, SED/MED/SSED modes, supervision
@@ -84,6 +92,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Persist & restore network state (fast re-attach)
 
 ## Phase 7 – Mesh / routing (FTD) (§5)
+
 - [ ] Router ID assignment (Leader `/a/as`, `/a/ar`), router ID sequence, router upgrade/downgrade thresholds
 - [ ] Distance-vector routing table, route cost, Route TLV handling
 - [ ] Child table & forwarding to sleepy children
@@ -92,6 +101,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Commissioning datasets (Active/Pending Operational Dataset, delay timer)
 
 ## Phase 8 – MeshCoP / Commissioning (§8)
+
 - [ ] Dataset TLVs, Active/Pending dataset management (`/c/ag`, `/c/as`, `/c/pg`, `/c/ps`)
 - [ ] Joiner (DTLS EC-JPAKE with PSKd, Joiner Router relay `/c/rx` `/c/tx`, Joiner Entrust)
 - [ ] Joiner Router, Commissioner (native & on-mesh), Border Agent hooks
@@ -99,6 +109,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Steering data bloom filter, Discovery Request/Response TLVs
 
 ## Phase 9 – Thread 1.2 / 1.3 / 1.4 features
+
 - [ ] Domain Unicast Address & Backbone Router client support (1.2)
 - [ ] Multicast Listener Registration (MLR) (1.2)
 - [ ] Enhanced CSL, Link Metrics (initiator & subject)
@@ -108,6 +119,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Border Router role (feature `border-router`, `std`/Linux only initially): RA/RIO, OMR prefix, NAT64 hooks — likely defer
 
 ## Phase 10 – Public API & host interfaces
+
 - [ ] Ergonomic Rust API (`Instance`, `Dataset`, `Role`, events), async facade (embassy-sync, executor-agnostic)
 - [ ] rs-matter integration (`opentrust-matter`):
   - [ ] `edge-nal` UDP socket traits (bind/send/receive over IPv6) for Matter traffic
@@ -120,6 +132,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Spinel/NCP (RCP host side & NCP device side) — optional, enables `ot-br-posix` interop
 
 ## Phase 11 – Simulation & testing (reuse OpenThread test framework)
+
 - [ ] `opentrust-sim`: POSIX simulation platform compatible with OT's simulation protocol (UDP-based radio sim, `OT_SIMULATION`/`otns` event format) so Rust nodes and OT nodes share one virtual network
 - [ ] Build `ot-cli-ftd`/`ot-cli-mtd`-compatible binaries from Rust (same CLI prompt/output) so OT `tests/scripts/thread-cert` Python tests can run against them
 - [ ] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
@@ -133,6 +146,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Track cert test pass-rate in `docs/test-status.md`
 
 ## Phase 12 – Embedded targets
+
 - [ ] nRF52840: radio driver (embassy-nrf / nrf-radio), RTC timer, CryptoCell/ECB, flash settings
 - [ ] nRF54L15/H20: radio driver, timers, CRACEN crypto
 - [ ] ESP32-C6/H2 (802.15.4 capable; RISC-V): radio via `esp-ieee802154` (esp-hal), reuse esp-rs/openthread platform glue
@@ -141,12 +155,14 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Hardware-in-loop interop test with OT RCP/`ot-br-posix` border router
 
 ## Phase 13 – Certification readiness & docs
+
 - [ ] Map every Thread 1.4.1 test-plan case to status (pass/fail/NA)
 - [ ] Security review (key handling, frame counters, replay protection)
 - [ ] API docs, architecture doc, porting guide for new platforms
 - [ ] Release crates to crates.io
 
 ## Milestones
+
 1. **M1 – Codecs**: MAC + 6LoWPAN + MLE TLVs + crypto, verified by OT vectors and differential tests
 2. **M2 – MTD in sim**: Rust MED/SED attaches to OT leader in simulation; ping works
 3. **M3 – FTD in sim**: Rust router/leader; mixed Rust/OT network passes core `thread-cert` 5.x cases
@@ -155,6 +171,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 6. **M6 – Thread 1.2–1.4 features** and certification test-plan coverage
 
 ## Open questions
+
 - ~~Own IPv6 stack vs. `smoltcp`?~~ → own stack (see Phase 4)
 - ~~Async vs. sans-IO?~~ → both: sans-IO core + first-class async facade for rs-matter
 - ~~License~~ → Apache-2.0
