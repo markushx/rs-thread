@@ -1,0 +1,28 @@
+[package]
+name = "opentrust-mesh"
+description = "Thread mesh routing, router IDs, child table and Network Data for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-coap/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-coap/log"]
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-mle = { workspace = true }
+opentrust-net = { workspace = true }
+opentrust-coap = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true

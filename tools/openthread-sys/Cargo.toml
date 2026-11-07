@@ -5,8 +5,8 @@ authors = ["Markus Becker <markus@bec-ker.de>"]
 edition = "2018"
 build = "build.rs"
 links = "openthread"
-license = "BSD-3-Clause"
-description = "Rust bindings for OpenThread"
+license = "Apache-2.0"
+description = "Rust FFI bindings for OpenThread (used by OpenTrust as interop/test oracle)"
 keywords = ["openthread", "thread"]
 categories = ["api-bindings", "embedded"]
 # TODO: add no-std to categories, when done

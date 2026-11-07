@@ -1,6 +1,46 @@
 [workspace]
+resolver = "3"
+members = ["crates/*", "tools/openthread-sys"]
+# `openthread-sys` builds OpenThread (C++) via its build script; it is the
+# interop/differential-test oracle and is only built on request
+# (`cargo build -p openthread-sys`).
+default-members = ["crates/*"]
 
-members = [
-    "openthread-sys",
-    "openthread-rust",
-]
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+authors = ["Markus Becker <markus@bec-ker.de>"]
+repository = "https://gitlab.com/markushx/opentrust/"
+homepage = "https://gitlab.com/markushx/opentrust/"
+keywords = ["thread", "openthread", "802154", "matter", "embedded"]
+categories = ["embedded", "network-programming", "no-std"]
+
+[workspace.dependencies]
+opentrust-core = { path = "crates/opentrust-core", version = "0.1.0" }
+opentrust-platform = { path = "crates/opentrust-platform", version = "0.1.0" }
+opentrust-mac = { path = "crates/opentrust-mac", version = "0.1.0" }
+opentrust-lowpan = { path = "crates/opentrust-lowpan", version = "0.1.0" }
+opentrust-net = { path = "crates/opentrust-net", version = "0.1.0" }
+opentrust-coap = { path = "crates/opentrust-coap", version = "0.1.0" }
+opentrust-mle = { path = "crates/opentrust-mle", version = "0.1.0" }
+opentrust-mesh = { path = "crates/opentrust-mesh", version = "0.1.0" }
+opentrust-meshcop = { path = "crates/opentrust-meshcop", version = "0.1.0" }
+opentrust-embassy = { path = "crates/opentrust-embassy", version = "0.1.0" }
+opentrust-matter = { path = "crates/opentrust-matter", version = "0.1.0" }
+opentrust-cli = { path = "crates/opentrust-cli", version = "0.1.0" }
+opentrust-ncp = { path = "crates/opentrust-ncp", version = "0.1.0" }
+opentrust-sim = { path = "crates/opentrust-sim", version = "0.1.0" }
+
+defmt = "1"
+log = { version = "0.4", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+std_instead_of_core = "warn"
+alloc_instead_of_core = "warn"

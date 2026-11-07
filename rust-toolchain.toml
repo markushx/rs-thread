@@ -1,0 +1,9 @@
+[toolchain]
+channel = "1.95"
+components = ["rustfmt", "clippy"]
+# nRF52 (Cortex-M4F), nRF54L/H (Cortex-M33), ESP32-C6/H2 (RISC-V)
+targets = [
+    "thumbv7em-none-eabihf",
+    "thumbv8m.main-none-eabihf",
+    "riscv32imac-unknown-none-elf",
+]

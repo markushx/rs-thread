@@ -1,0 +1,27 @@
+[package]
+name = "opentrust-sim"
+description = "POSIX simulation platform (OpenThread simulation compatible) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-platform/defmt", "opentrust-embassy/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-platform/log", "opentrust-embassy/log"]
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-platform = { workspace = true }
+opentrust-embassy = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true

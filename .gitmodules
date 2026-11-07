@@ -1,3 +1,3 @@
 [submodule "openthread-sys/vendor/openthread"]
-	path = openthread-sys/vendor/openthread
+	path = tools/openthread-sys/vendor/openthread
 	url = https://github.com/openthread/openthread

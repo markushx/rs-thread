@@ -1,0 +1,5 @@
+[alias]
+# Check all no_std crates for the embedded targets (opentrust-sim is std-only).
+check-nrf52 = "check --workspace --exclude opentrust-sim --exclude openthread-sys --target thumbv7em-none-eabihf"
+check-nrf54 = "check --workspace --exclude opentrust-sim --exclude openthread-sys --target thumbv8m.main-none-eabihf"
+check-esp32c6 = "check --workspace --exclude opentrust-sim --exclude openthread-sys --target riscv32imac-unknown-none-elf"

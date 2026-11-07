@@ -1,64 +1,53 @@
-image: "registry.gitlab.com/markushx/docker-rust:latest"
+# OpenTrust CI. The toolchain (version, components, embedded targets) comes
+# from rust-toolchain.toml; rustup in the image installs it on first use.
+image: "rust:1.95"
 
 stages:
-  - build
-  - test 
-  - lint
-  - format
-  - dependency_scanning
-  - publish
+  - check
+  - test
+  - audit
 
 variables:
-  GIT_SUBMODULE_STRATEGY: recursive
-  CARGO_HOME: $CI_PROJECT_DIR/cargo
+  # The OpenThread submodule is only needed for tools/openthread-sys, which
+  # is not part of the default workspace members.
+  GIT_SUBMODULE_STRATEGY: none
+  CARGO_HOME: $CI_PROJECT_DIR/.cargo-home
+  CARGO_TERM_COLOR: always
 
 cache:
-    key: "$CI_JOB_NAME"
-    untracked: true
-    paths:
-    - $CI_PROJECT_DIR/.cargo/
+  key: "$CI_JOB_NAME"
+  paths:
+    - .cargo-home/registry/
     - target/
 
-build:
-  stage: build
+fmt:
+  stage: check
   script:
-    # currently there is a test in openthread-sys, but that fails because
-    # the platform adaptation is not included in openthread-sys
-    - cargo build --workspace --verbose
-    - ls -la target/
-  artifacts:
-    paths:
-      - target/
-    expire_in: 1 week
+    - cargo fmt --all -- --check
+
+clippy:
+  stage: check
+  script:
+    - cargo clippy --all-targets -- -D warnings
+    - cargo clippy -p opentrust-core --all-targets --features log -- -D warnings
+
+embedded:
+  stage: check
+  parallel:
+    matrix:
+      - ALIAS: [check-nrf52, check-nrf54, check-esp32c6]
+  script:
+    - cargo $ALIAS
+    - cargo $ALIAS --features opentrust-core/defmt
 
 test:
   stage: test
   script:
-    - cargo test --workspace --verbose
-  artifacts:
-    paths:
-      - target/
-    expire_in: 1 week
+    - cargo test --verbose
 
-lint:
-  stage: lint
+audit:
+  stage: audit
   script:
-    - cargo clippy --workspace -- -D warnings
-  allow_failure: true
-
-format:
-  stage: format
-  script:
-    - cargo fmt -- --check
-  allow_failure: true
-
-dependency_scanning:sys:
-  stage: dependency_scanning
-  script:
+    - cargo install --locked cargo-audit
     - cargo audit
-
-#publish:
-#  stage: publish
-#  script:
-#    - cargo login
-#    - cargo publish
+  allow_failure: true

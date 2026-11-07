@@ -1,0 +1,28 @@
+[package]
+name = "opentrust-meshcop"
+description = "Mesh Commissioning Protocol (MeshCoP): datasets, joiner, commissioner for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-coap/defmt", "opentrust-mle/defmt", "opentrust-net/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-coap/log", "opentrust-mle/log", "opentrust-net/log"]
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-coap = { workspace = true }
+opentrust-mle = { workspace = true }
+opentrust-net = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "opentrust-mle"
+description = "Mesh Link Establishment (MLE): attach, roles, partitions for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mac/defmt", "opentrust-net/defmt", "opentrust-coap/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-mac/log", "opentrust-net/log", "opentrust-coap/log"]
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-mac = { workspace = true }
+opentrust-net = { workspace = true }
+opentrust-coap = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true
