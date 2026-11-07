@@ -9,10 +9,20 @@
 //! - [`Entropy`]: the entropy source type (a re-export of
 //!   [`rand_core::CryptoRng`]).
 //!
-//! The Radio trait (Phase 2) and the Clock/Alarm traits (async facade) will be
-//! added here as separate modules (`radio`, `time`) later.
+//! - [`radio`]: the async IEEE 802.15.4 [`Radio`] trait and its types, mirroring
+//!   esp-rs/openthread's `Radio` (see `docs/radio-contract.md`), the
+//!   [`SoftMacNeeds`] capability summary for the software MAC, and an in-memory
+//!   [`radio::sim::TestRadio`].
+//! - [`time`]: the monotonic [`Clock`] and async [`Alarm`] traits for the async
+//!   facade (executor-agnostic; no `embassy-time` dependency) and a
+//!   [`time::MockClock`].
 
+pub mod radio;
 pub mod settings;
+pub mod time;
+
+pub use radio::{Radio, SoftMacNeeds};
+pub use time::{Alarm, Clock};
 
 pub use settings::{RamSettings, SettingsStore};
 

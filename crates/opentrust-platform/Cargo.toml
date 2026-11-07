@@ -13,15 +13,19 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-defmt = ["dep:defmt", "opentrust-core/defmt"]
+defmt = ["dep:defmt", "opentrust-core/defmt", "heapless/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
 heapless = { workspace = true }
+bitflags = { workspace = true }
 rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
+
+[dev-dependencies]
+embassy-futures = { workspace = true }
 
 [lints]
 workspace = true

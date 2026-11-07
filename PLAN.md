@@ -61,7 +61,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [ ] Frame parse/build: header IEs, payload IEs, security header, versions 2006/2015
 - [ ] MAC security: frame counters, key ID mode 1/2, key sequence rotation (§7)
-- [ ] Radio trait (rx/tx/energy scan/CCA/ack, src-match, CSL/enh-ack optional) — align with esp-rs/openthread `Radio`
+- [x] Radio trait (`opentrust_platform::radio`, mirrors esp-rs/openthread `Radio`; `TestRadio`; `SoftMacNeeds`) + `time::{Clock, Alarm, MockClock}`
 - [ ] CSMA-CA, retries, ack handling (soft-ack fallback for radios without HW ack)
 - [ ] Active scan / energy scan / discovery scan (MLE Discovery)
 - [ ] Data polling (SED), indirect transmission queue (parent side), source match table
