@@ -7,6 +7,8 @@ mod fmt;
 
 pub mod bytes;
 pub mod error;
+pub mod message;
+pub mod settings;
 pub mod time;
 pub mod timer;
 pub mod trickle;
