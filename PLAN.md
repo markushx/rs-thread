@@ -41,15 +41,20 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 1 – Foundations
 
-- [ ] Core types: `ExtAddress`, `ShortAddress (RLOC16)`, `PanId`, `ExtPanId`, `NetworkKey`, `Pskc`, `MeshLocalPrefix`, `Channel`, `Ipv6Addr` helpers
-- [ ] Error type, result conventions, zero-copy byte reader/writer (`bytes`-like, no alloc)
-- [ ] Timer service: monotonic ms/µs clock trait, timer wheel/queue, Trickle timer (RFC 6206)
-- [ ] Message buffer pool (fixed slots, priority queues) like OT `MessagePool`
-- [ ] Settings/persistent storage trait + key/value layout (network info, child table, datasets)
-- [~] Crypto trait: AES-128-CCM*, AES-CMAC/HMAC-SHA256, KDF (Thread key derivation §7), PBKDF2-CMAC for PSKc, EC-JPAKE + DTLS 1.2 deps; software impls (RustCrypto) + HW-accelerated backends (nrf CryptoCell/ESP AES)
+- [x] Core types (`opentrust_core::types`): `ExtAddress`, `ShortAddress (RLOC16)`, `PanId`, `ExtPanId`, `NetworkKey`, `Pskc`, `MeshLocalPrefix`, `Channel`, `Ipv6Addr` helpers
+- [x] Error type, result conventions, zero-copy byte reader/writer (`bytes`-like, no alloc)
+- [x] Timer service (sans-IO, caller passes `now`): µs `Instant`/`Duration`, fixed-capacity `TimerQueue`, Trickle timer (RFC 6206 + OT plain mode)
+  - [ ] Platform clock/alarm trait → with the async facade (Phase 2/10)
+  - [ ] `Trickle::set_interval_max` (OT `SetIntervalMax`) when MPL/advertisements need it
+- [x] Message buffer pool (fixed slots, headroom for prepends, intrusive priority queue, no `unsafe`) like OT `MessagePool`
+- [x] Settings: OT-compatible `SettingsKey`s, `NetworkInfo`/`ParentInfo` codecs (OT byte layout); `opentrust_platform::SettingsStore` + `RamSettings`
+  - [ ] `ChildInfo` and dataset codecs (with MLE / MeshCoP)
+- [x] Crypto trait: AES-128-CCM*, AES-CMAC/HMAC-SHA256, KDF (Thread key derivation §7), PBKDF2-CMAC for PSKc, EC-JPAKE + DTLS 1.2 deps; software impls (RustCrypto) + HW-accelerated backends (nrf CryptoCell/ESP AES)
   - [x] `opentrust_core::crypto`: `CryptoBackend` trait, CCM* (M=0/4/8/16), MAC/MLE nonces, MAC/MLE/TREL keys, HKDF, TLS 1.2 PRF, KEK, PBKDF2-AES-CMAC-PRF-128/PSKc, `soft-crypto` backend; spec + OT unit-test vectors
-  - [ ] HW backends (Phase 12), EC-JPAKE (see ADR 0001)
-- [ ] Entropy trait
+  - [ ] HW backends (Phase 12), EC-JPAKE + DTLS 1.2 (Phase 5, see ADR 0001)
+  - [ ] Cross-check TREL key, KEK and MLE-message vectors (self-generated) against `openthread-sys` (Phase 11)
+  - [ ] Decide whether secret key types should drop `Copy` (zeroize-on-drop)
+- [x] Entropy: `opentrust_platform::Entropy` = `rand_core::CryptoRng` (0.10, same as rs-matter/esp-rs openthread)
 - [x] Decide EC-JPAKE / DTLS 1.2 source (→ [ADR 0001](docs/decisions/0001-ecjpake-dtls.md): Rust EC-JPAKE on `p256` + minimal sans-IO DTLS 1.2, mbedTLS only as test oracle): no mainstream Rust crate implements the EC-JPAKE TLS cipher suite (draft-cragie-tls-ecjpake-01) → port from mbedTLS vs. own implementation on RustCrypto `p256`; check whether rs-matter's `Crypto` trait can be shared
 
 ## Phase 2 – IEEE 802.15.4 MAC (§3, 802.15.4-2015/2006)

@@ -30,3 +30,6 @@ Cargo.lock
 spec/
 
 docs/spec-map.md
+
+# Claude Code agent worktrees
+.claude/worktrees/
