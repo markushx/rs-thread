@@ -36,7 +36,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] CI (`.gitlab-ci.yml`, remote is GitLab): fmt, clippy, `cargo test`, `no_std` check per embedded target (cargo aliases `check-nrf52`/`check-nrf54`/`check-esp32c6`), `cargo audit`
 - [x] `defmt`/`log` feature-gated logging (`opentrust_core::{trace,debug,info,warn,error}!`)
 - [x] Extract spec section index & constants table into `docs/spec-map.md` (spec section → module; 554 sections, 196 constants, TLV registries)
-  - [ ] Resolve the spec inconsistencies listed in `docs/spec-map.md` §4 (e.g. §7.1.4 key halves → follow test vectors/OpenThread)
+  - [ ] Resolve the spec inconsistencies listed in `docs/spec-map.md` §4 (e.g. §7.1.4 key halves → follow test vectors/OpenThread; done in `crypto::kdf::thread_keys`)
   - [ ] Per-module second pass for constants that live only in prose (ch. 4/5)
 
 ## Phase 1 – Foundations
@@ -46,9 +46,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Timer service: monotonic ms/µs clock trait, timer wheel/queue, Trickle timer (RFC 6206)
 - [ ] Message buffer pool (fixed slots, priority queues) like OT `MessagePool`
 - [ ] Settings/persistent storage trait + key/value layout (network info, child table, datasets)
-- [ ] Crypto trait: AES-128-CCM*, AES-CMAC/HMAC-SHA256, KDF (Thread key derivation §7), PBKDF2-CMAC for PSKc, EC-JPAKE + DTLS 1.2 deps; software impls (RustCrypto) + HW-accelerated backends (nrf CryptoCell/ESP AES)
+- [~] Crypto trait: AES-128-CCM*, AES-CMAC/HMAC-SHA256, KDF (Thread key derivation §7), PBKDF2-CMAC for PSKc, EC-JPAKE + DTLS 1.2 deps; software impls (RustCrypto) + HW-accelerated backends (nrf CryptoCell/ESP AES)
+  - [x] `opentrust_core::crypto`: `CryptoBackend` trait, CCM* (M=0/4/8/16), MAC/MLE nonces, MAC/MLE/TREL keys, HKDF, TLS 1.2 PRF, KEK, PBKDF2-AES-CMAC-PRF-128/PSKc, `soft-crypto` backend; spec + OT unit-test vectors
+  - [ ] HW backends (Phase 12), EC-JPAKE (see ADR 0001)
 - [ ] Entropy trait
-- [ ] Decide EC-JPAKE / DTLS 1.2 source: no mainstream Rust crate implements the EC-JPAKE TLS cipher suite (draft-cragie-tls-ecjpake-01) → port from mbedTLS vs. own implementation on RustCrypto `p256`; check whether rs-matter's `Crypto` trait can be shared
+- [x] Decide EC-JPAKE / DTLS 1.2 source (→ [ADR 0001](docs/decisions/0001-ecjpake-dtls.md): Rust EC-JPAKE on `p256` + minimal sans-IO DTLS 1.2, mbedTLS only as test oracle): no mainstream Rust crate implements the EC-JPAKE TLS cipher suite (draft-cragie-tls-ecjpake-01) → port from mbedTLS vs. own implementation on RustCrypto `p256`; check whether rs-matter's `Crypto` trait can be shared
 
 ## Phase 2 – IEEE 802.15.4 MAC (§3, 802.15.4-2015/2006)
 

@@ -44,6 +44,10 @@ cargo check-esp32c6         # riscv32imac-unknown-none-elf
 
 Logging: enable either the `defmt` or the `log` feature (not both).
 
+Crypto: `opentrust-core` ships a RustCrypto software backend behind the
+default feature `soft-crypto`; disable default features to use only a
+hardware backend (`opentrust_core::crypto::CryptoBackend`).
+
 The OpenThread submodule is only needed for `tools/openthread-sys`:
 `git submodule update --init`.
 

@@ -6,6 +6,7 @@
 mod fmt;
 
 pub mod bytes;
+pub mod crypto;
 pub mod error;
 pub mod message;
 pub mod settings;

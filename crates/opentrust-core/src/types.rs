@@ -43,6 +43,13 @@ macro_rules! byte_array_type {
                 f.write_str(concat!(stringify!($name), "(<redacted>)"))
             }
         }
+        /// Wipes the key bytes. The type is `Copy`, so copies are not
+        /// wiped automatically; call this on every copy that held a secret.
+        impl zeroize::Zeroize for $name {
+            fn zeroize(&mut self) {
+                self.0.zeroize();
+            }
+        }
         #[cfg(feature = "defmt")]
         impl defmt::Format for $name {
             fn format(&self, f: defmt::Formatter<'_>) {
@@ -103,6 +110,20 @@ byte_array_type!(
 byte_array_type!(
     /// Pre-Shared Key for the Commissioner (PSKc).
     Pskc, 16, secret
+);
+byte_array_type!(
+    /// IEEE 802.15.4 MAC frame-security key (AES-128), derived from the
+    /// [`NetworkKey`] (see [`crate::crypto::kdf::thread_keys`]).
+    MacKey, 16, secret
+);
+byte_array_type!(
+    /// MLE message-security key (AES-128), derived from the [`NetworkKey`]
+    /// (see [`crate::crypto::kdf::thread_keys`]).
+    MleKey, 16, secret
+);
+byte_array_type!(
+    /// Key Encryption Key used for the Joiner Entrust message (Thread §7.4.7.8).
+    Kek, 16, secret
 );
 
 impl ExtAddress {
