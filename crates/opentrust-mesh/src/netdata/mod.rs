@@ -10,10 +10,14 @@
 //! - [`local`], [`notifier`], [`server_data`]: the Network Data a device
 //!   serves itself, when to register it and the `/a/sd` messages.
 
+pub mod aloc;
+pub mod anycast;
+pub mod consumers;
 mod data;
 #[cfg(feature = "ftd")]
 pub mod leader;
 pub mod local;
+pub mod lookup;
 pub mod notifier;
 pub mod server_data;
 pub mod tlv;
@@ -33,3 +37,6 @@ mod leader_tests;
 
 #[cfg(test)]
 mod notifier_tests;
+
+#[cfg(all(test, feature = "ftd"))]
+mod lookup_tests;

@@ -5,6 +5,7 @@
 //! sends the notification with [`send_server_data`] (see
 //! [`Notifier`](super::notifier::Notifier) for when).
 
+use super::lookup::ALOC16_LEADER;
 #[cfg(feature = "ftd")]
 use opentrust_coap::endpoint::Request;
 #[cfg(feature = "ftd")]
@@ -34,9 +35,6 @@ use crate::tlv::ThreadTlvs;
 
 /// `user` value of the Server Data request in [`Agent::post`].
 pub const USER_SERVER_DATA: u32 = 0x0a53_0003;
-
-/// ALOC16 of the leader.
-pub const ALOC16_LEADER: u16 = 0xfc00;
 
 /// Encode the payload of a Server Data notification: the Network Data TLV
 /// (`None`: none, the leader only removes entries) and the RLOC16 TLV of
