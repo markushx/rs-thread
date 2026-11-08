@@ -28,6 +28,13 @@ pub const PROTO_ICMP6: u8 = 58;
 /// IPv6 next-header value: Destination Options.
 pub const PROTO_DST_OPTS: u8 = 60;
 
+/// Byte offset of the payload length field in the IPv6 header.
+pub const OFFSET_PAYLOAD_LEN: usize = 4;
+/// Byte offset of the next header field in the IPv6 header.
+pub const OFFSET_NEXT_HEADER: usize = 6;
+/// Byte offset of the hop limit field in the IPv6 header.
+pub const OFFSET_HOP_LIMIT: usize = 7;
+
 /// ECN codepoint "congestion experienced".
 pub const ECN_MARKED: u8 = 3;
 
@@ -62,6 +69,34 @@ impl Ipv6Header {
     /// ECN (2 bits).
     pub const fn ecn(&self) -> u8 {
         self.traffic_class & 0x03
+    }
+
+    /// A header with version 6, zero traffic class/flow and zero everything else.
+    pub const fn new(next_header: u8, hop_limit: u8, src: Ipv6Addr, dst: Ipv6Addr) -> Self {
+        Self {
+            traffic_class: 0,
+            flow_label: 0,
+            payload_len: 0,
+            next_header,
+            hop_limit,
+            src,
+            dst,
+        }
+    }
+
+    /// Set the DSCP (6 bits; higher bits are ignored), preserving ECN.
+    pub fn set_dscp(&mut self, dscp: u8) {
+        self.traffic_class = (self.traffic_class & 0x03) | ((dscp & 0x3f) << 2);
+    }
+
+    /// Set the ECN (2 bits; higher bits are ignored), preserving DSCP.
+    pub fn set_ecn(&mut self, ecn: u8) {
+        self.traffic_class = (self.traffic_class & 0xfc) | (ecn & 0x03);
+    }
+
+    /// Set the flow label (20 bits; higher bits are ignored).
+    pub fn set_flow_label(&mut self, flow: u32) {
+        self.flow_label = flow & 0x000f_ffff;
     }
 
     /// Parse the header from the start of `buf`; the version must be 6.

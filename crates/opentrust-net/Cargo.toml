@@ -19,6 +19,7 @@ log = ["dep:log", "opentrust-core/log", "opentrust-lowpan/log"]
 [dependencies]
 opentrust-core = { workspace = true }
 opentrust-lowpan = { workspace = true }
+rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
