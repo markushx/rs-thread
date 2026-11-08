@@ -1184,3 +1184,26 @@ fn poll_and_direct_alternate() {
     }
     assert_eq!(kinds, [FrameType::Data, FrameType::MacCmd, FrameType::Data]);
 }
+
+#[test]
+fn custom_queue_capacities() {
+    use crate::frame_security::NoSecurity;
+    // direct 1, indirect 2, events 2, polls 1, neighbors 1.
+    let mut m: Mac<NoSecurity, FakeRng, 1, 2, 2, 1, 1> =
+        Mac::with_capacities(bare_caps(), OWN_EXT, NoSecurity, FakeRng::new(0));
+    let f = data_frame(0, short(PEER_SHORT), short(OWN_SHORT), true, b"x");
+    m.transmit(TxHandle(1), &f).unwrap();
+    assert_eq!(
+        m.transmit(TxHandle(2), &f),
+        Err(opentrust_core::Error::NoBufs)
+    );
+    let child = short(ShortAddress(0x3000));
+    m.transmit_indirect(TxHandle(3), child, &f).unwrap();
+    m.transmit_indirect(TxHandle(4), child, &f).unwrap();
+    assert_eq!(
+        m.transmit_indirect(TxHandle(5), child, &f),
+        Err(opentrust_core::Error::NoBufs)
+    );
+    m.set_neighbor(PEER_SHORT, PEER_EXT).unwrap();
+    assert!(m.set_neighbor(ShortAddress(0x3000), PEER_EXT).is_err());
+}

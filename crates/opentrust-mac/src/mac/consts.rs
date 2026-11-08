@@ -88,22 +88,23 @@ pub const DEFAULT_FAST_POLLS: u8 = 8;
 /// Maximum number of fast polls (OpenThread `kMaxFastPolls`).
 pub const MAX_FAST_POLLS: u8 = 15;
 
-/// Capacity of the direct transmit queue (frames handed down by the upper
+/// Default capacity (const generic of [`Mac`](super::Mac)) of the direct transmit queue (frames handed down by the upper
 /// layer and not yet transmitted).
 pub const TX_QUEUE_LEN: usize = 4;
 
-/// Capacity of the indirect (parent-side) frame queue, shared by all
+/// Default capacity of the indirect (parent-side) frame queue, shared by all
 /// sleepy children.
 pub const INDIRECT_QUEUE_LEN: usize = 8;
 
-/// Capacity of the upward event queue.
+/// Default capacity of the upward event queue.
 pub const EVENT_QUEUE_LEN: usize = 8;
 
-/// Capacity of the short → extended address map used to find the CCM*
+/// Default capacity of the short → extended address map used to find the CCM*
 /// nonce source of secured frames sent from a short address.
 pub const NEIGHBOR_MAP_LEN: usize = 32;
 
-/// Data polls received (acked with Frame Pending) not yet served.
+/// Default capacity of the queue of data polls received (acked with Frame
+/// Pending) and not yet served.
 pub const POLL_REQUEST_QUEUE_LEN: usize = 4;
 
 /// Capacity of the source-match table (per address type), as in the radio

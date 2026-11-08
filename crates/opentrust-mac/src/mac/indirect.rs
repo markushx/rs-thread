@@ -15,7 +15,7 @@ use opentrust_core::types::{ExtAddress, ShortAddress};
 use opentrust_core::{Error, Result};
 use opentrust_platform::radio::SrcMatchConfig;
 
-use super::consts::{INDIRECT_QUEUE_LEN, NEIGHBOR_MAP_LEN, SRC_MATCH_CAPACITY};
+use super::consts::SRC_MATCH_CAPACITY;
 use super::types::{FrameBuf, TxHandle};
 use crate::frame::Address;
 
@@ -29,11 +29,11 @@ pub fn ext_to_u64(e: &ExtAddress) -> u64 {
 /// Short → extended address map (the subset of the neighbor table the MAC
 /// needs to build CCM* nonces for frames sent from a short address).
 #[derive(Debug, Default)]
-pub(crate) struct NeighborMap {
-    entries: Vec<(ShortAddress, ExtAddress), NEIGHBOR_MAP_LEN>,
+pub(crate) struct NeighborMap<const N: usize> {
+    entries: Vec<(ShortAddress, ExtAddress), N>,
 }
 
-impl NeighborMap {
+impl<const N: usize> NeighborMap<N> {
     pub fn set(&mut self, short: ShortAddress, ext: ExtAddress) -> Result<()> {
         if let Some(e) = self.entries.iter_mut().find(|(s, _)| *s == short) {
             e.1 = ext;
@@ -103,11 +103,11 @@ pub(crate) struct IndirectFrame {
 
 /// The parent's indirect queue.
 #[derive(Debug, Default)]
-pub(crate) struct IndirectQueue {
-    pub frames: Vec<IndirectFrame, INDIRECT_QUEUE_LEN>,
+pub(crate) struct IndirectQueue<const N: usize> {
+    pub frames: Vec<IndirectFrame, N>,
 }
 
-impl IndirectQueue {
+impl<const N: usize> IndirectQueue<N> {
     pub fn push(&mut self, handle: TxHandle, dst: Address, frame: FrameBuf) -> Result<()> {
         if dst.is_none() || dst.is_broadcast() {
             return Err(Error::InvalidArgs);
@@ -125,12 +125,12 @@ impl IndirectQueue {
     }
 
     /// Index of the oldest frame for the device polling from `src`.
-    pub fn find_for(&self, src: Address, map: &NeighborMap) -> Option<usize> {
+    pub fn find_for<const M: usize>(&self, src: Address, map: &NeighborMap<M>) -> Option<usize> {
         self.frames.iter().position(|f| map.same_device(f.dst, src))
     }
 
     /// Number of frames queued for the device at `dst`.
-    pub fn count_for(&self, dst: Address, map: &NeighborMap) -> usize {
+    pub fn count_for<const M: usize>(&self, dst: Address, map: &NeighborMap<M>) -> usize {
         self.frames
             .iter()
             .filter(|f| map.same_device(f.dst, dst))
@@ -204,7 +204,7 @@ impl SrcMatch {
     }
 
     /// Recompute from the pins and the queue; `true` if the table changed.
-    pub fn rebuild(&mut self, queue: &IndirectQueue) -> bool {
+    pub fn rebuild<const M: usize>(&mut self, queue: &IndirectQueue<M>) -> bool {
         let mut t = SrcMatchConfig::new();
         t.enabled = true;
         let addrs = self
@@ -233,7 +233,7 @@ impl SrcMatch {
     }
 
     /// The Frame Pending answer for a frame from `src`.
-    pub fn frame_pending(&self, src: Address, map: &NeighborMap) -> bool {
+    pub fn frame_pending<const M: usize>(&self, src: Address, map: &NeighborMap<M>) -> bool {
         if !self.table.enabled {
             return true;
         }

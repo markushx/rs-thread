@@ -12,6 +12,7 @@ use opentrust_platform::radio::{RSSI_INVALID, RadioError, sim::MAX_PSDU_LEN};
 use opentrust_platform::{Alarm, Clock, Radio};
 use rand_core::Rng;
 
+use super::consts::*;
 use super::machine::Mac;
 use super::types::{Event, RadioAction, TxOutcome};
 use crate::frame_security::FrameSecurity;
@@ -29,18 +30,41 @@ pub enum RunResult<T> {
 ///
 /// See the [module docs](super#async-driver) for the loop and the
 /// cancellation rules.
-pub struct MacDriver<R, C, A, S, G> {
+pub struct MacDriver<
+    R,
+    C,
+    A,
+    S,
+    G,
+    const TXQ: usize = TX_QUEUE_LEN,
+    const IND: usize = INDIRECT_QUEUE_LEN,
+    const EVQ: usize = EVENT_QUEUE_LEN,
+    const POLLQ: usize = POLL_REQUEST_QUEUE_LEN,
+    const NBQ: usize = NEIGHBOR_MAP_LEN,
+> {
     radio: R,
     clock: C,
     alarm: A,
-    mac: Mac<S, G>,
+    mac: Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ>,
     rx_buf: [u8; MAX_PSDU_LEN],
     ack_buf: [u8; MAX_PSDU_LEN],
     /// A transmit / energy scan was started but its future dropped.
     interrupted: bool,
 }
 
-impl<R, C, A, S, G> core::fmt::Debug for MacDriver<R, C, A, S, G> {
+impl<
+    R,
+    C,
+    A,
+    S,
+    G,
+    const TXQ: usize,
+    const IND: usize,
+    const EVQ: usize,
+    const POLLQ: usize,
+    const NBQ: usize,
+> core::fmt::Debug for MacDriver<R, C, A, S, G, TXQ, IND, EVQ, POLLQ, NBQ>
+{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("MacDriver")
             .field("mac", &self.mac)
@@ -55,7 +79,18 @@ async fn wait_deadline<A: Alarm>(alarm: &mut A, deadline: Option<Instant>) {
     }
 }
 
-impl<R, C, A, S, G> MacDriver<R, C, A, S, G>
+impl<
+    R,
+    C,
+    A,
+    S,
+    G,
+    const TXQ: usize,
+    const IND: usize,
+    const EVQ: usize,
+    const POLLQ: usize,
+    const NBQ: usize,
+> MacDriver<R, C, A, S, G, TXQ, IND, EVQ, POLLQ, NBQ>
 where
     R: Radio,
     C: Clock,
@@ -65,7 +100,7 @@ where
 {
     /// Wrap an initialized radio (its [`Radio::init`] caps must be the ones
     /// `mac` was created with; see [`MacDriver::init`]).
-    pub fn new(radio: R, clock: C, alarm: A, mac: Mac<S, G>) -> Self {
+    pub fn new(radio: R, clock: C, alarm: A, mac: Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ>) -> Self {
         Self {
             radio,
             clock,
@@ -77,22 +112,8 @@ where
         }
     }
 
-    /// Initialize the radio and create the MAC from its capabilities.
-    pub async fn init(
-        mut radio: R,
-        clock: C,
-        alarm: A,
-        ext: opentrust_core::types::ExtAddress,
-        security: S,
-        rng: G,
-    ) -> Result<Self, R::Error> {
-        let caps = radio.init().await?;
-        let mac = Mac::new(caps, ext, security, rng);
-        Ok(Self::new(radio, clock, alarm, mac))
-    }
-
     /// The MAC core, for configuration and upper-layer requests.
-    pub fn mac(&mut self) -> &mut Mac<S, G> {
+    pub fn mac(&mut self) -> &mut Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ> {
         &mut self.mac
     }
 
@@ -233,5 +254,31 @@ where
         if let Err(e) = res {
             opentrust_core::warn!("mac: radio command failed: {:?}", e.kind());
         }
+    }
+}
+
+impl<R, C, A, S, G> MacDriver<R, C, A, S, G>
+where
+    R: Radio,
+    C: Clock,
+    A: Alarm,
+    S: FrameSecurity,
+    G: Rng,
+{
+    /// Initialize the radio and create the MAC (default queue capacities)
+    /// from its capabilities. For other capacities call [`Radio::init`]
+    /// yourself, build the MAC with [`Mac::with_capacities`] and use
+    /// [`MacDriver::new`].
+    pub async fn init(
+        mut radio: R,
+        clock: C,
+        alarm: A,
+        ext: opentrust_core::types::ExtAddress,
+        security: S,
+        rng: G,
+    ) -> Result<Self, R::Error> {
+        let caps = radio.init().await?;
+        let mac = Mac::new(caps, ext, security, rng);
+        Ok(Self::new(radio, clock, alarm, mac))
     }
 }

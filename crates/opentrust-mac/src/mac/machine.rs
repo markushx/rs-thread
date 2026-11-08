@@ -189,7 +189,15 @@ enum AttemptNext {
 ///
 /// `S` secures/unsecures frames, `G` supplies the CSMA-CA / retransmission
 /// backoff randomness (non-cryptographic use).
-pub struct Mac<S, G> {
+pub struct Mac<
+    S,
+    G,
+    const TXQ: usize = TX_QUEUE_LEN,
+    const IND: usize = INDIRECT_QUEUE_LEN,
+    const EVQ: usize = EVENT_QUEUE_LEN,
+    const POLLQ: usize = POLL_REQUEST_QUEUE_LEN,
+    const NBQ: usize = NEIGHBOR_MAP_LEN,
+> {
     caps: RadioCaps,
     needs: SoftMacNeeds,
     config: MacConfig,
@@ -217,20 +225,29 @@ pub struct Mac<S, G> {
     pending: u8,
     tx_poll_before_data: bool,
     tx: Option<TxOp>,
-    direct: Deque<(TxHandle, FrameBuf), TX_QUEUE_LEN>,
-    indirect: IndirectQueue,
-    poll_requests: Deque<Address, POLL_REQUEST_QUEUE_LEN>,
+    direct: Deque<(TxHandle, FrameBuf), TXQ>,
+    indirect: IndirectQueue<IND>,
+    poll_requests: Deque<Address, POLLQ>,
     src_match: SrcMatch,
-    neighbors: NeighborMap,
+    neighbors: NeighborMap<NBQ>,
     scan: ScanState,
     poll: PollSender,
     timers: TimerQueue<TimerId, 2>,
-    events: Deque<Event, EVENT_QUEUE_LEN>,
+    events: Deque<Event, EVQ>,
     counters: MacCounters,
     hw_sec: HwSecurity,
 }
 
-impl<S, G> core::fmt::Debug for Mac<S, G> {
+impl<
+    S,
+    G,
+    const TXQ: usize,
+    const IND: usize,
+    const EVQ: usize,
+    const POLLQ: usize,
+    const NBQ: usize,
+> core::fmt::Debug for Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ>
+{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Mac")
             .field("operation", &self.operation)
@@ -269,13 +286,34 @@ fn map_radio_error(kind: RadioErrorKind) -> TxError {
 }
 
 impl<S: FrameSecurity, G: Rng> Mac<S, G> {
-    /// A MAC for a radio with capabilities `caps` (from
+    /// A MAC with the default queue capacities ([`TX_QUEUE_LEN`],
+    /// [`INDIRECT_QUEUE_LEN`], [`EVENT_QUEUE_LEN`], [`POLL_REQUEST_QUEUE_LEN`],
+    /// [`NEIGHBOR_MAP_LEN`]); see [`Mac::with_capacities`] for others.
+    pub fn new(caps: RadioCaps, ext: ExtAddress, security: S, rng: G) -> Self {
+        Self::with_capacities(caps, ext, security, rng)
+    }
+}
+
+impl<
+    S: FrameSecurity,
+    G: Rng,
+    const TXQ: usize,
+    const IND: usize,
+    const EVQ: usize,
+    const POLLQ: usize,
+    const NBQ: usize,
+> Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ>
+{
+    /// A MAC with explicit queue capacities (const generics: direct
+    /// transmit queue `TXQ`, indirect queue `IND`, upward events `EVQ`,
+    /// received data polls awaiting service `POLLQ`, short -> extended
+    /// address map `NBQ`), for a radio with capabilities `caps` (from
     /// [`Radio::init`](opentrust_platform::Radio::init)), extended address
     /// `ext`, frame security `security` and backoff RNG `rng`.
     ///
     /// Initial state: PAN ID and short address unset (0xffff / 0xfffe),
     /// channel 11, receiver on when idle.
-    pub fn new(caps: RadioCaps, ext: ExtAddress, security: S, mut rng: G) -> Self {
+    pub fn with_capacities(caps: RadioCaps, ext: ExtAddress, security: S, mut rng: G) -> Self {
         let dsn = rng.next_u32() as u8;
         let bsn = rng.next_u32() as u8;
         let hw_src_match = caps.mac.contains(MacCapabilities::SRC_MATCH);
