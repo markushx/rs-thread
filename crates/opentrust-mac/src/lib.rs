@@ -8,7 +8,10 @@
 //! - [`frame_security`]: contract between the MAC data path and frame security.
 //! - [`security`]: frame security (key manager, key ID modes 1/2, replay
 //!   protection, enhanced-ACK security).
+//! - [`mac`]: the sans-IO MAC state machine (CSMA-CA, retries, ACKs, data
+//!   polling, indirect transmission, scans) and its async driver.
 
 pub mod frame;
 pub mod frame_security;
+pub mod mac;
 pub mod security;
