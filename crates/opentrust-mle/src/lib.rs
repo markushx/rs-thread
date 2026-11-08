@@ -23,8 +23,8 @@
 //! state machine (`router`), router links with Link Request / Accept
 //! (`router_link`), Advertisements on a Trickle timer with route cost
 //! propagation (`advert`) and partitions (comparison, merge, leader loss).
-//! The Address Solicit exchange with the leader is the one thing left to
-//! Phase 7 (TMF): see [`MleEnv::request_router_id`].
+//! The Address Solicit exchange with the leader is a TMF message handled by
+//! `opentrust-mesh` (`router_id`): see [`MleEnv::request_router_id`].
 
 #[cfg(feature = "ftd")]
 mod advert;

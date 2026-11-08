@@ -297,7 +297,7 @@ Reference: `mle_ftd.cpp` (`BecomeRouter`, `BecomeLeader`, `SetStateRouterOrLeade
 
 | Area | OpenThread | OpenTrust | Reason | Interop |
 |------|------------|-----------|--------|---------|
-| Router ID exchange | `SendAddressSolicit` / `HandleAddressSolicitResponse` and the leader's `HandleTmf` are in `Mle` | The core calls `MleEnv::request_router_id` / `release_router_id` and is fed `Mle::address_solicit_reply`; the leader side is `handle_address_solicit` / `handle_address_release` returning a grant or a rejection | TMF / CoAP is Phase 7; keeps the core free of the CoAP agent | none |
+| Router ID exchange | `SendAddressSolicit` / `HandleAddressSolicitResponse` and the leader's `HandleTmf` are in `Mle` | The core calls `MleEnv::request_router_id` / `release_router_id` and is fed `Mle::address_solicit_reply`; the leader side is `handle_address_solicit` / `handle_address_release` returning a grant or a rejection; the CoAP side is `opentrust-mesh::router_id` (see "Mesh layer") | Keeps the core free of the CoAP agent | none |
 | Router eligibility | Security policy (`routersEnabled`, version threshold, CCM) evaluated in `IsRouterEligible` | `RouterConfig::eligible` and the FTD device mode only | Security policy / dataset handling is Phase 7/8 | looser (a policy that forbids routers must switch eligibility off) |
 | Alternate RLOC16 | A REED that becomes router keeps its child address for a while (`SetAlternateRloc16`) | Not kept | Forwarding is Phase 7 | none (in-flight packets to the old address are lost) |
 | Router table | `Array<Router>` + `RouterIdMap` indexes, mixed with the neighbor table and address resolver cleanup | `RouterTable<32>` slots by router ID, `allocated` mask and per-ID reuse seconds in `RouterCtx`; address resolver cleanup is the caller's reaction to `MleEvent::RouterTableChanged` / `RouterRemoved` | No instance-wide singletons | none |
@@ -314,3 +314,37 @@ Reference: `mle_ftd.cpp` (`BecomeRouter`, `BecomeLeader`, `SetStateRouterOrLeade
 | Data Request delay | `DelayedSender::ScheduleDataRequest` on all devices | Delayed queue only with feature `ftd`; end-device builds send the Data Request immediately | No queue on MTD | none (no 0..1 s jitter) |
 | `LinkReject` | Handled (ignored) | Not dispatched (dropped) | Not used by Thread | none |
 | Router role restorer | Reuses `mAttachTimer`; children restored by `ChildTable::Restore` before `Mle::Start` | Own deadline; `restore` loads the child records, the Child Update Requests go out once the router role is entered | | none |
+
+## Mesh layer (`opentrust-mesh`: `tlv`, `router_id`, `address`, `forwarder`, `indirect`)
+
+Reference: `thread_tlvs.hpp`, `mle_ftd.cpp` (`SendAddressSolicit`,
+`HandleAddressSolicitResponse`, `HandleTmf<kUriAddressSolicit>`,
+`SendAddressRelease`, `HandleTmf<kUriAddressRelease>`), `address_resolver.cpp`,
+`mesh_forwarder.cpp`, `mesh_forwarder_ftd.cpp`, `indirect_sender.cpp`,
+`src_match_controller.cpp`, `data_poll_handler.cpp`.
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| TMF handler shape | `HandleTmf<Uri>` sends follow-up messages itself | Handlers answer through the `Responder` and return the follow-up (`SolicitHandled::stale_rloc16`, `AddressAction`, `AddressErrorOutcome::ChildAddressRemoved`) for the caller to send with `send_action` / to apply to the address cache | The TMF handler callback has no access to the agent or the cache | none |
+| Address Solicit client | `SendAddressSolicit` sends from inside `Mle` | `MleEnv::request_router_id` only queues in `RouterIdOutbox`; the caller's `flush` sends, and a request that cannot be sent is reported as `RouterIdReply::Failed` | Sans-IO | none |
+| Address Solicit contents | Optional XTAL Accuracy TLV (time sync) | Not sent / not checked | Time sync not implemented | none |
+| Stale cache entries after a grant | `RemoveEntriesForRloc16(oldRloc16)` in the response sender | Reported in `SolicitHandled::stale_rloc16` (same conditions); the caller removes them | See above | none |
+| Rejected solicit | `mAddressSolicitRejected` also suppresses the router upgrade | Only the REED state handling of `Mle::address_solicit_reply` | Unchanged core | none |
+| Address Query | Extended to `/b/bq` for DUA by a primary Backbone Router | Not implemented | Thread 1.2 BBR is not implemented | none |
+| Address Error | Duplicate DUA is reported to the DUA manager | A duplicate DUA is removed like any other address | No DUA manager | none |
+| Child lookup | `Child::HasIp6Address`, ML-EID IID from the child | `Child::has_address` with the registered addresses and the ML-EID IID; children without a known ML-EID IID are not answered for | Child model | none |
+| Message model | Messages in the pool (`Message`), send queue with `kTypeIp6` / `kType6lowpan`, per-message priority, aging, ECN marking, queue limits, evictions, `mScheduleTransmissionTask` | `MeshForwarder` routes and transmits a datagram (byte slice) at once through `FrameSink`; no send queue, priorities, aging, delay-aware queue management, retransmission accounting (`UpdateSendMessage`), neighbor link failure counters or CSMA collision-avoidance delay | Sans-IO; the MAC layer owns queueing and retries | none |
+| MLE messages | Go through the forwarder (link-local, security rules, fragmentation retry with security) | Not handled by the forwarder: the MLE core sends through `MleEnv::send` | Existing MLE design | none |
+| Frame size | Computed from the actual MAC header (`kMeshHeaderFrameMtu` minus header and footer) | Constants `MAX_FRAME_PAYLOAD` (106) and `MAX_MESH_FRAME_PAYLOAD` (94, extended addresses) | No MAC header model in the forwarder | none (frames may be smaller than necessary) |
+| Reachability error addressing | `SendDestinationUnreachable` addresses the error to the RLOC of the mesh source | `FrameSink::dest_unreachable(invoking)`; the caller builds the error with `Ip6::build_error`, which addresses the IPv6 source of the offending datagram (resolved normally) | `build_error` follows RFC 4443 | none (the error may need an address query first) |
+| Address resolution failure | The held datagram is dropped silently | A dropped datagram whose source is not a local address also triggers `dest_unreachable` | RFC 4861 behavior; lets a remote sender learn that the cache is wrong | none |
+| Routing loop | `ResolveRoutingLoops` invalidates the route, then forwards using the neighbor table if possible | The frame is dropped, `FrameSink::routing_loop` makes the caller call `Mle::resolve_routing_loop` (invalidate route, reset the Advertisement interval) | Forwarder only reads the MLE state | none |
+| Former child detection | `UpdateEidRlocCacheAndStaleChild` also removes a former child neighbor when its datagram arrives through another parent | Only the cache update (snooping) is implemented | Needs a neighbor removal API on `Mle` | none |
+| Held datagrams | Stay in the send queue marked `IsResolvingAddress` | `HOLD` slots of 1280 bytes in the forwarder; a full table drops the new datagram | Fixed capacity | none |
+| Multicast to sleepy children | One shared message with a child mask | A copy per sleepy child in the indirect queue; `send_datagram_with(.., mpl_retransmission)` skips MPL retransmissions | Fixed-capacity queue | none |
+| Indirect queue | Messages in the send queue with an indirect child mask, per-child message count, `DataPollHandler` state machine, CSL | `IndirectQueue<N>`: `N` datagrams in total, oldest first per child; a full queue refuses a new datagram instead of evicting; no CSL | Fixed capacity, no message pool | none |
+| Source match table | `SourceMatchController` counts messages and switches children between short and extended address matching | `IndirectQueue::src_match_children` is derived from the queue (cannot get out of sync); children are matched by RLOC16 | Simpler invariant | none |
+| Indirect transmission retries | Per-frame attempts (`kMaxPollTriggeredTxAttempts`), message dropped after the last fragment failed only if configured | The same frame is retried at the next poll; the message is dropped after `MAX_POLL_TX_ATTEMPTS` (4) failed transmissions | | none |
+| Fragment continuation | Offset kept in the child entry | Frames of the head message are re-generated up to the acknowledged count (stable datagram tag) | No borrowed state in the queue | none (the compression context may change between polls) |
+| Supervision | `ChildSupervisor::UpdateOnSend` is called from the indirect sender | The caller calls `Mle::child_message_sent` after `PollOutcome::Sent`; the MLE hook `send_child_supervision` becomes `MeshForwarder::send_child_supervision` | Forwarder holds only `&Mle` | none |
+| Mode change to rx-on-when-idle | Queued indirect messages become direct | Queued messages are purged with the child (`child_removed`) only | Not implemented yet | none (messages are lost) |

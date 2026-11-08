@@ -4,7 +4,7 @@
 //! `MeshForwarder::HandleReceivedFrame`. [`handle_mesh`] implements the
 //! decision of `MeshForwarder::HandleMesh` for a frame carrying a Mesh
 //! header: deliver locally, forward to the next hop, or drop. The routing
-//! table itself (Phase 7) is consulted through the [`NextHops`] trait and
+//! table itself is consulted through the [`NextHops`] trait and
 //! the device's own addresses (own RLOC16, children) through
 //! [`LocalRlocs`].
 
@@ -125,7 +125,7 @@ impl<F: Fn(u16) -> bool> LocalRlocs for F {
     }
 }
 
-/// Next-hop lookup in the routing table (provided by Phase 7).
+/// Next-hop lookup in the routing table (provided by the MLE router table).
 pub trait NextHops {
     /// The RLOC16 of the next hop towards `destination`, if there is a route.
     fn next_hop(&self, destination: u16) -> Option<u16>;

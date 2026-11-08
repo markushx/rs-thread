@@ -150,7 +150,7 @@ pub enum MleEvent {
         rloc16: Rloc16,
     },
     /// The router table changed (route costs, next hops, ID set): the
-    /// routing layer (Phase 7) should refresh what it derives from it.
+    /// routing layer should refresh what it derives from it.
     RouterTableChanged,
 }
 
@@ -184,7 +184,7 @@ impl RouterRequestReason {
 }
 
 /// The Address Solicit request the core wants sent to the leader (TMF
-/// `/a/as`, Phase 7). The environment sends it to the leader's RLOC and
+/// `/a/as`, see `opentrust-mesh::router_id`). The environment sends it to the leader's RLOC and
 /// later calls [`Mle::address_solicit_reply`](crate::Mle::address_solicit_reply)
 /// with the outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -279,7 +279,7 @@ pub trait MleEnv {
     /// makes the sleepy child's data poll succeed) to a sleepy child.
     fn send_child_supervision(&mut self, _ext: &ExtAddress, _rloc16: Rloc16) {}
 
-    // ------------------------------------------------------------ network data / dataset (Phase 7/8 consumers)
+    // ------------------------------------------------------------ network data / dataset
 
     /// Full or stable (`stable_only`) Network Data for a Child ID /
     /// Data Response; returns the length, `Ok(0)` if none.
@@ -287,7 +287,7 @@ pub trait MleEnv {
         Ok(0)
     }
     /// Store Network Data received from the parent, together with the
-    /// Leader Data that versions it (parsing is Phase 7).
+    /// Leader Data that versions it (parsing is not implemented yet).
     fn set_network_data(&mut self, _leader: &LeaderData, _data: &[u8]) {}
     /// Timestamp of the local Active Operational Dataset.
     fn active_timestamp(&self) -> Option<Timestamp> {
@@ -353,14 +353,14 @@ pub trait MleEnv {
         None
     }
 
-    // ------------------------------------------------------------ router ID assignment (Phase 7 TMF)
+    // ------------------------------------------------------------ router ID assignment (TMF)
 
     /// Send an Address Solicit (`/a/as`, confirmable POST to the leader's
     /// RLOC) with the ML-EUI64 (the extended address), the previous RLOC16
     /// if any and the Status TLV. The answer is delivered with
     /// `Mle::address_solicit_reply`. Return an error if the request cannot
     /// be sent (the core then clears its pending state). Default: not
-    /// implemented, so a device never upgrades without Phase 7.
+    /// implemented, so a device never upgrades without the TMF client.
     fn request_router_id(&mut self, _request: &RouterIdRequest) -> Result<()> {
         Err(opentrust_core::Error::NotImplemented)
     }

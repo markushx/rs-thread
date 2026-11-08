@@ -4,7 +4,7 @@
 //!
 //! This is only the *state machine*: no CoAP, no TMF. The `/a/aq`
 //! (query), `/a/an` (notification) and `/a/ae` (error) messages are
-//! built and parsed in Phase 5/7 on top of the hooks here:
+//! built and parsed by `opentrust_mesh::address` on top of the hooks here:
 //!
 //! - [`ResolverEvent::SendQuery`] -> send `/a/aq` (non-confirmable POST,
 //!   Target TLV, to the realm-local all-routers address, from our RLOC);

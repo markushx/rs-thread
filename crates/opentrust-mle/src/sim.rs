@@ -178,7 +178,7 @@ impl Sim {
         self.nodes[i].mle.role()
     }
 
-    /// Phase 7 stand-in: let node `idx` (a REED that asked for a router ID)
+    /// Stand-in for the TMF exchange: let node `idx` (a REED that asked for a router ID)
     /// get one from the leader at node `leader`; node `idx` becomes router.
     pub fn grant_router(&mut self, leader: usize, idx: usize) {
         let now = self.now;

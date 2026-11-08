@@ -30,8 +30,9 @@
 //! - `router`, `router_link`, `advert` (feature `ftd`): the router and
 //!   leader role, router links, Advertisements, partitions (Phase 6c).
 //!
-//! Not part of Phase 6: Announce / Discovery (Phase 8), the Address Solicit
-//! exchange over TMF (Phase 7, hook: [`MleEnv::request_router_id`]).
+//! Not part of the MLE core: Announce / Discovery (not implemented yet), the
+//! Address Solicit exchange over TMF (`opentrust-mesh`, hook:
+//! [`MleEnv::request_router_id`]).
 
 use core::net::Ipv6Addr;
 
@@ -270,7 +271,7 @@ impl<const C: usize> Mle<C> {
             return Ok(());
         }
         if !mode.full_thread_device() && self.cfg.mode.full_thread_device() && C > 0 {
-            // FTD -> MTD while holding children: Phase 7 (see PLAN.md).
+            // FTD -> MTD while holding children: not handled yet.
             return Err(Error::InvalidState);
         }
         self.cfg.mode = mode;

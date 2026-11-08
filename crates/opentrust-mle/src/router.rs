@@ -18,7 +18,7 @@
 //!
 //! The leader owns the router ID space. The device that wants a router ID
 //! (a REED, see below) cannot ask the leader itself: the Address Solicit
-//! (`/a/as`) is a TMF/CoAP exchange (Phase 7). The core calls
+//! (`/a/as`) is a TMF/CoAP exchange (`opentrust-mesh::router_id`). The core calls
 //! [`MleEnv::request_router_id`] and later expects
 //! [`Mle::address_solicit_reply`]. On the leader's side the TMF handler
 //! calls [`Mle::handle_address_solicit`] / [`Mle::handle_address_release`],
@@ -37,7 +37,7 @@
 //! # Deviations from OT
 //!
 //! - No "alternate RLOC16" after a REED becomes router (the former child
-//!   address is not kept for forwarding; Phase 7 mesh forwarding).
+//!   address is not kept for forwarding).
 //! - The security policy (`routers_enabled`, version threshold) is not
 //!   evaluated in [`Mle::is_router_eligible`]; the caller turns
 //!   `RouterConfig::eligible` off.
