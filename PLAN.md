@@ -59,14 +59,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 2 – IEEE 802.15.4 MAC (§3, 802.15.4-2015/2006)
 
-- [ ] Frame parse/build: header IEs, payload IEs, security header, versions 2006/2015
-- [ ] MAC security: frame counters, key ID mode 1/2, key sequence rotation (§7)
+- [x] Frame parse/build (`opentrust_mac::frame`): header IEs, payload IEs, security header, versions 2003/2006/2015, imm/enh ACK, wake-up frames
+- [x] MAC security (`opentrust_mac::security`): `KeyManager` (prev/cur/next keys, key switch guard, rotation), key ID mode 1/2, frame counter + store-ahead, `LinkFrameCounters` replay check, enh-ACK security
 - [x] Radio trait (`opentrust_platform::radio`, mirrors esp-rs/openthread `Radio`; `TestRadio`; `SoftMacNeeds`) + `time::{Clock, Alarm, MockClock}`
-- [ ] CSMA-CA, retries, ack handling (soft-ack fallback for radios without HW ack)
-- [ ] Active scan / energy scan / discovery scan (MLE Discovery)
-- [ ] Data polling (SED), indirect transmission queue (parent side), source match table
+- [x] Sans-IO MAC (`opentrust_mac::mac`) + async `MacDriver`: CSMA-CA, retries, ack handling incl. software ACK / ACK timeout per `SoftMacNeeds`, rx filtering
+- [x] Active scan / energy scan (radio-only); MLE Discovery scan → Phase 6
+- [x] Data polling (SED), indirect transmission queue (parent side), source match table
 - [ ] CSL transmitter/receiver & enhanced ACK (Thread 1.2+), Link Metrics probing (§4.x 1.2)
-- [ ] Unit tests against OT frame vectors (`tests/unit/test_mac_frame.cpp` vectors)
+- [x] Unit tests against OT frame vectors (`tests/unit/test_mac_frame.cpp` vectors)
+- [ ] Wire `KeyManager` into `MacDriver` (push `mac_keys()`/frame counter to radios with HW tx security), end-to-end secured MAC test
+- [ ] Const-generic capacities for MAC queues (direct 4, indirect 8, events 8, polls 4 are fixed now)
 
 ## Phase 3 – 6LoWPAN adaptation (§3.3–3.5, RFC 4944/6282)
 

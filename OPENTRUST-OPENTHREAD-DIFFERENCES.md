@@ -63,4 +63,17 @@ Keep this file up to date with every change that deviates from OpenThread.
 
 ## MAC state machine (`opentrust-mac::mac`)
 
-_To be filled in when the MAC state machine lands._
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Structure | `Mac` + `SubMac` + callbacks | One sans-IO `Mac` core (pull-style `poll_action` / `on_tx_done` / `on_rx` / `poll_event`) + async `MacDriver`; no internal channel, the facade passes a wake future | Executor-agnostic, deterministic tests | API |
+| Radio PSDU / FCS | Radio frame buffers include FCS | Radio-side PSDUs include FCS; the MAC computes it on tx and strips it on rx; upper layers never see it | Matches the `Radio` contract | none |
+| Source-match table at start | Disabled → frame pending set for every poll | Enabled and empty → frame pending only for children with queued frames | Avoid needless wake-ups of sleepy children | none |
+| Promiscuous mode | Filtered delivery with flags | Delivers raw, unfiltered frames | Sniffer use | API |
+| Frames to short address `0xfffe` | Accepted in some paths | Never accepted | `0xfffe` means "no short address" | stricter |
+| Unsecured frames from unknown short source | Dropped in MAC (neighbor lookup) | Delivered; the neighbor table (MLE) decides | Neighbor table lives in MLE | none (policy moves up) |
+| Software ACK timing | n/a (radio does ACKs) | Software ACKs only meet the 802.15.4 turnaround on simulated media | Bare PHYs need HW ACK in production | none in sim |
+| Energy scan without radio support | Software RSSI sampling via `otPlatRadioGetRssi` | `Error::NotImplemented` (the `Radio` trait has no RSSI read) | Trait mirrors esp-rs/openthread | API |
+| Not yet implemented | — | Broadcast retransmission, stay-awake between fragments, MAC allow/deny filter, multi-radio/TREL, CSL, wake-up frame tx/rx flow, enh-ACK IEs (CSL, link metrics) | Later waves / phases | — |
+| Fixed capacities | Configurable | Direct queue 4, indirect queue 8, events 8, poll requests 4 (const generics TODO) | First version | none |
+
+Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries` = 15 for direct frames (Thread §3.2); indirect frames use 0 retries per poll and up to 4 polls.
