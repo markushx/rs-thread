@@ -7,7 +7,10 @@
 //!
 //! - [`consts`]: Table 4-3 constants.
 //! - [`tlv`]: typed parse/build of every MLE TLV.
+//! - [`message`], [`security`]: commands, message building, MLE security.
 
 pub mod consts;
 pub mod link_quality;
+pub mod message;
+pub mod security;
 pub mod tlv;
