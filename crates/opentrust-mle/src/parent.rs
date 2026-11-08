@@ -1159,7 +1159,6 @@ impl<const C: usize> Mle<C> {
     /// Restore the child table from persisted [`ChildInfo`] records (OT
     /// `ChildTable::Restore`): children come back `Restored`, with
     /// `last_heard = now`, and receive a Child Update Request shortly after.
-    #[allow(dead_code)] // used by persistence (next commit)
     pub(crate) fn restore_children_from<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
         let mut i = 0;
         while let Some(info) = env.load_child_info(i) {

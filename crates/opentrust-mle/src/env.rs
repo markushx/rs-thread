@@ -34,7 +34,7 @@ use opentrust_core::Result;
 use opentrust_core::crypto::CryptoBackend;
 use opentrust_core::settings::{ChildInfo, NetworkInfo, ParentInfo};
 use opentrust_core::time::Duration;
-use opentrust_core::types::{ExtAddress, Prefix64, Rloc16};
+use opentrust_core::types::{ExtAddress, Iid, Prefix64, Rloc16};
 use opentrust_mac::security::KeyManager;
 
 use crate::tlv::{LeaderData, Timestamp};
@@ -243,6 +243,10 @@ pub trait MleEnv {
 
     // ------------------------------------------------------------ persistence (SettingsStore)
 
+    /// Apply the identity restored from settings before the first message
+    /// is sent: set the extended address and the ML-EID interface
+    /// identifier (OT `Mle::Restore`).
+    fn apply_restored_identity(&mut self, _ext: &ExtAddress, _ml_iid: &Iid) {}
     /// Persist the network information (`SettingsKey::NetworkInfo`).
     fn store_network_info(&mut self, _info: &NetworkInfo) -> Result<()> {
         Ok(())

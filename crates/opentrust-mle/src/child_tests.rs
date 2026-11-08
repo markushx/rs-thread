@@ -8,11 +8,11 @@ use crate::mle::{Mle, MleConfig};
 use crate::test_support::{Out, TestEnv};
 use crate::tlv::{DeviceMode, LeaderData, STATUS_ERROR, ty};
 
-const RX_ON: DeviceMode = DeviceMode::new(true, false, true);
-const SLEEPY: DeviceMode = DeviceMode::new(false, false, false);
+pub(crate) const RX_ON: DeviceMode = DeviceMode::new(true, false, true);
+pub(crate) const SLEEPY: DeviceMode = DeviceMode::new(false, false, false);
 
 /// Child attached to a fake parent (rloc 0x0400, child rloc 0x0401).
-fn attached(mode: DeviceMode) -> (Mle<0>, TestEnv, FakeParent, Instant) {
+pub(crate) fn attached(mode: DeviceMode) -> (Mle<0>, TestEnv, FakeParent, Instant) {
     let mut env = TestEnv::new(1);
     let mut child: Mle<0> = Mle::new(MleConfig::new(mode));
     child.start(&mut env, T0).unwrap();

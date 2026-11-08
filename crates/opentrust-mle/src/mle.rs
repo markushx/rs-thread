@@ -25,7 +25,7 @@
 //!   alive, supervision, parent loss, Data Request/Response, poll period).
 //! - `parent` (feature `ftd`): Parent Request, Child ID Request, Child
 //!   Update handling and child timeouts for a router.
-//! - `persist`: `NetworkInfo` / `ParentInfo` / `ChildInfo`
+//! - [`persist`](crate::persist): `NetworkInfo` / `ParentInfo` / `ChildInfo`
 //!   save and restore.
 //!
 //! Not part of Phase 6b (see PLAN.md Phase 6c): Link Request/Accept,
@@ -115,6 +115,8 @@ pub struct Mle<const C: usize> {
     pub(crate) attach: AttachCtx,
     pub(crate) child: ChildCtx,
     pub(crate) children: ChildTable<C>,
+    pub(crate) previous_partition_id: u32,
+    pub(crate) store_pending: bool,
     #[cfg(feature = "ftd")]
     pub(crate) parent_side: crate::parent::ParentSide,
 }
@@ -138,6 +140,8 @@ impl<const C: usize> Mle<C> {
             attach: AttachCtx::new(),
             child: ChildCtx::new(),
             children: ChildTable::new(),
+            previous_partition_id: 0,
+            store_pending: false,
             #[cfg(feature = "ftd")]
             parent_side: crate::parent::ParentSide::new(),
         }
@@ -260,6 +264,7 @@ impl<const C: usize> Mle<C> {
         if self.role != role {
             let old = self.role;
             self.role = role;
+            self.store_pending |= role.is_attached();
             env.event(MleEvent::RoleChanged { old, new: role });
         }
     }
@@ -267,6 +272,7 @@ impl<const C: usize> Mle<C> {
     pub(crate) fn set_rloc16<E: MleEnv>(&mut self, env: &mut E, rloc16: Rloc16) {
         if self.rloc16 != rloc16 {
             self.rloc16 = rloc16;
+            self.store_pending |= self.role.is_attached();
             env.set_short_address(rloc16);
             env.event(MleEvent::Rloc16Changed(rloc16));
         }
@@ -322,6 +328,7 @@ impl<const C: usize> Mle<C> {
         }
         #[cfg(feature = "ftd")]
         self.poll_parent(env, now);
+        self.store_if_needed(env);
     }
 
     // ------------------------------------------------------------ receive
@@ -383,6 +390,7 @@ impl<const C: usize> Mle<C> {
             _ => return Err(Error::Drop),
         };
         self.process_key_sequence(env, now, class, sec, nb);
+        self.store_if_needed(env);
         Ok(rx.command)
     }
 

@@ -7,7 +7,7 @@ use heapless::Vec;
 use opentrust_core::crypto::SoftCrypto;
 use opentrust_core::settings::{ChildInfo, NetworkInfo, ParentInfo, SettingsKey};
 use opentrust_core::time::{Duration, Instant};
-use opentrust_core::types::{ExtAddress, NetworkKey, Prefix64, Rloc16, ipv6};
+use opentrust_core::types::{ExtAddress, Iid, NetworkKey, Prefix64, Rloc16, ipv6};
 use opentrust_core::{Error, Result};
 use opentrust_mac::security::KeyManager;
 use opentrust_net::udp::UdpMeta;
@@ -43,6 +43,7 @@ pub(crate) struct TestEnv {
     pub supervised: Vec<(ExtAddress, Rloc16), 8>,
     pub extra_addrs: Vec<Ipv6Addr, 4>,
     pub settings: RamSettings<1024>,
+    pub ml_iid: Option<Iid>,
 }
 
 pub(crate) const MLP: Prefix64 = Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 1]);
@@ -74,6 +75,7 @@ impl TestEnv {
             supervised: Vec::new(),
             extra_addrs: Vec::new(),
             settings: RamSettings::new(),
+            ml_iid: None,
         }
     }
 
@@ -82,16 +84,10 @@ impl TestEnv {
     }
 
     pub fn ml_eid(&self) -> Ipv6Addr {
-        MLP.with_iid(&opentrust_core::types::Iid([
-            0xaa,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            self.ext.0[7],
-        ]))
+        let iid = self
+            .ml_iid
+            .unwrap_or(Iid([0xaa, 0, 0, 0, 0, 0, 0, self.ext.0[7]]));
+        MLP.with_iid(&iid)
     }
 
     /// Deliver `out` to `mle`/`env` (unicast filtered by destination).
@@ -209,6 +205,10 @@ impl MleEnv for TestEnv {
     }
     fn active_timestamp(&self) -> Option<Timestamp> {
         None
+    }
+    fn apply_restored_identity(&mut self, ext: &ExtAddress, ml_iid: &Iid) {
+        self.ext = *ext;
+        self.ml_iid = Some(*ml_iid);
     }
     fn store_network_info(&mut self, info: &NetworkInfo) -> Result<()> {
         let mut b = [0u8; NetworkInfo::ENCODED_LEN];

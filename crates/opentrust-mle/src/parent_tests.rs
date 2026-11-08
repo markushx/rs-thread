@@ -500,7 +500,7 @@ fn restored_child_is_asked_and_becomes_valid() {
         use crate::env::MleEnv;
         penv.store_child_info(&info).unwrap();
     }
-    p.restore_children_from(&mut penv, T0);
+    p.restore_children(&mut penv, T0);
     assert_eq!(
         p.children()
             .find_by_ext(&ext, StateFilter::Any)

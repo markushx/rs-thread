@@ -23,6 +23,7 @@ pub mod mle;
 pub mod neighbor;
 #[cfg(feature = "ftd")]
 pub mod parent;
+pub mod persist;
 pub mod security;
 pub mod tlv;
 
@@ -35,5 +36,7 @@ mod attach_tests;
 mod child_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod parent_tests;
+#[cfg(test)]
+mod persist_tests;
 #[cfg(test)]
 mod test_support;
