@@ -65,10 +65,18 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Sans-IO MAC (`opentrust_mac::mac`) + async `MacDriver`: CSMA-CA, retries, ack handling incl. software ACK / ACK timeout per `SoftMacNeeds`, rx filtering
 - [x] Active scan / energy scan (radio-only); MLE Discovery scan → Phase 6
 - [x] Data polling (SED), indirect transmission queue (parent side), source match table
-- [ ] CSL transmitter/receiver & enhanced ACK (Thread 1.2+), Link Metrics probing (§4.x 1.2)
+- [x] CSL receiver (SSED) and transmitter (parent) + enhanced ACK with CSL IE (Thread 1.2+): sample windows (`ReceiveAt` / software sampling), phase math, CSL IE update + re-secure per attempt, per-child sync from CSL IEs, timed indirect tx with guard times
+  - [ ] CSL IE in MAC-built data polls (poll keep-alive resync, OT `DataPollSender` CSL rules) with the poll sender / MLE
+  - [ ] CSL synchronized timeout, CSL Channel / Accuracy TLVs, child CSL parameters from MLE (Phase 6/7)
+  - [ ] CSL broadcast / wake-up frame (TL2 wake-up coordinator, Thread 1.4) (Phase 9)
+  - [ ] Hardware-ACK radios: CSL IE in hardware enh-ACKs needs the schedule only (`set_csl` done); link-metrics IE needs a trait method (`configure_enh_ack_probing`)
+- [x] Enh-ACK based Link Metrics probing, MAC part: per-initiator metric config, Thread vendor IE in enh-ACKs, initiator-side decode (`Event::EnhAckLinkMetrics`)
+  - [ ] MLE Link Metrics Management / Report TLVs, forward tracking series, single probe (Phase 6)
 - [x] Unit tests against OT frame vectors (`tests/unit/test_mac_frame.cpp` vectors)
-- [ ] Wire `KeyManager` into `MacDriver` (push `mac_keys()`/frame counter to radios with HW tx security), end-to-end secured MAC test
-- [ ] Const-generic capacities for MAC queues (direct 4, indirect 8, events 8, polls 4 are fixed now)
+- [x] Wire `KeyManager` into the MAC/driver (push `mac_keys()`/frame counter to radios with HW tx security, feed back used counters), end-to-end secured data frame + enh-ACK + key sequence switch tests
+- [x] Const-generic capacities for MAC queues (`Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ, CSLQ>`, defaults 4/8/8/4/32/8)
+  - [ ] Capacities of the enh-ACK probing tables (fixed 8)
+- [ ] Verify CSL timing against OpenThread on a simulated radio medium (Phase 11 interop; unit tests only cover the math and the sans-IO schedule)
 
 ## Phase 3 – 6LoWPAN adaptation (§3.3–3.5, RFC 4944/6282)
 

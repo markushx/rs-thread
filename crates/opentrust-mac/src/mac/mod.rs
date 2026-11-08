@@ -7,7 +7,8 @@
 //! unslotted CSMA-CA, retransmissions with the Thread NO_ACK delay, ACK
 //! wait, software ACKs, receive filtering, frame security through
 //! [`FrameSecurity`](crate::frame_security::FrameSecurity), active and
-//! energy scans.
+//! energy scans; CSL (receiver and transmitter, Thread 1.2) and Enhanced-ACK
+//! based Link Metrics probing (MAC part).
 //!
 //! # Design
 //!
@@ -87,8 +88,52 @@
 //! | Source match | no `SRC_MATCH` | table kept in the MAC either way; pushed to radios that have it |
 //! | Address filtering | always | as OpenThread: radio filters only decide what the radio ACKs |
 //! | TX security | no `TRANSMIT_SEC` | [`FrameSecurity::secure_tx`](crate::frame_security::FrameSecurity::secure_tx) before the first attempt |
+//! | Keys / frame counter | radio with `TRANSMIT_SEC` or `RECEIVE_TIMING` | pushed to the radio ([`RadioAction::SetMacKeys`], [`RadioAction::SetMacFrameCounter`]) whenever [`FrameSecurity::radio_keys`](crate::frame_security::FrameSecurity::radio_keys) changes; counters the radio used are fed back ([`Mac::on_tx_frame_updated`], `PsduRxInfo::ack_security`) |
+//! | CSL sampling | no `RECEIVE_TIMING` | the MAC turns the receiver on/off per period; with it one [`RadioAction::ReceiveAt`] per period and [`RadioAction::SetCsl`] (schedule for the radio's enh-ACKs) |
+//! | CSL IE phase | no `TRANSMIT_SEC` | set per attempt from the radio clock, frame re-secured (new frame counter, same sequence number) |
+//! | Timed transmit (CSL tx) | no `TRANSMIT_TIMING` | the MAC waits for `window - (CCA + 40 us + SHR)` by the radio clock; else [`PsduTxInfo::tx_at_us`](opentrust_platform::radio::PsduTxInfo::tx_at_us) |
+//! | Enh-ACK IEs (CSL, link metrics) | no `RX_ACK` (software ACKs) | built by the MAC; hardware ACKs know only the CSL schedule |
 //! | Energy scan | never | without `ENERGY_SCAN`: [`Error::NotImplemented`](opentrust_core::Error) (no RSSI read in the trait) |
-//! | CSL, timed TX, enh-ACK IEs | — | out of scope (later wave) |
+//! //!
+//! # CSL
+//!
+//! *Receiver* (SSED): [`Mac::set_csl`] configures period (units of 10
+//! symbols), channel (0 = PAN channel) and the parent. The MAC schedules the
+//! sample windows ([`window_edges`] widens them with the time since the last
+//! synchronization, the radio's [`csl_accuracy_ppm`] / [`csl_uncertainty`]
+//! and the parent's [`CslAccuracy`]), updates the CSL IE of frames that carry
+//! one (phase of the next sample, [`csl_phase`]) on *every* attempt and
+//! re-secures them (Thread §3.2.6.3.7), and adds the CSL IE to the enhanced
+//! ACKs for the parent. Synchronization is tracked from ACKs of frames with a
+//! CSL IE and from frames acknowledged with a secured enhanced ACK.
+//!
+//! *Transmitter* (parent): [`Mac::csl_add_child`] tracks a child. CSL IEs in
+//! its secured 2015 frames and ACKs give period, phase and the radio
+//! timestamp ([`CslChild`]); indirect frames queued for a synchronized child
+//! go out at its next sample window ([`next_tx_window`]), requested
+//! [`CSL_REQUEST_AHEAD`] (+ radio bus time) before it, dropped to the next
+//! window if the MAC is late by more than [`FRAME_PREPARATION_GUARD`]. Four
+//! consecutive NO_ACKs end the synchronization ([`Event::CslChildOutOfSync`]);
+//! the frame then waits for the child's data poll. All CSL timing uses the
+//! radio clock ([`RadioCaps::clock`](opentrust_platform::radio::RadioCaps::clock)).
+//!
+//! [`csl_accuracy_ppm`]: opentrust_platform::radio::RadioCaps::csl_accuracy_ppm
+//! [`csl_uncertainty`]: opentrust_platform::radio::RadioCaps::csl_uncertainty
+//!
+//! # Link Metrics probing
+//!
+//! [`Mac::configure_enh_ack_probing`] (subject) and
+//! [`Mac::track_enh_ack_probing`] (initiator) are the calls MLE makes for the
+//! Link Metrics Management messages; see the [`link_metrics`](self) helpers
+//! ([`encode_enh_ack_data`], [`decode_enh_ack_data`]).
+//!
+//! # Capacities
+//!
+//! `Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ, CSLQ>` has const generics for the
+//! direct queue, indirect queue, event queue, pending data polls, short ->
+//! extended address map and CSL children, defaulting to the `*_LEN`
+//! constants. [`Mac::new`] and [`MacDriver::init`] use the defaults;
+//! [`Mac::with_capacities`] and [`MacDriver::new`] take others.
 //!
 //! # Not here (upper layers)
 //!
@@ -108,7 +153,7 @@
 //! - Promiscuous mode delivers every frame raw instead of feeding pcap.
 //! - No broadcast retransmission (`kTxNumBcast`, default 1 in OpenThread
 //!   anyway), no "stay awake between fragments" sleep delay, no MAC
-//!   allow/deny filter, no multi-radio / TREL / CSL / wake-up frames.
+//!   allow/deny filter, no multi-radio / TREL / wake-up frames.
 //! - Frames with a short destination equal to an invalid (0xfffe) own short
 //!   address are not accepted.
 //! - The upper layer hands over complete frames; the MAC overwrites the
