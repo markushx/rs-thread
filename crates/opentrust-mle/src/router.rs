@@ -1209,6 +1209,26 @@ impl<const C: usize> Mle<C> {
             .is_some_and(|r| set_next_hop_and_cost(r, next, cost))
     }
 
+    /// Resolve a 2-hop routing loop (OT `MeshForwarder::ResolveRoutingLoops`):
+    /// a frame for `dest` arrived from `from`, which is the next hop towards
+    /// `dest`. The route to `dest` is invalidated and the Advertisement
+    /// interval reset so that the routers converge again.
+    pub fn resolve_routing_loop<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: Instant,
+        from: Rloc16,
+        dest: Rloc16,
+    ) {
+        if self.next_hop_and_path_cost(dest).0 != Some(from) || self.has_rloc16(dest) {
+            return;
+        }
+        if self.invalidate_route(dest.router_id()) {
+            self.table_changed(env, now);
+        }
+        self.reset_advertise_interval(env, now);
+    }
+
     pub(crate) fn invalidate_route(&mut self, id: u8) -> bool {
         self.rtr
             .table

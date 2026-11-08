@@ -190,6 +190,7 @@ fn duplicate_address_is_resolved_with_address_error() {
     let mut m = mesh_with_child();
     // The child really has the address on its interface.
     m.tmf[2]
+        .ip6
         .netif
         .add_unicast(UnicastAddress::manual(GUA))
         .unwrap();
@@ -224,15 +225,16 @@ fn duplicate_address_is_resolved_with_address_error() {
     );
     assert_eq!(m.tmf[2].rx[&Uri::AddressError.id()], 1);
     assert_eq!(m.tmf[2].errors_seen, 1);
-    assert!(!m.tmf[2].netif.has_unicast(&GUA));
+    assert!(!m.tmf[2].ip6.netif.has_unicast(&GUA));
     // The child keeps its ML-EID.
-    assert!(m.tmf[2].netif.has_unicast(&m.ml_eid(2)));
+    assert!(m.tmf[2].ip6.netif.has_unicast(&m.ml_eid(2)));
 }
 
 #[test]
 fn address_error_with_own_ml_eid_is_ignored() {
     let mut m = mesh_with_child();
     m.tmf[2]
+        .ip6
         .netif
         .add_unicast(UnicastAddress::manual(GUA))
         .unwrap();
@@ -241,7 +243,7 @@ fn address_error_with_own_ml_eid_is_ignored() {
     let n = build_address_error(&GUA, &ipv6::iid(&m.ml_eid(2)), &mut buf).unwrap();
     m.raw_request(0, 2, "a/ae", Type::Con, Code::POST, &buf[..n]);
     assert_eq!(m.tmf[2].errors_seen, 0);
-    assert!(m.tmf[2].netif.has_unicast(&GUA));
+    assert!(m.tmf[2].ip6.netif.has_unicast(&GUA));
     // A router ignores an Address Error that is not about its children.
     let n = build_address_error(&GUA, &Iid([0x55; 8]), &mut buf).unwrap();
     let (code, _) = m

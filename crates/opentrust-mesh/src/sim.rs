@@ -28,11 +28,18 @@ use opentrust_net::netif::Netif;
 use opentrust_net::resolver::{AddressResolver, Resolution, ResolverEnv, ResolverEvent};
 use opentrust_net::udp::UdpMeta;
 
+use opentrust_lowpan::iphc::NoContexts;
+use opentrust_mac::frame::Address;
+use opentrust_net::ip6::Ip6;
+
 use crate::address::{self, AddressAction};
+use crate::forwarder::{
+    DropReason, FrameSink, MacDest, MeshForwarder, NetworkData, Routing, Rx, SendResult, TxFrame,
+};
 use crate::router_id::{self, RouterIdOutbox};
 
 pub type TmfAgent = Agent<4, 16, 4, 256>;
-pub type SimNetif = Netif<8, 4>;
+pub type SimNetif = Netif<8, 8>;
 
 pub struct Datagram {
     pub src: Option<Ipv6Addr>,
@@ -115,7 +122,7 @@ pub struct TmfNode {
     pub outbox: RouterIdOutbox,
     pub sink: Sink,
     pub rng: XRng,
-    pub netif: SimNetif,
+    pub ip6: Ip6,
     pub resolver: AddressResolver<8>,
     /// Requests received, by URI id.
     pub rx: std::collections::BTreeMap<u16, u32>,
@@ -123,6 +130,46 @@ pub struct TmfNode {
     pub resolved: std::vec::Vec<ResolverEvent>,
     /// Addresses removed after an Address Error.
     pub errors_seen: u32,
+    pub fwd: MeshForwarder<2, 2>,
+    pub fsink: FwdSink,
+    /// IPv6 datagrams delivered to this node by the forwarder.
+    pub delivered: std::vec::Vec<std::vec::Vec<u8>>,
+    pub dropped: std::vec::Vec<DropReason>,
+    /// Mesh frames forwarded to a next hop.
+    pub forwarded: u32,
+}
+
+/// Network Data of the simulator: one optional on-mesh prefix.
+#[derive(Default)]
+pub struct SimNd {
+    pub on_mesh: Option<Prefix64>,
+}
+
+impl NetworkData for SimNd {
+    fn is_on_mesh(&self, addr: &Ipv6Addr) -> bool {
+        self.on_mesh.is_some_and(|p| p.contains(addr))
+    }
+}
+
+/// Frames and notifications of the forwarder.
+#[derive(Default)]
+pub struct FwdSink {
+    pub frames: std::vec::Vec<(MacDest, std::vec::Vec<u8>, bool)>,
+    pub unreachable: std::vec::Vec<std::vec::Vec<u8>>,
+    pub loops: std::vec::Vec<(Rloc16, Rloc16)>,
+}
+
+impl FrameSink for FwdSink {
+    fn transmit(&mut self, f: &TxFrame<'_>) -> Result<()> {
+        self.frames.push((f.dst, f.payload.to_vec(), f.indirect));
+        Ok(())
+    }
+    fn dest_unreachable(&mut self, invoking: &[u8]) {
+        self.unreachable.push(invoking.to_vec());
+    }
+    fn routing_loop(&mut self, from: Rloc16, dest: Rloc16) {
+        self.loops.push((from, dest));
+    }
 }
 
 pub struct MeshSim {
@@ -130,6 +177,9 @@ pub struct MeshSim {
     pub tmf: std::vec::Vec<TmfNode>,
     /// Drop datagrams from node `a` to node `b` (indices), for tests.
     pub blocked: std::vec::Vec<(usize, usize)>,
+    pub nd: SimNd,
+    /// Every frame on the air: sender, receiver, payload.
+    pub frame_log: std::vec::Vec<(usize, usize, std::vec::Vec<u8>)>,
     next_mid: u16,
 }
 
@@ -211,7 +261,12 @@ impl MeshSim {
                     outbox: RouterIdOutbox::new(),
                     sink: Sink::default(),
                     rng: XRng(0x1357_9bdf ^ u64::from(i + 1)),
-                    netif: SimNetif::new(),
+                    ip6: Ip6::new(),
+                    fwd: MeshForwarder::new(7),
+                    fsink: FwdSink::default(),
+                    delivered: std::vec::Vec::new(),
+                    dropped: std::vec::Vec::new(),
+                    forwarded: 0,
                     resolver: AddressResolver::new(),
                     rx: Default::default(),
                     resolved: std::vec::Vec::new(),
@@ -223,6 +278,8 @@ impl MeshSim {
             sim,
             tmf,
             blocked: std::vec::Vec::new(),
+            nd: SimNd::default(),
+            frame_log: std::vec::Vec::new(),
             next_mid: 0x7000,
         }
     }
@@ -248,7 +305,7 @@ impl MeshSim {
     /// Bring the interface of node `i` in line with the MLE state.
     fn sync_netif(&mut self, i: usize) {
         let n = &self.sim.nodes[i];
-        let nif = &mut self.tmf[i].netif;
+        let nif = &mut self.tmf[i].ip6.netif;
         let _ = nif.set_mesh_local_prefix(MLP);
         let _ = nif.set_mesh_local_eid(&ipv6::iid(&n.env.ml_eid()));
         let r = n.mle.rloc16();
@@ -277,6 +334,7 @@ impl MeshSim {
     }
 
     fn handle_events(&mut self, i: usize, events: std::vec::Vec<ResolverEvent>) {
+        let mut finished = std::vec::Vec::new();
         let now = self.sim.now;
         let n = &self.sim.nodes[i];
         let t = &mut self.tmf[i];
@@ -292,7 +350,240 @@ impl MeshSim {
                 &n.env,
             ) {
                 t.resolved.push(p);
+                finished.push(p);
             }
+        }
+        for p in finished {
+            self.resolution_finished(i, p);
+        }
+    }
+
+    fn resolution_finished(&mut self, i: usize, p: ResolverEvent) {
+        let (eid, ok) = match p {
+            ResolverEvent::Resolved { eid } => (eid, true),
+            ResolverEvent::ResolutionFailed { eid } => (eid, false),
+            _ => return,
+        };
+        let now = self.sim.now;
+        let mut events = std::vec::Vec::new();
+        {
+            let n = &self.sim.nodes[i];
+            let t = &mut self.tmf[i];
+            let routing = Routing {
+                mle: &n.mle,
+                netif: &t.ip6.netif,
+                contexts: &NoContexts,
+                nd: &self.nd,
+                ext: n.env.ext,
+            };
+            t.fwd.handle_resolved(
+                now,
+                &eid,
+                ok,
+                &routing,
+                &mut t.resolver,
+                &mut |e| events.push(e),
+                &mut t.fsink,
+                &mut |_, _| {},
+            );
+        }
+        self.handle_events(i, events);
+    }
+
+    /// Build the destination unreachable errors the forwarder asked for
+    /// and send them.
+    fn flush_unreachable(&mut self, i: usize) {
+        let now = self.sim.now;
+        let pending = core::mem::take(&mut self.tmf[i].fsink.unreachable);
+        for inv in pending {
+            let mut out = [0u8; 256];
+            let t = &mut self.tmf[i];
+            if let Ok(n) = t.ip6.build_error(
+                now,
+                &inv,
+                (
+                    opentrust_net::icmp6::TYPE_DST_UNREACH,
+                    opentrust_net::icmp6::CODE_DST_UNREACH_NO_ROUTE,
+                    0,
+                ),
+                &mut out,
+            ) {
+                self.send_ip6(i, &out[..n]);
+            }
+        }
+    }
+
+    /// Hand an IPv6 datagram to node `i`'s forwarder.
+    pub fn send_ip6(&mut self, i: usize, datagram: &[u8]) -> SendResult {
+        self.sync_netif(i);
+        let now = self.sim.now;
+        let mut events = std::vec::Vec::new();
+        let r = {
+            let n = &self.sim.nodes[i];
+            let t = &mut self.tmf[i];
+            let routing = Routing {
+                mle: &n.mle,
+                netif: &t.ip6.netif,
+                contexts: &NoContexts,
+                nd: &self.nd,
+                ext: n.env.ext,
+            };
+            t.fwd.send_datagram(
+                now,
+                datagram,
+                true,
+                &routing,
+                &mut t.resolver,
+                &mut |e| events.push(e),
+                &mut t.fsink,
+            )
+        };
+        if let SendResult::Dropped(d) = r {
+            self.tmf[i].dropped.push(d);
+        }
+        self.handle_events(i, events);
+        self.pump();
+        r
+    }
+
+    /// A UDP datagram from node `from` (source: its ML-EID) to `dst`.
+    pub fn send_udp(&mut self, from: usize, dst: Ipv6Addr, payload: &[u8]) -> SendResult {
+        use opentrust_lowpan::ip6::{Ipv6Header, UdpHeader};
+        let src = self.ml_eid(from);
+        let mut buf = [0u8; 256];
+        let mut h = Ipv6Header::new(17, 64, src, dst);
+        h.payload_len = (UdpHeader::LEN + payload.len()) as u16;
+        h.write(&mut buf).unwrap();
+        let udp = UdpHeader {
+            src_port: 1234,
+            dst_port: 5678,
+            length: h.payload_len,
+            checksum: 0xbeef,
+        };
+        udp.write(&mut buf[40..]).unwrap();
+        buf[48..48 + payload.len()].copy_from_slice(payload);
+        self.send_ip6(from, &buf[..48 + payload.len()])
+    }
+
+    /// Deliver the frames of all forwarders over the link matrix.
+    fn pump_frames(&mut self) -> bool {
+        let mut moved = false;
+        for i in 0..self.tmf.len() {
+            let out = core::mem::take(&mut self.tmf[i].fsink.frames);
+            for (dst, payload, indirect) in out {
+                moved = true;
+                let _ = indirect;
+                for j in 0..self.tmf.len() {
+                    if j == i || self.sim.link(i, j).is_none() || self.blocked.contains(&(i, j)) {
+                        continue;
+                    }
+                    let for_j = match dst {
+                        MacDest::Broadcast => true,
+                        MacDest::Short(r) => self.sim.nodes[j].mle.rloc16() == r,
+                        MacDest::Extended(e) => self.sim.nodes[j].env.ext == e,
+                    };
+                    if for_j {
+                        self.frame_log.push((i, j, payload.clone()));
+                        self.deliver_frame(i, j, dst, &payload);
+                    }
+                }
+            }
+            if !self.tmf[i].fsink.unreachable.is_empty() {
+                moved = true;
+                self.flush_unreachable(i);
+            }
+            let loops = core::mem::take(&mut self.tmf[i].fsink.loops);
+            for (from, dest) in loops {
+                let now = self.sim.now;
+                let n = &mut self.sim.nodes[i];
+                n.mle.resolve_routing_loop(&mut n.env, now, from, dest);
+            }
+        }
+        moved
+    }
+
+    /// Deliver a hand-made frame as if `from` had sent it to `to`.
+    pub fn inject_frame(
+        &mut self,
+        from: usize,
+        to: usize,
+        dst: MacDest,
+        payload: &[u8],
+        link_security: bool,
+    ) {
+        self.deliver_frame_sec(from, to, dst, payload, link_security);
+        self.pump();
+    }
+
+    fn deliver_frame(&mut self, from: usize, to: usize, dst: MacDest, payload: &[u8]) {
+        self.deliver_frame_sec(from, to, dst, payload, true);
+    }
+
+    fn deliver_frame_sec(
+        &mut self,
+        from: usize,
+        to: usize,
+        dst: MacDest,
+        payload: &[u8],
+        link_security: bool,
+    ) {
+        self.sync_netif(to);
+        let now = self.sim.now;
+        let src = Address::Short(self.sim.nodes[from].mle.rloc16().into());
+        let mac_dst = match dst {
+            MacDest::Short(r) => Address::Short(r.into()),
+            MacDest::Extended(e) => Address::Extended(e),
+            MacDest::Broadcast => Address::Short(opentrust_core::types::ShortAddress::BROADCAST),
+        };
+        let mut events = std::vec::Vec::new();
+        let mut forward = None;
+        {
+            let n = &self.sim.nodes[to];
+            let TmfNode {
+                fwd,
+                resolver,
+                ip6,
+                fsink,
+                delivered,
+                dropped,
+                forwarded,
+                ..
+            } = &mut self.tmf[to];
+            let routing = Routing {
+                mle: &n.mle,
+                netif: &ip6.netif,
+                contexts: &NoContexts,
+                nd: &self.nd,
+                ext: n.env.ext,
+            };
+            match fwd.receive_frame(
+                now,
+                payload,
+                src,
+                mac_dst,
+                link_security,
+                &routing,
+                resolver,
+                &mut |e| events.push(e),
+                fsink,
+            ) {
+                Rx::Datagram(d) => {
+                    let dst = opentrust_lowpan::ip6::Ipv6Header::parse(d).map(|h| h.dst);
+                    match dst {
+                        Ok(a) if !a.is_multicast() && !ip6.netif.has_unicast(&a) => {
+                            forward = Some(d.to_vec());
+                        }
+                        _ => delivered.push(d.to_vec()),
+                    }
+                }
+                Rx::Dropped(r) => dropped.push(r),
+                Rx::Forwarded => *forwarded += 1,
+                Rx::Consumed => {}
+            }
+        }
+        self.handle_events(to, events);
+        if let Some(f) = forward {
+            self.send_ip6(to, &f);
         }
     }
 
@@ -364,6 +655,7 @@ impl MeshSim {
                     self.deliver(dst, src, &d);
                 }
             }
+            moved |= self.pump_frames();
             if !moved {
                 return;
             }
@@ -389,7 +681,7 @@ impl MeshSim {
             mle: &mut n.mle,
             now,
             rx: &mut t.rx,
-            netif: &mut t.netif,
+            netif: &mut t.ip6.netif,
             resolver: &mut t.resolver,
             actions: std::vec::Vec::new(),
             events: std::vec::Vec::new(),
