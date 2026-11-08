@@ -78,11 +78,61 @@ impl DeviceProperties {
     }
 }
 
+/// The Security Policy fields that decide router eligibility (Thread 1.4.1
+/// section 8.10.1.15; OT `Mle::IsRouterEligible`), set from the Active
+/// Operational Dataset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct RoutingPolicy {
+    /// `R` bit: routers enabled.
+    pub routers_enabled: bool,
+    /// `CCM` bit: commercial commissioning mode is on.
+    pub commercial_commissioning: bool,
+    /// `NCR` bit: non-CCM routers are allowed in a CCM network.
+    pub non_ccm_routers: bool,
+    /// `RV`: with `routers_enabled` clear, only devices of Thread version
+    /// at least `version_threshold_for_routing + 3` may be routers.
+    pub version_threshold_for_routing: u8,
+}
+
+impl RoutingPolicy {
+    /// Offset added to the version threshold (OT
+    /// `SecurityPolicy::kVersionThresholdOffsetVersion`).
+    pub const VERSION_THRESHOLD_OFFSET: u16 = 3;
+
+    /// Security Policy defaults: routers enabled, no CCM.
+    pub const fn new() -> Self {
+        Self {
+            routers_enabled: true,
+            commercial_commissioning: false,
+            non_ccm_routers: false,
+            version_threshold_for_routing: 0,
+        }
+    }
+
+    /// May a device of Thread version `version` be a router?
+    pub const fn allows_routers(&self, version: u16) -> bool {
+        if self.commercial_commissioning && !self.non_ccm_routers {
+            return false;
+        }
+        self.routers_enabled
+            || self.version_threshold_for_routing as u16 + Self::VERSION_THRESHOLD_OFFSET <= version
+    }
+}
+
+impl Default for RoutingPolicy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Router role configuration (part of [`MleConfig`](crate::MleConfig)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RouterConfig {
     /// The device may become a router / leader (OT `mRouterEligible`).
     pub eligible: bool,
+    /// Security Policy restrictions on the router role.
+    pub policy: RoutingPolicy,
     /// Weight announced when this device becomes leader.
     pub leader_weight: u8,
     /// A REED upgrades while fewer than this many routers are active.
@@ -101,6 +151,7 @@ impl RouterConfig {
     pub const fn new() -> Self {
         Self {
             eligible: true,
+            policy: RoutingPolicy::new(),
             leader_weight: DEFAULT_LEADER_WEIGHT,
             upgrade_threshold: ROUTER_UPGRADE_THRESHOLD,
             downgrade_threshold: ROUTER_DOWNGRADE_THRESHOLD,
@@ -120,6 +171,25 @@ impl Default for RouterConfig {
 mod tests {
     use super::*;
     use PowerSupply::{Battery, External, ExternalStable, ExternalUnstable};
+
+    #[test]
+    fn routing_policy_rules() {
+        let mut p = RoutingPolicy::new();
+        assert!(p.allows_routers(5));
+        // Routers disabled: only versions >= threshold + 3.
+        p.routers_enabled = false;
+        assert!(p.allows_routers(5)); // threshold 0 -> version 3
+        p.version_threshold_for_routing = 3;
+        assert!(!p.allows_routers(5)); // needs version 6
+        p.version_threshold_for_routing = 2;
+        assert!(p.allows_routers(5));
+        // CCM network: only with the non-CCM routers bit.
+        let mut p = RoutingPolicy::new();
+        p.commercial_commissioning = true;
+        assert!(!p.allows_routers(5));
+        p.non_ccm_routers = true;
+        assert!(p.allows_routers(5));
+    }
 
     fn w(ps: PowerSupply, br: bool, ccm: bool, unstable: bool, adj: i8) -> u8 {
         DeviceProperties {

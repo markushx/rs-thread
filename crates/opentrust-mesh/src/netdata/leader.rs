@@ -743,6 +743,57 @@ impl<const N: usize> Leader<N> {
             .min()
     }
 
+    /// Increment the version (OT `IncrementVersion`).
+    pub fn increment_version(&mut self) -> Changed {
+        let ch = Changed {
+            any: true,
+            stable: false,
+        };
+        self.bump(ch);
+        ch
+    }
+
+    /// Increment both versions (OT `IncrementVersionAndStableVersion`), as
+    /// done when a dataset changes.
+    pub fn increment_version_and_stable(&mut self) -> Changed {
+        let ch = Changed {
+            any: true,
+            stable: true,
+        };
+        self.bump(ch);
+        ch
+    }
+
+    /// Replace the Commissioning Data TLV with `value` (an empty `value`
+    /// removes it) and increment the version (OT `SetCommissioningData`).
+    /// The TLV is not stable and is appended last. [`Error::NoBufs`] if it
+    /// does not fit (nothing is changed).
+    pub fn set_commissioning_data(&mut self, value: &[u8]) -> Result<Changed> {
+        let mut scratch = [0u8; N];
+        let mut w = Writer::new(&mut scratch);
+        for t in RawIter::new(self.data.as_bytes()) {
+            if t.ty != ty::COMMISSIONING {
+                t.write(&mut w)?;
+            }
+        }
+        if !value.is_empty() {
+            super::tlv::RawTlv {
+                ty: ty::COMMISSIONING,
+                stable: false,
+                value,
+            }
+            .write(&mut w)?;
+        }
+        let n = w.written().len();
+        self.data.set(&scratch[..n])?;
+        Ok(self.increment_version())
+    }
+
+    /// The Commissioning Data TLV value (OT `GetCommissioningData`).
+    pub fn commissioning_data(&self) -> Option<&[u8]> {
+        self.data.view().commissioning_data()
+    }
+
     /// Context IDs currently reserved (in use or waiting for reuse), for
     /// diagnostics.
     pub fn allocated_context_ids(&self) -> impl Iterator<Item = u8> + '_ {

@@ -26,14 +26,13 @@ opentrust-mle = { workspace = true }
 opentrust-net = { workspace = true }
 opentrust-mesh = { workspace = true }
 heapless = { workspace = true }
+rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [dev-dependencies]
 opentrust-mle = { workspace = true, features = ["test-support"] }
-opentrust-mesh = { workspace = true, features = ["test-support"] }
 opentrust-platform = { workspace = true }
-rand_core = { workspace = true }
 
 [lints]
 workspace = true

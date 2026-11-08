@@ -3,6 +3,8 @@
 
 #![allow(missing_docs, missing_debug_implementations, dead_code)]
 
+extern crate std;
+
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Vec;
@@ -26,6 +28,21 @@ pub struct Out {
     pub src: Ipv6Addr,
     pub dst: Ipv6Addr,
     pub data: Vec<u8, 1100>,
+}
+
+/// Dataset behavior plugged into [`TestEnv`] by crates that own the dataset
+/// logic (`opentrust-meshcop` tests).
+pub trait DatasetBridge {
+    fn active_timestamp(&self) -> Option<Timestamp>;
+    fn pending_timestamp(&self) -> Option<Timestamp>;
+    /// Dataset TLVs without the timestamp TLV.
+    fn dataset(&self, active: bool, now: Instant, out: &mut [u8]) -> Result<usize>;
+    fn received(
+        &mut self,
+        now: Instant,
+        active: Option<(Timestamp, Option<&[u8]>)>,
+        pending: Option<(Timestamp, Option<&[u8]>)>,
+    );
 }
 
 pub struct TestEnv {
@@ -53,6 +70,7 @@ pub struct TestEnv {
     pub released: Vec<Rloc16, 4>,
     /// `request_router_id` fails (no TMF available).
     pub solicit_fails: bool,
+    pub dataset_bridge: Option<std::boxed::Box<dyn DatasetBridge>>,
 }
 
 pub const MLP: Prefix64 = Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 1]);
@@ -89,6 +107,7 @@ impl TestEnv {
             solicits: Vec::new(),
             released: Vec::new(),
             solicit_fails: false,
+            dataset_bridge: None,
         }
     }
 
@@ -221,7 +240,32 @@ impl MleEnv for TestEnv {
         self.nd = Vec::from_slice(data).unwrap();
     }
     fn active_timestamp(&self) -> Option<Timestamp> {
-        None
+        self.dataset_bridge.as_ref()?.active_timestamp()
+    }
+    fn pending_timestamp(&self) -> Option<Timestamp> {
+        self.dataset_bridge.as_ref()?.pending_timestamp()
+    }
+    fn active_dataset(&self, now: Instant, out: &mut [u8]) -> Result<usize> {
+        match &self.dataset_bridge {
+            Some(b) => b.dataset(true, now, out),
+            None => Ok(0),
+        }
+    }
+    fn pending_dataset(&self, now: Instant, out: &mut [u8]) -> Result<usize> {
+        match &self.dataset_bridge {
+            Some(b) => b.dataset(false, now, out),
+            None => Ok(0),
+        }
+    }
+    fn dataset_received(
+        &mut self,
+        now: Instant,
+        active: Option<(Timestamp, Option<&[u8]>)>,
+        pending: Option<(Timestamp, Option<&[u8]>)>,
+    ) {
+        if let Some(b) = &mut self.dataset_bridge {
+            b.received(now, active, pending);
+        }
     }
     fn apply_restored_identity(&mut self, ext: &ExtAddress, ml_iid: &Iid) {
         self.ext = *ext;

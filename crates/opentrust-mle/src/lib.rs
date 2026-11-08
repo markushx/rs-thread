@@ -51,7 +51,7 @@ pub mod tlv;
 
 pub use env::{MleEnv, MleEvent, Role};
 pub use mle::{Mle, MleConfig};
-pub use router_config::{DeviceProperties, PowerSupply, RouterConfig};
+pub use router_config::{DeviceProperties, PowerSupply, RouterConfig, RoutingPolicy};
 
 #[cfg(all(test, feature = "ftd"))]
 mod advert_tests;

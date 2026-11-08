@@ -675,7 +675,7 @@ impl<const C: usize> Mle<C> {
             Err(Error::NotFound) => None,
             Err(e) => return Err(e),
         };
-        env.dataset_received(active, pending);
+        env.dataset_received(now, active, pending);
 
         let cand = self.attach.candidate.take().ok_or(Error::InvalidState)?;
         // OT SetStateDetached(): leaves the old attachment.

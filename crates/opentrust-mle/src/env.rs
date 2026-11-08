@@ -5,7 +5,7 @@
 //!
 //! The MLE core ([`Mle`](crate::Mle)) is *sans-IO* and owns only MLE state:
 //! role, attach state machine, parent / candidate / children, the outgoing
-//! MLE frame counter, timers (as [`Instant`](opentrust_core::time::Instant) deadlines). Everything that is
+//! MLE frame counter, timers (as [`Instant`] deadlines). Everything that is
 //! owned elsewhere is reached through the [`MleEnv`] trait, which the caller
 //! implements on a small struct borrowing the pieces (`&mut KeyManager`,
 //! `&mut Mac`, `&mut Netif`, the UDP sink, the settings store, an RNG). The
@@ -33,7 +33,7 @@ use core::net::Ipv6Addr;
 use opentrust_core::Result;
 use opentrust_core::crypto::CryptoBackend;
 use opentrust_core::settings::{ChildInfo, NetworkInfo, ParentInfo};
-use opentrust_core::time::Duration;
+use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{ExtAddress, Iid, Prefix64, Rloc16};
 use opentrust_mac::security::KeyManager;
 
@@ -289,7 +289,8 @@ pub trait MleEnv {
     /// Store Network Data received from the parent, together with the
     /// Leader Data that versions it (parsing is not implemented yet).
     fn set_network_data(&mut self, _leader: &LeaderData, _data: &[u8]) {}
-    /// Timestamp of the local Active Operational Dataset.
+    /// Timestamp of the Active Operational Dataset of the network (OT
+    /// `ActiveDatasetManager::GetTimestamp`).
     fn active_timestamp(&self) -> Option<Timestamp> {
         None
     }
@@ -298,16 +299,17 @@ pub trait MleEnv {
         None
     }
     /// The Active Operational Dataset TLVs for a Child ID Response.
-    fn active_dataset(&self, _out: &mut [u8]) -> Result<usize> {
+    fn active_dataset(&self, _now: Instant, _out: &mut [u8]) -> Result<usize> {
         Ok(0)
     }
     /// The Pending Operational Dataset TLVs for a Child ID Response.
-    fn pending_dataset(&self, _out: &mut [u8]) -> Result<usize> {
+    fn pending_dataset(&self, _now: Instant, _out: &mut [u8]) -> Result<usize> {
         Ok(0)
     }
     /// Datasets received in a Child ID Response / Data Response.
     fn dataset_received(
         &mut self,
+        _now: Instant,
         _active: Option<(Timestamp, Option<&[u8]>)>,
         _pending: Option<(Timestamp, Option<&[u8]>)>,
     ) {

@@ -310,6 +310,16 @@ impl SecurityPolicy {
         Ok(p)
     }
 
+    /// The fields that decide router eligibility.
+    pub fn routing_policy(&self) -> opentrust_mle::RoutingPolicy {
+        opentrust_mle::RoutingPolicy {
+            routers_enabled: self.routers,
+            commercial_commissioning: self.commercial_commissioning,
+            non_ccm_routers: self.non_ccm_routers,
+            version_threshold_for_routing: self.version_threshold_for_routing,
+        }
+    }
+
     /// Encode as TLV value.
     pub fn to_bytes(&self) -> [u8; Self::ENCODED_LEN] {
         let r = self.rotation_time.to_be_bytes();

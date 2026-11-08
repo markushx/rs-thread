@@ -9,16 +9,26 @@
 //!   Request / Response.
 //! - [`timestamp`]: Active / Pending Timestamp ordering (OT
 //!   `MeshCoP::Timestamp::Compare`), Orphan Announce.
+//! - [`dataset`]: the Operational Dataset TLV buffer.
+//! - [`manager`]: Active / Pending dataset management, delay timer.
+//! - [`mgmt`]: the `/c/ag` `/c/as` `/c/pg` `/c/ps` `/c/ar` TMF handlers and clients.
 //! - [`steering`]: the Steering Data bloom filter, Joiner ID derivation and
 //!   Joiner Discerner.
 
 #[cfg(test)]
 extern crate std;
 
+pub mod dataset;
+pub mod manager;
+pub mod mgmt;
 pub mod steering;
 pub mod timestamp;
 pub mod tlv;
 
+#[cfg(test)]
+mod dataset_tests;
+#[cfg(test)]
+mod dataset_vector_tests;
 #[cfg(test)]
 mod steering_tests;
 #[cfg(test)]
