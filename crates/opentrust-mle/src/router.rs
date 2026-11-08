@@ -128,6 +128,9 @@ pub(crate) struct RouterCtx {
     /// Partition we were last router in (OT `mPreviousPartitionIdRouter`).
     pub partition_id_router: u32,
     pub previous_partition_timeout: u8,
+    /// Seconds left for the alternate RLOC16 (0: none, OT
+    /// `mAlternateRloc16Timeout`).
+    pub alternate_rloc16_timeout: u8,
     pub previous_partition_id_sequence: u8,
     pub delayed: Vec<crate::router_link::Delayed, { crate::router_link::DELAYED_CAPACITY }>,
     pub restorer: crate::router_link::Restorer,
@@ -151,6 +154,7 @@ impl RouterCtx {
             solicit_pending: false,
             partition_id_router: 0,
             previous_partition_timeout: 0,
+            alternate_rloc16_timeout: 0,
             previous_partition_id_sequence: 0,
             delayed: Vec::new(),
             restorer: crate::router_link::Restorer::new(),
@@ -173,6 +177,10 @@ fn set_next_hop_and_cost(r: &mut Router, next_hop: Option<u8>, cost: u8) -> bool
 fn set_next_hop_invalid(r: &mut Router) -> bool {
     set_next_hop_and_cost(r, None, 0)
 }
+
+/// Time the former child RLOC16 stays valid after a REED became a router
+/// (OT `kAlternateRloc16Timeout`).
+pub const ALTERNATE_RLOC16_TIMEOUT_SECS: u8 = 8;
 
 impl<const C: usize> Mle<C> {
     // ------------------------------------------------------------ accessors
@@ -859,6 +867,8 @@ impl<const C: usize> Mle<C> {
                 }
                 let parent = self.parent.clone();
                 let id = rloc16.router_id();
+                // Keep answering to the child RLOC16 for a while.
+                self.set_alternate_rloc16(env, self.rloc16);
                 self.set_router_id(id);
                 self.set_state_router_or_leader(env, now, Role::Router, rloc16);
                 self.clear_router_neighbors(env);
@@ -1048,6 +1058,24 @@ impl<const C: usize> Mle<C> {
 
     // ------------------------------------------------------------ REED / role transition timer
 
+    /// OT `SetAlternateRloc16`: also receive for `rloc16` for
+    /// [`ALTERNATE_RLOC16_TIMEOUT_SECS`].
+    fn set_alternate_rloc16<E: MleEnv>(&mut self, env: &mut E, rloc16: Rloc16) {
+        if rloc16 == Rloc16::INVALID {
+            return;
+        }
+        env.set_alternate_short_address(Some(rloc16));
+        self.rtr.alternate_rloc16_timeout = ALTERNATE_RLOC16_TIMEOUT_SECS;
+    }
+
+    /// OT `ClearAlternateRloc16`.
+    pub(crate) fn clear_alternate_rloc16<E: MleEnv>(&mut self, env: &mut E) {
+        if self.rtr.alternate_rloc16_timeout != 0 {
+            env.set_alternate_short_address(None);
+        }
+        self.rtr.alternate_rloc16_timeout = 0;
+    }
+
     /// OT `HandleChildStart`: an FTD became a child.
     pub(crate) fn handle_child_start<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
         if !self.is_full_thread_device() {
@@ -1104,6 +1132,7 @@ impl<const C: usize> Mle<C> {
     /// Forget the router state when leaving the attached state.
     pub(crate) fn router_reset_on_detach<E: MleEnv>(&mut self, env: &mut E) {
         self.clear_router_neighbors(env);
+        self.clear_alternate_rloc16(env);
         self.rtr.tick = None;
         self.rtr.transition = 0;
         self.rtr.solicit_pending = false;
@@ -1135,6 +1164,12 @@ impl<const C: usize> Mle<C> {
         self.rtr.tick = Some(now.saturating_add(Duration::from_secs(1)));
         if self.rtr.previous_partition_timeout > 0 {
             self.rtr.previous_partition_timeout -= 1;
+        }
+        if self.rtr.alternate_rloc16_timeout > 0 {
+            self.rtr.alternate_rloc16_timeout -= 1;
+            if self.rtr.alternate_rloc16_timeout == 0 {
+                env.set_alternate_short_address(None);
+            }
         }
         let mut expired = false;
         if self.rtr.transition > 0 {

@@ -307,6 +307,36 @@ impl<const C: usize> Mle<C> {
         }
     }
 
+    /// OT `UpdateEidRlocCacheAndStaleChild`, second half: a mesh-forwarded
+    /// datagram from `src` arrived with mesh source `mesh_src`. If `src` is
+    /// the address of one of our minimal (non-FTD) children but `mesh_src`
+    /// belongs to another router, the child has moved to a new parent and is
+    /// removed. Returns whether a child was removed. The forwarder calls this
+    /// for every unicast mesh-header frame with a short mesh source.
+    pub fn remove_child_that_moved<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        src: &Ipv6Addr,
+        mesh_src: Rloc16,
+    ) -> bool {
+        if !self.role.is_router_or_leader() || mesh_src.router_id() == self.rloc16.router_id() {
+            return false;
+        }
+        let prefix = env.mesh_local_prefix();
+        let found = self
+            .children
+            .iter_indexed(StateFilter::ValidOrRestoring)
+            .find(|(_, c)| !c.neighbor.mode.full_thread_device() && c.has_address(&prefix, src))
+            .map(|(i, _)| i);
+        match found {
+            Some(i) => {
+                self.remove_child(env, i);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Remove a child: notify, drop its indirect state and its settings
     /// record (OT `RemoveNeighbor(child)` + `ChildTable` removal).
     pub(crate) fn remove_child<E: MleEnv>(&mut self, env: &mut E, idx: usize) {

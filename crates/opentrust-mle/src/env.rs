@@ -514,6 +514,10 @@ pub trait MleEnv {
     fn request_router_id(&mut self, _request: &RouterIdRequest) -> Result<()> {
         Err(opentrust_core::Error::NotImplemented)
     }
+    /// Also accept frames addressed to `rloc16` (the former child RLOC16 of a
+    /// REED that became a router) or stop doing so (`None`); OT
+    /// `Mac::SetAlternateShortAddress`. Default: no-op.
+    fn set_alternate_short_address(&mut self, _rloc16: Option<Rloc16>) {}
     /// Send an Address Release (`/a/ar`) for `rloc16` to the leader (router
     /// downgrade). Default: nothing is sent.
     fn release_router_id(&mut self, _rloc16: Rloc16) {}

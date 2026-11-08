@@ -95,6 +95,7 @@ pub struct TestEnv {
     pub solicit_fails: bool,
     pub dataset_bridge: Option<std::boxed::Box<dyn DatasetBridge>>,
     pub stored: StoredDatasets,
+    pub alternate_short: Option<Rloc16>,
     pub active_ts: Option<Timestamp>,
     pub mac_pan_id: u16,
     pub mac_channel: u8,
@@ -141,6 +142,7 @@ impl TestEnv {
             solicit_fails: false,
             dataset_bridge: None,
             stored: StoredDatasets::default(),
+            alternate_short: None,
             active_ts: None,
             mac_pan_id: 0xface,
             mac_channel: 15,
@@ -282,6 +284,9 @@ impl MleEnv for TestEnv {
         tlvs: &[u8],
     ) {
         self.discovery_responses.push((*info, tlvs.to_vec()));
+    }
+    fn set_alternate_short_address(&mut self, rloc16: Option<Rloc16>) {
+        self.alternate_short = rloc16;
     }
     fn set_short_address(&mut self, rloc16: Rloc16) {
         self.short = rloc16;

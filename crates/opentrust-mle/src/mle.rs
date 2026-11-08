@@ -330,11 +330,16 @@ impl<const C: usize> Mle<C> {
         if mode == self.cfg.mode {
             return Ok(());
         }
-        if !mode.full_thread_device() && self.cfg.mode.full_thread_device() && C > 0 {
-            // FTD -> MTD while holding children: not handled yet.
-            return Err(Error::InvalidState);
-        }
+        let ftd_changed = mode.full_thread_device() != self.cfg.mode.full_thread_device();
         self.cfg.mode = mode;
+        if ftd_changed && self.role.is_attached() {
+            // Switching between FTD and MTD needs a re-attach; becoming
+            // detached drops the children and the router state (OT
+            // `SetDeviceMode`).
+            self.attach.counter = 0;
+            self.become_detached(env, now);
+            return Ok(());
+        }
         if self.role == Role::Child {
             self.apply_rx_mode(env);
             self.recalculate_poll_period(env);
