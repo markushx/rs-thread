@@ -50,6 +50,9 @@ bitflags = { version = "2", default-features = false }
 # `select` for the async drivers (opentrust-mac `MacDriver`); block_on /
 # poll_once in async tests.
 embassy-futures = { version = "0.1.2", default-features = false }
+# EC-JPAKE (opentrust-core feature `ecjpake`, ADR 0001): P-256 arithmetic.
+# Same release line as rs-matter's `rustcrypto` backend (single copy).
+p256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 # Test-only: differential testing of CCM* against the RustCrypto `ccm` crate.
 ccm = { version = "0.6", default-features = false }
 

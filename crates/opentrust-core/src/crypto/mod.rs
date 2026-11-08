@@ -8,9 +8,9 @@
 //! - [`kdf`]: MAC/MLE key derivation, TREL key, HKDF, TLS 1.2 PRF, KEK.
 //! - [`pskc`]: PBKDF2-AES-CMAC-PRF-128 and PSKc derivation.
 //! - `soft`: RustCrypto software backend `SoftCrypto` (feature `soft-crypto`).
-//!
-//! EC-JPAKE and DTLS 1.2 are not implemented yet; see
-//! `docs/decisions/0001-ecjpake-dtls.md`.
+//! - `ecjpake`: EC-JPAKE on P-256 for DTLS `TLS_ECJPAKE_WITH_AES_128_CCM_8`
+//!   (feature `ecjpake`, RustCrypto `p256`; ADR
+//!   `docs/decisions/0001-ecjpake-dtls.md`).
 //!
 //! # Key hygiene
 //!
@@ -23,6 +23,8 @@
 
 pub mod backend;
 pub mod ccm;
+#[cfg(feature = "ecjpake")]
+pub mod ecjpake;
 pub mod generic;
 pub mod kdf;
 pub mod nonce;

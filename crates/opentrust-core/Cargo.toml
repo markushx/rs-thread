@@ -17,6 +17,9 @@ default = ["soft-crypto"]
 # Software crypto backend (`crypto::soft::SoftCrypto`) on RustCrypto crates.
 # Disable to use only a hardware backend.
 soft-crypto = ["dep:aes", "dep:cmac", "dep:hmac", "dep:sha2"]
+# EC-JPAKE on P-256 (`crypto::ecjpake`, Thread commissioning / DTLS
+# `TLS_ECJPAKE_WITH_AES_128_CCM_8`); pulls in RustCrypto `p256`.
+ecjpake = ["dep:p256"]
 defmt = ["dep:defmt"]
 log = ["dep:log"]
 
@@ -30,6 +33,7 @@ aes = { workspace = true, optional = true, features = ["zeroize"] }
 cmac = { workspace = true, optional = true, features = ["zeroize"] }
 hmac = { workspace = true, optional = true, features = ["zeroize"] }
 sha2 = { workspace = true, optional = true }
+p256 = { workspace = true, optional = true }
 
 [dev-dependencies]
 ccm = { workspace = true }
