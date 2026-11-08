@@ -66,25 +66,4 @@ impl<const N: usize> NetworkData<N> {
     pub fn copy_stable(&self, out: &mut [u8]) -> Result<usize> {
         self.view().copy_stable(out)
     }
-
-    /// Insert `bytes` at `at`. [`Error::NoBufs`] if it does not fit.
-    #[allow(dead_code)]
-    pub(crate) fn insert(&mut self, at: usize, bytes: &[u8]) -> Result<()> {
-        if self.buf.len() + bytes.len() > N {
-            return Err(Error::NoBufs);
-        }
-        for (i, b) in bytes.iter().enumerate() {
-            // Cannot fail: capacity checked above.
-            let _ = self.buf.insert(at + i, *b);
-        }
-        Ok(())
-    }
-
-    /// Remove `len` bytes at `at`.
-    #[allow(dead_code)]
-    pub(crate) fn remove(&mut self, at: usize, len: usize) {
-        let n = self.buf.len();
-        self.buf.copy_within(at + len..n, at);
-        self.buf.truncate(n - len);
-    }
 }

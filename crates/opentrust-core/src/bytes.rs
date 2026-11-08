@@ -176,6 +176,12 @@ impl<'a> Writer<'a> {
         Ok(off)
     }
 
+    /// Drop everything written after offset `len` (no-op if `len` is past
+    /// the end), e.g. to take back a TLV that turned out to be empty.
+    pub fn truncate(&mut self, len: usize) {
+        self.pos = self.pos.min(len);
+    }
+
     /// Mutable access to already-written bytes (for patching reserved fields).
     pub fn written_mut(&mut self) -> &mut [u8] {
         &mut self.buf[..self.pos]

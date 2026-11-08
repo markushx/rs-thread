@@ -240,6 +240,14 @@ impl<'a> ThreadTlvs<'a> {
         }
     }
 
+    /// Thread Network Data TLV: the Network Data TLV bytes.
+    pub fn network_data(&self) -> Result<&'a [u8]> {
+        match self.find(ty::NETWORK_DATA)? {
+            ThreadTlv::NetworkData(a) => Ok(a),
+            _ => Err(Error::Parse),
+        }
+    }
+
     /// Router Mask TLV: ID sequence and mask.
     pub fn router_mask(&self) -> Result<(u8, RouterIdMask)> {
         match self.find(ty::ROUTER_MASK)? {

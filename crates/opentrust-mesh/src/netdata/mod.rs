@@ -5,8 +5,17 @@
 //! - [`NetworkData`] / [`NetworkDataView`]: the byte buffer and typed
 //!   iterators over on-mesh prefixes, external routes, 6LoWPAN contexts and
 //!   services, plus the stable-only copy sent to sleepy children.
+//! - `leader` (feature `ftd`): the leader's store, `/a/sd` registration,
+//!   context and service ID allocation, versions.
+//! - [`local`], [`notifier`], [`server_data`]: the Network Data a device
+//!   serves itself, when to register it and the `/a/sd` messages.
 
 mod data;
+#[cfg(feature = "ftd")]
+pub mod leader;
+pub mod local;
+pub mod notifier;
+pub mod server_data;
 pub mod tlv;
 mod view;
 
@@ -18,3 +27,9 @@ pub use view::{
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "ftd"))]
+mod leader_tests;
+
+#[cfg(test)]
+mod notifier_tests;

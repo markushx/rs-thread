@@ -176,6 +176,32 @@ impl<const C: usize> Mle<C> {
         self.leader_data = leader;
     }
 
+    /// The Network Data of this partition changed (the leader registered
+    /// new Server Data, or a router stored a newer copy): a leader
+    /// advertises soon so that routers pull the new data, and sleepy
+    /// children whose Network Data version is behind get a Child Update
+    /// Request carrying the data (OT `HandleNetworkDataUpdateRouter`
+    /// without the multicast Data Response).
+    pub fn network_data_updated<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
+        if !self.role.is_router_or_leader() {
+            return;
+        }
+        if self.role == Role::Leader {
+            self.reset_advertise_interval(env, now);
+        }
+        let mut behind: heapless::Vec<usize, C> = heapless::Vec::new();
+        for (idx, c) in self.children.iter_indexed(StateFilter::Valid) {
+            if !c.neighbor.is_rx_on_when_idle()
+                && c.network_data_version != self.network_data_version_for(c.neighbor.mode)
+            {
+                let _ = behind.push(idx);
+            }
+        }
+        for idx in behind {
+            let _ = self.send_child_update_request_to_child(env, now, idx);
+        }
+    }
+
     pub(crate) fn parent_side_reset<E: MleEnv>(&mut self, env: &mut E) {
         self.parent_side.pending.clear();
         self.parent_side.tick = None;
