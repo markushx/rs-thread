@@ -400,7 +400,15 @@ fn compress_at<C: ContextProvider + ?Sized>(
     while *depth < max_depth {
         match nh {
             PROTO_HOP_OPTS => {
-                off = compress_ext_header(data, off, enc, &mut nh)?;
+                // Chain to a compressed next header only while the depth
+                // budget allows it; otherwise the NHC says "next header
+                // inline" and the rest stays uncompressed.
+                let chain = *depth + 1 < max_depth;
+                off = compress_ext_header(data, off, enc, &mut nh, chain)?;
+                if !(chain && matches!(nh, PROTO_UDP | PROTO_IPV6)) {
+                    *depth += 1;
+                    break;
+                }
             }
             PROTO_UDP => {
                 off = compress_udp(data, off, enc)?;
@@ -477,14 +485,20 @@ fn compress_multicast<C: ContextProvider + ?Sized>(
     }
 }
 
-fn compress_ext_header(data: &[u8], off: usize, enc: &mut Out<'_>, nh: &mut u8) -> Result<usize> {
+fn compress_ext_header(
+    data: &[u8],
+    off: usize,
+    enc: &mut Out<'_>,
+    nh: &mut u8,
+    chain: bool,
+) -> Result<usize> {
     let h = data.get(off..off + 2).ok_or(Error::Parse)?;
     let (next, units) = (h[0], usize::from(h[1]));
     let size = (units + 1) * 8;
     let mut len = size - 2;
     let body = data.get(off + 2..off + size).ok_or(Error::Parse)?;
 
-    if matches!(next, PROTO_UDP | PROTO_IPV6) {
+    if chain && matches!(next, PROTO_UDP | PROTO_IPV6) {
         enc.push(NHC_EXT_DISPATCH | NHC_EID_HBH | NHC_EXT_NH)?;
     } else {
         enc.push(NHC_EXT_DISPATCH | NHC_EID_HBH)?;

@@ -3,6 +3,7 @@
 mod forward_tests;
 mod frag_tests;
 mod ot_vectors;
+mod robustness_tests;
 
 use core::net::Ipv6Addr;
 use core::str::FromStr;
