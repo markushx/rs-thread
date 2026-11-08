@@ -13,7 +13,10 @@
 //! - [`tlv`]: the Thread network-layer TLVs (OT `ThreadTlv`).
 //! - [`address`]: `/a/aq`, `/a/an`, `/a/ae`, the TMF side of address
 //!   resolution (the cache is `opentrust_net::resolver`).
-//! - [`netdata`]: Network Data TLVs, typed iterators and the stable copy.
+//! - [`netdata`]: Network Data: TLV codec and typed iterators, the stable
+//!   copy for sleepy children, the leader store and `/a/sd` registration
+//!   (feature `ftd`), local data and the notifier, route / anycast lookup,
+//!   SLAAC and 6LoWPAN context adapters, ALOCs and the anycast locator.
 //! - `forwarder` (feature `ftd`): route lookup, mesh header insertion and
 //!   forwarding, address resolution glue, ICMPv6 unreachable decisions.
 //! - `indirect` (feature `ftd`): per-child queues for sleepy end devices,

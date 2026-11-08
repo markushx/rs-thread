@@ -97,7 +97,7 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 
 | Area | OpenThread | OpenTrust | Reason | Interop |
 |------|------------|-----------|--------|---------|
-| API shape | `Lowpan::Compress/Decompress` work on `Message` + `FrameBuilder`/`FrameData` and read Network Data directly | Functions on byte slices (`compress`, `decompress`, `decompress_datagram`); contexts come from a `ContextProvider` trait (`ContextTable` is a ready implementation) | Sans-IO, no global Network Data; Phase 7 implements the trait | API |
+| API shape | `Lowpan::Compress/Decompress` work on `Message` + `FrameBuilder`/`FrameData` and read Network Data directly | Functions on byte slices (`compress`, `decompress`, `decompress_datagram`); contexts come from a `ContextProvider` trait (`ContextTable` is a ready implementation) | Sans-IO, no global Network Data; `opentrust_mesh::netdata::consumers::NetDataContexts` implements the trait | API |
 | IPv6 types | Full `Ip6::Header`/`Udp::Header` | Minimal `Ipv6Header`/`UdpHeader` in `opentrust_lowpan::ip6`, re-exported by `opentrust_net::header` (which adds setters and the extension headers); the codecs take/produce raw datagram bytes | Avoid a dependency cycle between lowpan and net | API |
 | Context prefix length | Up to 128 bits | Same (bits beyond /64 are applied to the IID); stateful multicast uses the first 64 prefix bits like OT | — | none |
 | Link-local detection when compressing | `IsLinkLocalUnicast` (`fe80::/10`); the decompressor restores `fe80::/64`, so `fe80:0:0:1::x` would be corrupted | Only `fe80::/64` is treated as link-local, other `fe80::/10` addresses fall through to context/inline | Round-trip correctness | none |
@@ -151,7 +151,7 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | Multicast API errors | `kErrorRejected` for fixed/non-external groups | `Error::InvalidArgs` (no `Rejected` in the shared error type) | Error set | API |
 | All-Thread-nodes groups | Subscribed by MLE when the mesh-local prefix changes | `Netif::set_mesh_local_prefix` (re)subscribes `ff32:40:<mlp>::1` and `ff33:40:<mlp>::1` itself | Keeps prefix-derived state consistent in one place | none |
 | SLAAC IID | SHA-256(prefix, "wpan", DAD counter, 32-byte secret); Network_ID not used; secret persisted in settings | Same, with an optional RFC 7217 Network_ID (`None` = OT-compatible); secret is a caller argument | Persistence is the caller's | none |
-| SLAAC manager | Reads Network Data, filter callback, notifier events | Takes the on-mesh prefix list as input (`OnMeshPrefix`), filter as `fn` pointer, 1 s deadlines instead of the time ticker | Network Data is Phase 7 | API |
+| SLAAC manager | Reads Network Data, filter callback, notifier events | Takes the on-mesh prefix list as input (`OnMeshPrefix`), filter as `fn` pointer, 1 s deadlines instead of the time ticker; `netdata::consumers::slaac_prefixes` builds the list | Sans-IO | API |
 | SLAAC context ID tracking | Updates the 6LoWPAN context ID per address and notifies MLE | Not tracked | Phase 7 | API |
 | Address resolver API | Calls `MeshForwarder::HandleResolved`, sends TMF directly | Emits `ResolverEvent`s (send query/error, resolved/failed) to a caller sink; replies to `/a/aq` are decided by `address_query_response` | CoAP/TMF are Phase 5/7 | API |
 | Address resolver lists | Four intrusive linked lists | One entry array with a state and an insertion counter (same eviction order and capacities) | No alloc, no pointers | none |
@@ -233,7 +233,7 @@ table below; link establishment, partitions and the router role are Phase
 | Connectivity TLV | `IsValid` accepts exactly 7 bytes or at least 10 | 7..9 bytes accepted as the base form (partial SED tail ignored); reserved parent priority 2 is a parse error | Lenient parse, strict value | none |
 | Challenge / Response | Size checked by the users | 4..=8 bytes enforced in getter and writer | Spec limits | stricter |
 | Mode TLV | `Set()` keeps the reserved bit on tx | Same (`DeviceMode::to_bits`), reserved and unknown bits dropped on rx | | none |
-| Address Registration | Compressed entries expanded with Network Data contexts at parse time | `AddressRegistration` iterator yields `Compressed { context_id, iid }` / `Uncompressed`; context resolution is the caller's job (needs Network Data) | Network Data is Phase 7 | none |
+| Address Registration | Compressed entries expanded with Network Data contexts at parse time | `AddressRegistration` iterator yields `Compressed { context_id, iid }` / `Uncompressed`; context resolution is the caller's job (`netdata::consumers::context_prefix64` / `context_id_for` back `MleEnv::lowpan_context` / `lowpan_context_for`) | Sans-IO | none |
 | Security header | `SecurityHeader` packed struct | `AuxHeader` (control `0x15`, frame counter LE, key source = key sequence BE, key index `(seq & 0x7f) + 1`); key index byte not checked on rx (as OT) | | none |
 | Key for rx | Current MLE key, else `GetTemporaryMleKey(seq)` (derived per message) | `KeyManager::cached_keys` (previous / current / next) else a derived key; the receiver's key sequence is never changed by `unsecure`, the caller applies `on_rx_key_sequence` after its replay check | Sans-IO: policy outside the codec | none |
 | In-place crypto | Decrypts inside the `Message`, removes the tag | In place on a caller buffer (a scratch copy of the UDP payload, since receivers get `&[u8]`); on MIC failure the payload is zeroed | Zeroize unauthenticated plaintext | none |
@@ -278,7 +278,7 @@ Reference: `mle.cpp` (`Attach`, `HandleAttachTimer`, `SendParentRequest`,
 | Child supervision | `SupervisionListener` fed by MAC rx | Check timer in `Mle` (190 s default, only for sleepy children), restarted by `parent_frame_received` (MAC glue) and by MLE messages from the parent; the parent side counts seconds per sleepy child and calls `MleEnv::send_child_supervision` | MAC glue is the caller's | none |
 | Poll period | `DataPollSender::GetDefaultPollPeriod` | `Mle::default_poll_period` (timeout - 4 s) pushed to the env with `set_poll_period`; the MAC poll sender keeps the fast / retx / attach-mode rules | | none |
 | Key sequence adoption | `ProcessKeySequence` after every handler | `process_key_sequence` after dispatch, same Authoritative / Peer / Unknown classes; `KeyManager::set_key_sequence` flags | | none |
-| Leader data / Network Data | Parsed into `NetworkData::Leader` | `MleEnv::set_network_data(leader, bytes)`; versions in Leader Data are compared with serial arithmetic; dataset timestamps compared with the env's | Network Data is Phase 7 | none |
+| Leader data / Network Data | Parsed into `NetworkData::Leader` | `MleEnv::set_network_data(leader, bytes)`; versions in Leader Data are compared with serial arithmetic; dataset timestamps compared with the env's | Network Data lives outside the MLE core (`opentrust_mesh::netdata`) | none |
 | Parent: Child Update from a restoring child | `HandleChildUpdateRequestOnParent` ignores children that are not `Valid` | Accepts `Restored` / `ChildUpdateRequest` children and makes them valid | Fast re-attach after the *child* restarted works without waiting for the parent's own Child Update Request | looser |
 | Parent: Restored children | Child Update Request every time tick until answered (rx-on) | Child Update Request once after restore (state `ChildUpdateRequest`); the child timeout removes silent children | Simpler; the child retries itself | none |
 | Parent: Connectivity / Route TLVs | Computed from the router table | Computed from the live router table (`fill_connectivity`, `route64_value`, refreshed before each message is handled); `enter_router_role` + `RouterInfo` stays as a static override used by the parent-side unit tests | | none |
@@ -306,7 +306,7 @@ Reference: `mle_ftd.cpp` (`BecomeRouter`, `BecomeLeader`, `SetStateRouterOrLeade
 | Timers | `TimeTicker` (1 s), `TrickleTimer`, `DelayedSender` message queue, `mAttachTimer` for the restorer | One 1 s `rtr.tick`, `opentrust_core::trickle::Trickle` (REED: plain mode), a 12-entry delayed queue (`DelayedKind`), a restorer deadline; all reported by `next_deadline` | Sans-IO | none |
 | Advertisement Imax | `TrickleTimer::SetIntervalMax` | `Trickle::set_imax` (new in `opentrust-core`) | | none |
 | Leader weight | `DeviceProperties` incl. power supply, BR, CCM, instability, adjustment | `DeviceProperties::leader_weight` with the same arithmetic and the `test_mle.cpp` vectors; `RouterConfig::leader_weight` holds the weight in use | | none |
-| Network Data on leader start | `NetworkData::Leader::Start` resets versions randomly | `become_leader` draws random data / stable versions into Leader Data and calls `set_network_data(leader, &[])`; `MleEvent::LeaderStarted` tells Phase 7 to reset its store | Network Data is Phase 7 | none |
+| Network Data on leader start | `NetworkData::Leader::Start` resets versions randomly | `become_leader` draws random data / stable versions into Leader Data and calls `set_network_data(leader, &[])`; `MleEvent::LeaderStarted` tells the caller to reset its store (`netdata::leader::Leader::start`) | Network Data lives outside the MLE core | none |
 | Dataset check in `BecomeLeader` | Requires a complete Active Dataset | Not checked: the caller starts Thread only with a dataset | Datasets are Phase 8 | none |
 | Reference-device options | Router ID range, preferred partition ID, `mCcmEnabled`, time sync | Not implemented | Test-harness only | none |
 | Time Sync TLVs | Optional in Link Request / Accept, Advertisement | Not implemented | Time sync service not planned | none |
@@ -348,3 +348,32 @@ Reference: `thread_tlvs.hpp`, `mle_ftd.cpp` (`SendAddressSolicit`,
 | Fragment continuation | Offset kept in the child entry | Frames of the head message are re-generated up to the acknowledged count (stable datagram tag) | No borrowed state in the queue | none (the compression context may change between polls) |
 | Supervision | `ChildSupervisor::UpdateOnSend` is called from the indirect sender | The caller calls `Mle::child_message_sent` after `PollOutcome::Sent`; the MLE hook `send_child_supervision` becomes `MeshForwarder::send_child_supervision` | Forwarder holds only `&Mle` | none |
 | Mode change to rx-on-when-idle | Queued indirect messages become direct | Queued messages are purged with the child (`child_removed`) only | Not implemented yet | none (messages are lost) |
+
+## Network Data (`opentrust-mesh::netdata`)
+
+Reference: `network_data_tlvs.{hpp,cpp}`, `network_data.cpp`,
+`network_data_leader.cpp`, `network_data_leader_ftd.cpp`,
+`network_data_local.cpp`, `network_data_notifier.cpp`,
+`network_data_service.cpp`, `anycast_locator.cpp`, `test_network_data.cpp`.
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Storage | `NetworkData` is a fixed 254 byte buffer edited in place | `NetworkData<N>`; the leader builds every change in a scratch buffer of the same size and swaps it in | No pointer arithmetic on the TLV bytes; `N` is a const generic | none |
+| Failed registration | A registration that runs out of space (or context / service IDs) leaves the entries applied so far, including the removal of the old entries of that RLOC16 | All or nothing: the data and the context ID state stay as they were | Simpler invariant | none (the same request is refused either way) |
+| Version bumps | `ChangedFlags` from each added / removed TLV | Same rules (an entry removed or added in a stable sub-TLV bumps both versions); the unchanged re-registration keeps entries in place and changes nothing | | none |
+| Reserved route preference `2` | Treated as invalid by `RoutePreferenceFromValue` | Reads as medium | Lenient parsing | none |
+| `/a/sd` handling | `HandleTmf<kUriServerData>` also waits for `mWaitingForNetDataSync` after a leader reset | No reset recovery: a restored leader starts with empty Network Data | The MLE core has no "restore leader after reset" path for Network Data | a restored leader loses the entries until the routers re-register (the notifier's periodic check, 300 s) |
+| `/a/sd` source check | `GetPeerAddr().GetIid().IsRoutingLocator()`, any code | Confirmable or not, but the method must be POST; ACK with 2.04 (OT `SendEmptyAck`) | | none |
+| Distribution | Leader multicasts a Data Response, routers delay and multicast their own (`HandleNetworkDataUpdateRouter`) | `Mle::network_data_updated` resets the Advertisement trickle on the leader and sends Child Update Requests to sleepy children that are behind; routers and rx-on children pull the data with a Data Request after seeing the new version in an Advertisement | Multicast Data Response is not implemented in the MLE core | none (a new version reaches neighbors within the reset trickle interval) |
+| Stale child entries | `RemoveStaleChildEntries` in the notifier | `notifier::find_stale_child` computes the RLOC16, `SyncInput::stale_child` triggers the `/a/sd` with only an RLOC16 TLV | Sans-IO | none |
+| Router role upgrade for Border Routers | `ScheduleRouterRoleUpgradeIfEligible` (`kBorderRouterRequest`) | Not implemented | Needs the border router configuration of the MLE core | a BR child stays a child until the normal REED upgrade |
+| Notifier error handling | `kErrorNoBufs` and `kErrorInvalidState` start timers | A request that cannot be sent is treated as acknowledged (re-check after the normal delay); a REED that is about to upgrade waits 11 s | Sans-IO | none |
+| Route lookup | `RouteLookup` also tries the Domain ID remembered for a deprecated SLAAC address | Only prefixes in Network Data | `Slaac` does not track domain IDs | a datagram from a deprecating SLAAC address has no route once its prefix is gone |
+| Route preference tie breaks | On an MTD prefer the own RLOC16, on an FTD lower path cost, then router over child | Same; `MeshInfo` supplies costs (`Mle` for FTDs, `EndDeviceMesh` for end devices) | | none |
+| Anycast lookup | Backbone Router primary ALOC from the BBR leader | `Error::Drop` for `0xfc38` | Thread 1.2 BBR is not implemented | none |
+| ALOC subscription | Leader ALOC by `Mle`, service ALOCs by `Service::Manager`, DHCPv6 / ND agent ALOCs by their servers | `AlocSet` maintains leader, service and commissioner ALOCs; no DHCPv6 / ND agent ALOCs | No DHCPv6 server or ND agent | none |
+| Local data | Prefix TLVs per kind with limits `kMaxOnMeshPrefixes` etc. | `LocalData<P, R, S>` with typed entries (service and server data at most 32 bytes each), encoded on demand for the current RLOC16 | Fixed capacity | none |
+| Contexts as `ContextProvider` | Mesh-local prefix first in `FindContextForAddress` | Same (`NetDataContexts` builds context 0 from the mesh-local prefix) | | none |
+| Anycast locator | Callback, aborts a pending request | `send_anycast_locate` / `parse_response`; one request per call, the caller keeps the state | Sans-IO | none |
+| Commissioning Data | MeshCoP accessors and leader-side `SetCommissioningData` | Carried as an opaque TLV and kept by merges; only the Border Agent Locator is read | MeshCoP is a later phase | none |
+| Publisher, DNS/SRP, BBR | `Publisher`, `Service::Manager` helpers | Not implemented | Out of scope for the stack core | none |
