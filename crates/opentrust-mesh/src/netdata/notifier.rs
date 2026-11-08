@@ -8,13 +8,19 @@
 //! after a change, a re-check 300 s after a confirmed update, retry after a
 //! timeout, no new request while one is outstanding.
 //!
-//! Not implemented: the Border Router router-role upgrade request
-//! (`kBorderRouterRequest`) OT schedules from here.
+//! A Border Router that is a child asks to become a router
+//! (`kBorderRouterRequest`, OT `ScheduleRouterRoleUpgradeIfEligible` /
+//! `HandleTimeTick`): [`Notifier::schedule_router_upgrade`] and
+//! [`Notifier::router_upgrade_tick`] only expose the decision as a flag;
+//! the caller turns `true` into `Mle::become_router` with
+//! `RouterRequestReason::BorderRouterRequest`.
 
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::Rloc16;
+use rand_core::Rng;
 
 use super::local::contains_entries_from;
+use super::tlv::BrFlags;
 use super::view::NetworkDataView;
 
 /// Delay of the re-check after a stale child entry was reported
@@ -40,6 +46,35 @@ pub enum NotifierEvent {
     RoleChanged,
     /// A child was removed.
     ChildRemoved,
+    /// The partition ID changed (a possible leader change).
+    PartitionChanged,
+}
+
+/// Longest wait before a Border Router asks for the router role, seconds
+/// (`kRouterRoleUpgradeMaxTimeout`).
+pub const ROUTER_ROLE_UPGRADE_MAX_TIMEOUT: u8 = 10;
+/// Border Routers with a router RLOC16 at or above which no further one
+/// asks for the router role
+/// (`kRouterUpgradeBorderRouterRequestThreshold`).
+pub const ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD: usize = 2;
+
+/// What the Border Router router upgrade decision needs.
+#[derive(Debug, Clone, Copy)]
+pub struct UpgradeInput<'a> {
+    /// The device is a child (not a router, leader or detached).
+    pub is_child: bool,
+    /// Our RLOC16.
+    pub rloc16: Rloc16,
+    /// The local data, encoded for [`rloc16`](Self::rloc16).
+    pub local: NetworkDataView<'a>,
+    /// The leader's Network Data.
+    pub leader: NetworkDataView<'a>,
+    /// Routers in the partition.
+    pub active_router_count: u8,
+    /// `ROUTER_UPGRADE_THRESHOLD` (the Mle's `router_upgrade_threshold`).
+    pub router_upgrade_threshold: u8,
+    /// `MAX_ROUTERS`.
+    pub max_routers: u8,
 }
 
 /// The current state the decision is based on.
@@ -82,6 +117,8 @@ pub struct Notifier {
     next_delay: Duration,
     timer: Option<Instant>,
     old_rloc: Option<Rloc16>,
+    did_request_upgrade: bool,
+    upgrade_timeout: u8,
 }
 
 impl Notifier {
@@ -93,6 +130,8 @@ impl Notifier {
             next_delay: Duration::from_secs(0),
             timer: None,
             old_rloc: None,
+            did_request_upgrade: false,
+            upgrade_timeout: 0,
         }
     }
 
@@ -104,9 +143,92 @@ impl Notifier {
             | NotifierEvent::ChildRemoved => {
                 self.next_delay = Duration::from_secs(0);
             }
-            NotifierEvent::NetworkDataChanged => {}
+            NotifierEvent::NetworkDataChanged | NotifierEvent::PartitionChanged => {}
+        }
+        // A change of the local data or of the partition allows one more
+        // router role request (the leader may be a new one).
+        if matches!(
+            event,
+            NotifierEvent::LocalChanged | NotifierEvent::PartitionChanged
+        ) {
+            self.did_request_upgrade = false;
         }
         self.task_pending = true;
+    }
+
+    fn is_eligible_for_upgrade(input: &UpgradeInput<'_>) -> bool {
+        let rloc = input.rloc16.0;
+        // A Border Router providing external IP connectivity (on-mesh with
+        // default route or domain prefix), in both the local and the
+        // leader's data.
+        let provides = |e: &super::view::OnMeshEntry| {
+            e.flags.has(BrFlags::ON_MESH)
+                && (e.flags.has(BrFlags::DEFAULT_ROUTE) || e.flags.has(BrFlags::DP))
+        };
+        let has = |v: &NetworkDataView<'_>| {
+            v.on_mesh_prefixes()
+                .any(|e| e.rloc16 == rloc && provides(&e))
+        };
+        if !has(&input.local) || !has(&input.leader) {
+            return false;
+        }
+        let n = input.active_router_count;
+        if n < input.router_upgrade_threshold || n >= input.max_routers {
+            return false;
+        }
+        // Router-role Border Routers (each RLOC16 once).
+        let mut seen: [u16; 8] = [0xffff; 8];
+        let mut count = 0usize;
+        for e in input.leader.on_mesh_prefixes() {
+            if Rloc16(e.rloc16).is_router() && provides(&e) && !seen.contains(&e.rloc16) {
+                if let Some(s) = seen.get_mut(count) {
+                    *s = e.rloc16;
+                }
+                count += 1;
+            }
+        }
+        count < ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD
+    }
+
+    /// OT `ScheduleRouterRoleUpgradeIfEligible`: call on local data,
+    /// role, Network Data and partition changes. A random wait of
+    /// `1..=`[`ROUTER_ROLE_UPGRADE_MAX_TIMEOUT`] seconds starts if the
+    /// device is an eligible Border Router child that did not ask yet.
+    pub fn schedule_router_upgrade<R: Rng + ?Sized>(
+        &mut self,
+        input: &UpgradeInput<'_>,
+        rng: &mut R,
+    ) {
+        if self.did_request_upgrade
+            || !input.is_child
+            || self.upgrade_timeout != 0
+            || !Self::is_eligible_for_upgrade(input)
+        {
+            return;
+        }
+        self.upgrade_timeout =
+            1 + (rng.next_u32() % u32::from(ROUTER_ROLE_UPGRADE_MAX_TIMEOUT)) as u8;
+    }
+
+    /// OT `HandleTimeTick` (once a second): `true` when the wait is over
+    /// and the device is still eligible; the caller then requests the
+    /// router role with `RouterRequestReason::BorderRouterRequest`.
+    pub fn router_upgrade_tick(&mut self, input: &UpgradeInput<'_>) -> bool {
+        if self.upgrade_timeout == 0 {
+            return false;
+        }
+        self.upgrade_timeout -= 1;
+        if self.upgrade_timeout == 0 && input.is_child && Self::is_eligible_for_upgrade(input) {
+            self.did_request_upgrade = true;
+            return true;
+        }
+        false
+    }
+
+    /// A router role upgrade wait is running (the caller must tick every
+    /// second).
+    pub const fn router_upgrade_pending(&self) -> bool {
+        self.upgrade_timeout != 0
     }
 
     /// Deadline of the next [`poll`](Self::poll) that may have work.

@@ -9,6 +9,8 @@
 //!   context and service ID allocation, versions.
 //! - [`local`], [`notifier`], [`server_data`]: the Network Data a device
 //!   serves itself, when to register it and the `/a/sd` messages.
+//! - [`publisher`]: publishing prefixes, routes and the DNS/SRP service
+//!   only as often as the partition needs them.
 
 pub mod aloc;
 pub mod anycast;
@@ -19,6 +21,7 @@ pub mod leader;
 pub mod local;
 pub mod lookup;
 pub mod notifier;
+pub mod publisher;
 pub mod server_data;
 pub mod tlv;
 mod view;
@@ -40,3 +43,6 @@ mod notifier_tests;
 
 #[cfg(all(test, feature = "ftd"))]
 mod lookup_tests;
+
+#[cfg(all(test, feature = "ftd"))]
+mod publisher_tests;
