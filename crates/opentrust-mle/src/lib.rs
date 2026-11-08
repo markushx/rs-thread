@@ -57,6 +57,8 @@ mod child_tests;
 mod e2e_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod parent_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod partition_tests;
 #[cfg(test)]
 mod persist_tests;
 #[cfg(all(test, feature = "ftd"))]
