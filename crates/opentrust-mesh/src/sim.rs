@@ -39,6 +39,7 @@ use crate::netdata::leader::{Changed, Leader};
 use crate::netdata::local::LocalData;
 use crate::netdata::lookup::Lookup;
 use crate::netdata::notifier::{Notifier, NotifierEvent, SyncInput, find_stale_child};
+use crate::netdata::publisher::{PublishContext, Publisher, PublisherEvent};
 use crate::netdata::server_data::{self, USER_SERVER_DATA};
 use crate::netdata::{NetworkData as NetData, NetworkDataView};
 
@@ -157,6 +158,10 @@ pub struct TmfNode {
     /// Network Data this node serves.
     pub local: LocalData,
     pub notifier: Notifier,
+    /// Network Data Publisher; polled with the node's Network Data.
+    pub publisher: Publisher<3>,
+    /// Publisher events, for the tests.
+    pub publisher_events: std::vec::Vec<PublisherEvent>,
     pub alocs: AlocSet,
     pub slaac: Slaac<4>,
     pub commissioner_aloc: Option<u16>,
@@ -389,6 +394,8 @@ impl MeshSim {
                     leader: Leader::new(),
                     local: LocalData::new(),
                     notifier: Notifier::new(),
+                    publisher: Publisher::new(),
+                    publisher_events: std::vec::Vec::new(),
                     alocs: AlocSet::new(),
                     slaac: Slaac::new(),
                     commissioner_aloc: None,
@@ -551,6 +558,25 @@ impl MeshSim {
             t.commissioner_aloc,
         );
         let _ = t.alocs.update(&mut t.ip6.netif, &want);
+
+        // Published entries follow the Network Data.
+        if attached {
+            let ctx = PublishContext {
+                attached,
+                router_or_leader: role.is_router_or_leader(),
+                rloc16: rloc,
+                leader: view,
+                ml_eid: n.env.ml_eid(),
+            };
+            t.publisher
+                .poll(now, &ctx, &mut t.local, &mut t.rng, &mut |e| {
+                    t.publisher_events.push(e)
+                });
+            if t.publisher.take_local_changed() {
+                t.notifier.event(NotifierEvent::LocalChanged);
+                moved = true;
+            }
+        }
 
         // Server Data notifications.
         if attached {
@@ -1172,7 +1198,13 @@ impl MeshSim {
     fn next_tmf_deadline(&self) -> Option<Instant> {
         self.tmf
             .iter()
-            .flat_map(|t| [t.agent.next_deadline(), t.resolver.next_deadline()])
+            .flat_map(|t| {
+                [
+                    t.agent.next_deadline(),
+                    t.resolver.next_deadline(),
+                    t.publisher.next_deadline(),
+                ]
+            })
             .flatten()
             .min()
     }

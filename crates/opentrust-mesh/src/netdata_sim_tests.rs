@@ -68,6 +68,66 @@ fn has_addr_in(m: &MeshSim, i: usize, p: &NetPrefix) -> Option<Ipv6Addr> {
         .find(|x| p.contains(x))
 }
 
+fn published_entries(m: &MeshSim, p: &NetPrefix) -> usize {
+    m.netdata(0)
+        .on_mesh_prefixes()
+        .filter(|e| e.prefix == *p)
+        .count()
+}
+
+#[test]
+fn publishers_keep_the_desired_number_of_entries() {
+    let links: std::vec::Vec<(usize, usize)> = (0..5)
+        .flat_map(|a| ((a + 1)..5).map(move |b| (a, b)))
+        .collect();
+    let mut m = bring_up(&[FTD; 5], &links);
+    let p = prefix("fd00:beef::", 64);
+    let cfg = OnMeshPrefixConfig {
+        prefix: p,
+        flags: slaac_flags().with(BrFlags::DEFAULT_ROUTE, true),
+        stable: true,
+    };
+    let now = m.sim.now;
+    for i in 0..5 {
+        let t = &mut m.tmf[i];
+        t.publisher
+            .publish_on_mesh_prefix(cfg, &mut t.local, now, &mut |_| {})
+            .unwrap();
+    }
+    // Everybody wants to publish, the entries settle at the desired number
+    // (three), seen by all nodes.
+    assert!(m.run_until(secs(300), |s| published_entries(s, &p) == 3));
+    m.run(secs(120));
+    assert_eq!(published_entries(&m, &p), 3);
+    for i in 0..5 {
+        assert_eq!(
+            m.netdata(i)
+                .on_mesh_prefixes()
+                .filter(|e| e.prefix == p)
+                .count(),
+            3,
+            "node {i}"
+        );
+    }
+    // The device holding an entry stops publishing: another one takes over.
+    let holder = (0..5)
+        .find(|&i| m.tmf[i].publisher.is_prefix_added(&p))
+        .unwrap();
+    {
+        let t = &mut m.tmf[holder];
+        t.publisher
+            .unpublish_prefix(&p, &mut t.local, &mut |_| {})
+            .unwrap();
+        assert!(t.publisher.take_local_changed());
+        t.notifier
+            .event(crate::netdata::notifier::NotifierEvent::LocalChanged);
+    }
+    m.pump();
+    assert!(m.run_until(secs(300), |s| {
+        published_entries(s, &p) == 3 && !s.tmf[holder].publisher.is_prefix_added(&p)
+    }));
+}
+
 #[test]
 fn prefix_and_route_registration_reaches_all_nodes() {
     let mut m = bring_up(&[FTD, FTD, FTD], &[(0, 1), (0, 2), (1, 2)]);
