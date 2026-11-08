@@ -27,8 +27,8 @@ use opentrust_coap::tmf::Responder;
 use opentrust_core::bytes::Writer;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{Prefix64, ipv6};
-use opentrust_core::{Error, tlv};
-use opentrust_mesh::netdata::leader::Leader;
+use opentrust_core::{Error, Result, tlv};
+use opentrust_mesh::netdata::leader::{Changed, Leader};
 
 use crate::tlv::{MAX_COMMISSIONER_ID_LEN, State, Tlvs, WriterExt, ty};
 
@@ -166,6 +166,30 @@ impl LeaderState {
     /// When [`poll`](Self::poll) next has work.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.deadline
+    }
+
+    /// A leader that restored its role after a reset received the Network
+    /// Data of the partition: [`Leader::restore`] it, then [`adopt`](Self::adopt)
+    /// the Commissioning Data (OT `HandleNetworkDataRestoredAfterReset`).
+    /// The commissioner session of the previous run is gone: its session ID
+    /// is kept (and incremented by the resignation), the Commissioning Data
+    /// is replaced by the bare session ID. Returns what changed in the
+    /// Network Data; the caller publishes the versions
+    /// ([`Leader::publish`]) if `any` is set.
+    pub fn restore_leader<const N: usize>(
+        &mut self,
+        nd: &mut Leader<N>,
+        data: &[u8],
+        version: u8,
+        stable_version: u8,
+        is_router_id_allocated: impl Fn(u8) -> bool,
+        now: Instant,
+    ) -> Result<Changed> {
+        let mut ch = nd.restore(data, version, stable_version, is_router_id_allocated, now)?;
+        if self.adopt(nd) {
+            ch.any = true;
+        }
+        Ok(ch)
     }
 
     /// After the Network Data was restored or taken over: adopt the session

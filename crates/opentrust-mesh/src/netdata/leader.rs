@@ -39,6 +39,9 @@ pub const MAX_CONTEXT_ID: u8 = 15;
 /// How long a context ID stays reserved after its prefix lost its last
 /// Border Router (OT `ContextIds::kReuseDelay`, 5 minutes).
 pub const CONTEXT_ID_REUSE_DELAY: Duration = Duration::from_secs(5 * 60);
+/// How long a leader that restores its role after a reset waits for the
+/// Network Data from its neighbors (OT `kMaxNetDataSyncWait`).
+pub const MAX_NET_DATA_SYNC_WAIT: Duration = Duration::from_secs(60);
 /// Number of service IDs (4 bits).
 const SERVICE_IDS: u8 = 16;
 
@@ -516,6 +519,9 @@ pub struct Leader<const N: usize> {
     version: u8,
     stable_version: u8,
     ids: ContextIds,
+    /// Restoring after a reset: registrations are refused until the
+    /// Network Data was recovered or this time passed.
+    sync_deadline: Option<Instant>,
 }
 
 impl<const N: usize> Default for Leader<N> {
@@ -532,6 +538,7 @@ impl<const N: usize> Leader<N> {
             version: 0,
             stable_version: 0,
             ids: ContextIds::new(CONTEXT_ID_REUSE_DELAY),
+            sync_deadline: None,
         }
     }
 
@@ -545,6 +552,74 @@ impl<const N: usize> Leader<N> {
         self.ids = ContextIds::new(delay);
         self.version = version;
         self.stable_version = stable_version;
+        self.sync_deadline = None;
+    }
+
+    /// This device restored the leader role after a reset (OT
+    /// `Leader::Start(kRestoringLeaderRoleAfterReset)`): the store is empty
+    /// and registrations / Commissioning Data changes are refused until
+    /// [`restore`](Self::restore) delivers the Network Data a neighbor
+    /// holds. After [`MAX_NET_DATA_SYNC_WAIT`] without it
+    /// [`sync_timed_out`](Self::sync_timed_out) tells the caller to give up
+    /// the leader role (`Mle::become_detached`).
+    pub fn start_restoring(&mut self, version: u8, stable_version: u8, now: Instant) {
+        self.start(version, stable_version);
+        self.sync_deadline = Some(now.saturating_add(MAX_NET_DATA_SYNC_WAIT));
+    }
+
+    /// `true` between [`start_restoring`](Self::start_restoring) and the
+    /// recovery (or the time-out).
+    pub const fn is_waiting_for_sync(&self) -> bool {
+        self.sync_deadline.is_some()
+    }
+
+    /// `true` once if the wait for the Network Data ran out (OT
+    /// `Leader::HandleTimer` while `mWaitingForNetDataSync`).
+    pub fn sync_timed_out(&mut self, now: Instant) -> bool {
+        match self.sync_deadline {
+            Some(t) if now >= t => {
+                self.sync_deadline = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The Network Data of the partition arrived after
+    /// [`start_restoring`](Self::start_restoring) (OT `SetNetworkData` +
+    /// `HandleNetworkDataRestoredAfterReset`): adopt `data` and the
+    /// versions of the Leader Data, drop the entries of router IDs that are
+    /// not allocated any more (versions are incremented if so), and mark
+    /// the 6LoWPAN context IDs in use (those without compression start
+    /// their reuse delay). The caller then lets the commissioner state
+    /// adopt the Commissioning Data. [`Error::InvalidState`] if the leader
+    /// is not waiting; [`Error::NoBufs`] / [`Error::Parse`] if `data` does
+    /// not fit / parse (still waiting then).
+    pub fn restore(
+        &mut self,
+        data: &[u8],
+        version: u8,
+        stable_version: u8,
+        is_router_id_allocated: impl Fn(u8) -> bool,
+        now: Instant,
+    ) -> Result<Changed> {
+        if self.sync_deadline.is_none() {
+            return Err(Error::InvalidState);
+        }
+        self.data.set(data)?;
+        self.version = version;
+        self.stable_version = stable_version;
+        self.sync_deadline = None;
+        let ch = self.remove_stale_router_ids(is_router_id_allocated, now);
+        let mut ids = self.ids;
+        for c in self.data.view().contexts() {
+            ids.mark_in_use(c.id);
+            if !c.compress {
+                ids.schedule_remove(c.id, now);
+            }
+        }
+        self.ids = ids;
+        Ok(ch)
     }
 
     /// Change how long a context ID stays reserved after its last Border
@@ -633,6 +708,9 @@ impl<const N: usize> Leader<N> {
         is_router_id_allocated: impl Fn(u8) -> bool,
         now: Instant,
     ) -> Result<Changed> {
+        if self.sync_deadline.is_some() {
+            return Err(Error::InvalidState);
+        }
         if !is_router_id_allocated((rloc16 >> 10) as u8) {
             return Err(Error::NotFound);
         }
@@ -740,6 +818,7 @@ impl<const N: usize> Leader<N> {
                 CtxState::RemoveAt(t) => Some(*t),
                 _ => None,
             })
+            .chain(self.sync_deadline)
             .min()
     }
 
@@ -769,6 +848,9 @@ impl<const N: usize> Leader<N> {
     /// The TLV is not stable and is appended last. [`Error::NoBufs`] if it
     /// does not fit (nothing is changed).
     pub fn set_commissioning_data(&mut self, value: &[u8]) -> Result<Changed> {
+        if self.sync_deadline.is_some() {
+            return Err(Error::InvalidState);
+        }
         let mut scratch = [0u8; N];
         let mut w = Writer::new(&mut scratch);
         for t in RawIter::new(self.data.as_bytes()) {

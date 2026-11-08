@@ -474,3 +474,85 @@ fn commissioning_data_set_replace_remove() {
     assert!(ch.stable);
     assert_eq!((l.version(), l.stable_version()), (7, 8));
 }
+
+#[test]
+fn restored_leader_waits_for_the_network_data_and_cleans_it() {
+    // The data a neighbor holds: a prefix of router 1 with a context, a
+    // route of router 2 (released while the leader was down).
+    let mut src = leader();
+    src.register(0x0400, &on_mesh_payload(0x0400), all_routers, T0)
+        .unwrap();
+    src.register(0x0800, &route_payload(0x0800, true, 0), all_routers, T0)
+        .unwrap();
+    let mut buf = [0u8; 256];
+    let n = src.copy_to(false, &mut buf).unwrap();
+
+    let mut l = leader();
+    l.start_restoring(src.version(), src.stable_version(), T0);
+    assert!(l.is_waiting_for_sync());
+    assert_eq!(
+        l.next_deadline(),
+        Some(T0.saturating_add(MAX_NET_DATA_SYNC_WAIT))
+    );
+    // Registrations and Commissioning Data are refused meanwhile.
+    assert_eq!(
+        l.register(0x0400, &on_mesh_payload(0x0400), all_routers, T0),
+        Err(Error::InvalidState)
+    );
+    assert_eq!(l.set_commissioning_data(&[1]), Err(Error::InvalidState));
+    assert!(!l.sync_timed_out(T0));
+
+    let ch = l
+        .restore(
+            &buf[..n],
+            src.version(),
+            src.stable_version(),
+            |id| id != 2,
+            T0,
+        )
+        .unwrap();
+    assert!(ch.any && ch.stable);
+    assert!(!l.is_waiting_for_sync());
+    assert_eq!(l.data().view().external_routes().count(), 0);
+    assert_eq!(l.data().view().on_mesh_prefixes().count(), 1);
+    assert_ne!(l.version(), src.version());
+    // The context ID of the data is in use again: a new prefix gets
+    // another one.
+    assert_eq!(l.allocated_context_ids().count(), 1);
+    l.register(
+        0x0400,
+        &payload(0x0400, |d| {
+            for p in [
+                prefix(&[0xfd, 0, 0xca, 0xfe, 0, 0, 0, 2], 64),
+                mesh_prefix(),
+            ] {
+                d.add_on_mesh_prefix(OnMeshPrefixConfig {
+                    prefix: p,
+                    flags: flags(),
+                    stable: true,
+                })
+                .unwrap();
+            }
+        }),
+        all_routers,
+        T0,
+    )
+    .unwrap();
+    assert_eq!(l.allocated_context_ids().count(), 2);
+    // Not waiting any more.
+    assert_eq!(
+        l.restore(&buf[..n], 1, 1, all_routers, T0),
+        Err(Error::InvalidState)
+    );
+}
+
+#[test]
+fn restored_leader_gives_up_after_the_sync_wait() {
+    let mut l = leader();
+    l.start_restoring(3, 3, T0);
+    let almost = T0.saturating_add(MAX_NET_DATA_SYNC_WAIT - Duration::from_secs(1));
+    assert!(!l.sync_timed_out(almost));
+    assert!(l.sync_timed_out(T0.saturating_add(MAX_NET_DATA_SYNC_WAIT)));
+    assert!(!l.sync_timed_out(T0.saturating_add(MAX_NET_DATA_SYNC_WAIT)));
+    assert!(!l.is_waiting_for_sync());
+}

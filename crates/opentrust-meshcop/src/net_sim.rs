@@ -463,6 +463,25 @@ impl Net {
             node.leader_state = crate::commissioner::LeaderState::new(0x1234 + i as u16);
         }
         node.was_leader = is_leader;
+        let mut restored = false;
+        if is_leader && node.nd.is_waiting_for_sync() {
+            // Restored leader: the Network Data arrives like on any other
+            // node (Data Response -> `set_network_data`).
+            if let Some(ld) = n.env.nd_leader.take() {
+                let mask = n.mle.router_id_mask();
+                let r = node.leader_state.restore_leader(
+                    &mut node.nd,
+                    &n.env.nd,
+                    ld.data_version,
+                    ld.stable_data_version,
+                    |id| mask.contains(id),
+                    now,
+                );
+                restored = r.is_ok_and(|c| c.any);
+            } else if node.nd.sync_timed_out(now) {
+                n.mle.become_detached(&mut n.env, now);
+            }
+        }
 
         // What this node would answer to a Discovery Request.
         let cd: Option<std::vec::Vec<u8>> = if is_leader {
@@ -487,9 +506,28 @@ impl Net {
         let cur = node.shared.borrow().env.cur.clone();
         n.env.mac_pan_id = cur.pan_id;
         n.env.mac_channel = cur.channel;
+        if restored {
+            self.publish_nd(i);
+        }
     }
 
-    fn publish_nd(&mut self, i: usize) {
+    /// Simulate a reset of the leader `i` that restores its leader role:
+    /// the volatile Network Data and commissioner state are lost and the
+    /// store waits for the Network Data (see
+    /// [`Leader::start_restoring`](opentrust_mesh::netdata::leader::Leader::start_restoring)).
+    pub fn reset_leader_state(&mut self, i: usize) {
+        let now = self.sim.now;
+        let n = &mut self.sim.nodes[i];
+        let ld = *n.mle.leader_data();
+        n.env.nd.clear();
+        n.env.nd_leader = None;
+        let node = &mut self.nodes[i];
+        node.nd
+            .start_restoring(ld.data_version, ld.stable_data_version, now);
+        node.leader_state = crate::commissioner::LeaderState::new(0x7777);
+    }
+
+    pub(crate) fn publish_nd(&mut self, i: usize) {
         let now = self.sim.now;
         let n = &mut self.sim.nodes[i];
         let node = &self.nodes[i];

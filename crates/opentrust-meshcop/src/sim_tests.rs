@@ -590,3 +590,64 @@ fn commissioner_dataset_updates() {
     net.run(secs(10));
     assert_eq!(net.nodes[1].dataset_changed_rx, 1);
 }
+
+#[test]
+fn leader_reset_recovers_network_data_and_commissioner_session() {
+    use opentrust_mle::MleEnv;
+    let d = dataset(1, 15, 0x1234, 0x42, "OpenTrust");
+    let mut net = form(&d);
+    petition(&mut net, 1, "OpenThread Commissioner");
+    let (_, body) = net.nodes[1].responses.pop().unwrap();
+    let session = Tlvs(&body).commissioner_session_id().unwrap();
+    net.run(secs(30));
+    let version = net.nodes[0].nd.version();
+    let ctx_before = net.nodes[0].nd.data().len();
+    assert!(ctx_before > 0);
+
+    // The leader resets and restores its role: it waits for the Network
+    // Data and refuses a new petition meanwhile.
+    net.reset_leader_state(0);
+    assert!(net.nodes[0].nd.is_waiting_for_sync());
+    assert!(net.nodes[0].nd.data().is_empty());
+    petition(&mut net, 2, "Other");
+    assert!(commissioner::session_id(&net.nodes[0].nd).is_none());
+
+    // A neighbor answers the Data Request: the data and the session ID are
+    // adopted, the commissioner of the previous run is resigned (bare,
+    // incremented session ID).
+    let ld = *net.mle(1).leader_data();
+    let data = net.sim.nodes[1].env.nd.clone();
+    net.sim.nodes[0].env.set_network_data(&ld, &data);
+    net.run(secs(30));
+    let n0 = &net.nodes[0];
+    assert!(!n0.nd.is_waiting_for_sync());
+    assert!(commissioner::border_agent_locator(&n0.nd).is_none());
+    assert_eq!(
+        commissioner::session_id(&n0.nd),
+        Some(session.wrapping_add(1))
+    );
+    assert_eq!(n0.leader_state.session_id(), session.wrapping_add(1));
+    assert_ne!(n0.nd.version(), version);
+    for i in 1..3 {
+        assert_eq!(commissioning(&net, i), commissioning(&net, 0), "node {i}");
+    }
+    // A new petition works and continues the session counter.
+    petition(&mut net, 2, "Other");
+    let (_, body) = net.nodes[2].responses.pop().unwrap();
+    let t = Tlvs(&body);
+    assert_eq!(t.state().unwrap(), State::Accept);
+    assert_eq!(
+        t.commissioner_session_id().unwrap(),
+        session.wrapping_add(2)
+    );
+}
+
+#[test]
+fn leader_without_network_data_detaches_after_the_sync_wait() {
+    let d = dataset(1, 15, 0x1234, 0x42, "OpenTrust");
+    let mut net = form(&d);
+    net.reset_leader_state(0);
+    net.run(secs(70));
+    assert_ne!(net.role(0), Role::Leader);
+    assert!(!net.nodes[0].nd.is_waiting_for_sync());
+}

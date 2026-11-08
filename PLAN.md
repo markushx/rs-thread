@@ -164,7 +164,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] Multi-radio, CSL transmitter, CSMA collision-avoidance delay of forwarded frames
 - [x] Child table & forwarding to sleepy children (Phase 7a, `opentrust_mesh::indirect`: per-child queue, Frame Pending / source match bookkeeping, fragments per data poll, supervision messages, purge on child removal; the child table itself is `opentrust-mle`)
 - [x] Network Data (§5.13–5.15, Phase 7b, `opentrust_mesh::netdata`): TLV codec with typed iterators and the stable copy (`tlv`, `NetworkData<N>`; vectors of `test_network_data.cpp`), leader store (`leader`: `/a/sd` registration with validation and in-place merge, context ID allocation with 5 min reuse delay, service IDs, stale router / child entry removal, version and stable version), `/a/sd` server and client (`server_data`), local data and the OT notifier timing (`local`, `notifier`), consumers (`lookup`, `consumers`), distribution through MLE (`Leader::publish` + `Mle::network_data_updated`; full and stable data from `MleEnv::network_data`); multi-node tests in `netdata_sim_tests`
-  - [ ] Network Data Publisher, DNS/SRP service helpers, Backbone Router / DUA entries, `kBorderRouterRequest` router upgrade from the notifier, restoring the leader's Network Data after a reset (wait-for-sync), DHCPv6 / ND agent ALOC subscription
+  - [ ] Network Data Publisher, DNS/SRP service helpers, Backbone Router / DUA entries, `kBorderRouterRequest` router upgrade from the notifier, DHCPv6 / ND agent ALOC subscription
 - [x] Anycast locators, Service ALOCs (Phase 7b: `netdata::aloc` (leader, service and commissioner ALOC set maintenance), `netdata::anycast` (`/a/yl`), `lookup::anycast_lookup` for leader / service / commissioner / DHCP / ND ALOCs)
 - [x] Commissioning datasets (Phase 8a: Active / Pending Operational Dataset, delay timer in `opentrust_meshcop::{dataset, manager, mgmt}`; the Commissioning Data TLV of Network Data is written by `Leader::set_commissioning_data` and `opentrust_meshcop::commissioner`)
 
@@ -190,7 +190,7 @@ Open for the security batch (hooks exist, nothing implemented):
 - [ ] Joiner Router: relay `/c/rx` `/c/tx`, Joiner Entrust, KEK derivation, Joiner UDP port from the Commissioning Data (`commissioner::joiner_udp_port`)
 - [ ] Commissioner: native (DTLS to the Border Agent) and on-mesh, Joiner list and Steering Data computation, commissioner dataset client (`mgmt::send_set` / `send_get` and `scan::send_*` are the request side)
 - [ ] Border Agent: DTLS server for external commissioners, `/c/ur` `/c/ut` proxy, Border Agent ID, Native Commissioner flag in Discovery Responses (`ResponseContent::native_commissioner`), `ProcessCommissionerGetRequest` with `kIgnoreSecurityPolicyFlags`
-- [ ] Reload of the leader's commissioner state after a reset (`LeaderState::adopt`)
+- [x] Reload of the leader's commissioner state after a reset (`LeaderState::restore_leader`; leader Network Data wait-for-sync: `Leader::start_restoring` / `restore` / `sync_timed_out`)
 
 ## Phase 9 – Thread 1.2 / 1.3 / 1.4 features
 
