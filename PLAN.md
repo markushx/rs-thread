@@ -113,9 +113,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 5 – CoAP / CoAPS
 
-- [ ] CoAP (RFC 7252) no_std: messages, options, confirmable/retransmit, block-wise optional
-- [ ] TMF resource dispatcher (port 61631)
-- [ ] DTLS 1.2 + EC-JPAKE (CoAPS for commissioning)
+- [x] Generic TLV utilities (`opentrust_core::tlv`: normal/extended TLVs, iterator, find, typed read/write; OT `test_tlv.cpp` ported)
+- [x] CoAP (RFC 7252) no_std: message codec (`opentrust_coap::message`), sans-IO endpoint (`endpoint`): confirmable retransmission, separate responses, RST/empty ACK, multicast NON, resource table, duplicate detection + response cache; differential tests against `coap-lite`
+  - [ ] Block-wise transfer (RFC 7959) and Observe: off in OT's default config; only the `BlockOption` codec exists
+- [x] TMF agent on UDP 61631 (`opentrust_coap::tmf`): URI list, DSCP/priority mapping, `IsTmfMessage` filtering, handler dispatcher, `UdpSockets` receiver registration
+  - [ ] Wire `/a/aq`, `/a/an`, `/a/ae` to `resolver::ResolverEvent` (Phase 7), MLE/MeshCoP handlers (Phases 6-8)
+- [ ] Phase 5b: DTLS 1.2 + EC-JPAKE (CoAPS for commissioning, ADR 0001); plugs in behind `opentrust_coap::endpoint::SecureTransport`
 
 ## Phase 6 – MLE (§4)
 

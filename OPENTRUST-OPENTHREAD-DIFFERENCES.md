@@ -24,7 +24,7 @@ Keep this file up to date with every change that deviates from OpenThread.
 | Clock / alarm | `otPlatAlarmMilli*` / `otPlatAlarmMicro*` | Own `Clock` / async `Alarm` traits; `embassy-time` adapter belongs in `opentrust-embassy` | Keep platform crate free of embassy-time driver choices | API |
 | Entropy | `otPlatEntropyGet` | `rand_core::CryptoRng` (0.10) | Same type as rs-matter / esp-rs openthread | API |
 | Logging | `otLog*` | `opentrust_core::{trace,debug,info,warn,error}!` → `defmt` or `log` | Embedded Rust conventions | none |
-| DTLS / EC-JPAKE | mbedTLS | Rust EC-JPAKE on RustCrypto `p256` + minimal sans-IO DTLS 1.2 (ADR 0001); mbedTLS only as test oracle | No heap, no C toolchain, no `unsafe` | none (planned, Phase 5) |
+| DTLS / EC-JPAKE | mbedTLS | Rust EC-JPAKE on RustCrypto `p256` + minimal sans-IO DTLS 1.2 (ADR 0001); mbedTLS only as test oracle | No heap, no C toolchain, no `unsafe` | none (planned, Phase 5b; `opentrust-coap` already has the `SecureTransport` seam) |
 
 ## Core (`opentrust-core`)
 
@@ -157,3 +157,24 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | Address resolver lists | Four intrusive linked lists | One entry array with a state and an insertion counter (same eviction order and capacities) | No alloc, no pointers | none |
 | Address resolver extras | `ResolveUsingNetDataServices`, Backbone Router queries, DUA, `/a/ae` child handling | Not implemented | Phases 7/9 | API |
 | DHCPv6 | Optional client/server | Not implemented | Legacy; no use case yet | none |
+
+## CoAP / TMF (`opentrust-coap`, TLVs in `opentrust-core::tlv`)
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Generic TLVs | `Tlv` / `ExtendedTlv` structs over `Message` | `opentrust_core::tlv`: slice-based `Tlv::parse`, `TlvIter`, `find`, typed readers, `write*`/`write_with` (extended form iff value > 254 bytes); lives in core so MLE/MeshCoP reuse it | No message-chain abstraction; no dependency on CoAP | none |
+| Message API | `Message` mutated in place, `Finish()` writes the header | Zero-copy `Message::parse` + `MessageBuilder` over a caller buffer; options must be added in order (`InvalidArgs` otherwise, as OT) | no alloc / no unsafe | API |
+| Parse strictness | `ParseHeader` does not check the version or the empty-message rules | Version != 1 is ignored silently (RFC 7252 3); empty message (0.00) with token/options/payload is a format error | RFC 7252 3 / 4.1 | stricter |
+| Format-error reply | RST for CON, unicast only | Same (needs a readable header with version 1) | | none |
+| Sans-IO endpoint | `CoapBase` with callbacks, timers, message queues | `Endpoint<REQ, RES, CACHE, MSG>`: caller feeds datagrams and time, output via `Transport`; outcomes are `Rx::{Request,Response,Failed}` / `Event::Timeout` carrying a caller `u32` instead of handler pointers | Executor-free, fixed capacity | API |
+| Retransmission | `TxParameters` (2000 ms, 3/2, 4), ACK stops retransmission but the request still times out after the remaining back-off | Same numbers and behaviour, deterministic with a caller RNG; `exchange_lifetime` 247 s, `max_transmit_wait` 93 s | | none |
+| Duplicate detection | Response cache keyed by (message id, peer), 10 entries, earliest-expiry eviction | Same (capacity `CACHE`); like OT only requests that already have a cached piggybacked response are recognised as duplicates | | none |
+| Multicast response jitter | none in the CoAP layer (individual handlers delay) | none in the endpoint; handlers delay | same as OT | none |
+| Interceptor / default handler / resource handler callback | `SetInterceptor`, `SetDefaultHandler`, `SetResourceHandler` | Filtering is done by the TMF agent (`is_tmf_message`); resources are a fixed table; unknown path gets 4.04 (not for multicast); no default handler | Simplicity | API |
+| Block-wise, Observe | Compile-time options, off by default | Not implemented (`BlockOption` codec only) | Off in OT's default config; Thread does not need them | none |
+| CoAP Ping / reserved classes | Reserved-class and empty CON handled by the general paths | Empty CON gets RST through the unmatched-response path | | none |
+| TMF link security | Not in the TMF filter (mesh forwarder drops unsecured frames) | `Agent::require_link_security` (default on) drops datagrams without link-layer security | Defence in depth | stricter |
+| TMF default priority | `NewPriorityResponseMessage` per handler | `Agent::response_priority` (default net), per-request priority for `post` | | none |
+| URI list | `uri_paths.cpp`, 40 entries | `Uri` enum, same paths in the same sorted order (test) | | none |
+| CoAPS | `SecureAgent` on mbedTLS | `SecureTransport` trait seam; DTLS/EC-JPAKE is Phase 5b | | none (planned) |
+| Test oracle | OT has no CoAP unit tests | Dev-only differential tests against `coap-lite` (random messages encode byte-identically and parse identically both ways); the production codec stays no-alloc | | none |
