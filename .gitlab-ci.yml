@@ -29,7 +29,7 @@ clippy:
   stage: check
   script:
     - cargo clippy --all-targets -- -D warnings
-    - cargo clippy -p opentrust-core --all-targets --features log -- -D warnings
+    - cargo clippy --all-targets --features opentrust-core/log,opentrust-core/ecjpake -- -D warnings
 
 embedded:
   stage: check
@@ -38,12 +38,16 @@ embedded:
       - ALIAS: [check-nrf52, check-nrf54, check-esp32c6]
   script:
     - cargo $ALIAS
-    - cargo $ALIAS --features opentrust-core/defmt
+    # defmt must be enabled in every crate that logs (defmt macros expand to
+    # `::defmt` paths in the caller), so enable it workspace-wide.
+    - DEFMT=$(ls crates | grep -v opentrust-sim | sed 's|$|/defmt|' | paste -sd, -)
+    - cargo $ALIAS --features "$DEFMT,opentrust-core/ecjpake"
 
 test:
   stage: test
   script:
     - cargo test --verbose
+    - cargo test -p opentrust-core --features ecjpake
 
 audit:
   stage: audit

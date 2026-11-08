@@ -5,6 +5,10 @@
 
 mod fmt;
 
+#[cfg(feature = "log")]
+#[doc(hidden)]
+pub use log as __log;
+
 pub mod bytes;
 pub mod crypto;
 pub mod error;

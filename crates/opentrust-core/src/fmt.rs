@@ -1,9 +1,11 @@
 //! Logging macros that forward to `defmt` or `log`, or compile to nothing.
 //!
 //! Exported at the crate root: `opentrust_core::info!(...)` etc.
-//! Enable at most one of the `defmt` / `log` features. Crates using these
-//! macros must forward the same feature and depend on `defmt` / `log`
-//! themselves, because the `defmt` macros expand to paths in the caller.
+//! Enable at most one of the `defmt` / `log` features. With `log`, the macros
+//! go through a re-export (`$crate::__log`), so calling crates need no `log`
+//! dependency. With `defmt`, calling crates must depend on `defmt` and
+//! forward the feature, because defmt's macros expand to `::defmt` paths in
+//! the caller.
 //! Only use the format-string subset common to both (`{}`, `{:?}`).
 //! Without a backend the arguments are only borrowed (no trait bounds), so
 //! callers get no unused-variable warnings.
@@ -22,7 +24,7 @@ macro_rules! trace {
 #[cfg(feature = "log")]
 #[macro_export]
 macro_rules! trace {
-    ($($t:tt)*) => { ::log::trace!($($t)*) };
+    ($($t:tt)*) => { $crate::__log::trace!($($t)*) };
 }
 
 /// Log at `trace` level via the enabled logging backend.
@@ -46,7 +48,7 @@ macro_rules! debug {
 #[cfg(feature = "log")]
 #[macro_export]
 macro_rules! debug {
-    ($($t:tt)*) => { ::log::debug!($($t)*) };
+    ($($t:tt)*) => { $crate::__log::debug!($($t)*) };
 }
 
 /// Log at `debug` level via the enabled logging backend.
@@ -70,7 +72,7 @@ macro_rules! info {
 #[cfg(feature = "log")]
 #[macro_export]
 macro_rules! info {
-    ($($t:tt)*) => { ::log::info!($($t)*) };
+    ($($t:tt)*) => { $crate::__log::info!($($t)*) };
 }
 
 /// Log at `info` level via the enabled logging backend.
@@ -94,7 +96,7 @@ macro_rules! warn {
 #[cfg(feature = "log")]
 #[macro_export]
 macro_rules! warn {
-    ($($t:tt)*) => { ::log::warn!($($t)*) };
+    ($($t:tt)*) => { $crate::__log::warn!($($t)*) };
 }
 
 /// Log at `warn` level via the enabled logging backend.
@@ -118,7 +120,7 @@ macro_rules! error {
 #[cfg(feature = "log")]
 #[macro_export]
 macro_rules! error {
-    ($($t:tt)*) => { ::log::error!($($t)*) };
+    ($($t:tt)*) => { $crate::__log::error!($($t)*) };
 }
 
 /// Log at `error` level via the enabled logging backend.
