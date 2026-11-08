@@ -12,12 +12,16 @@
 //! - [`dataset`]: the Operational Dataset TLV buffer.
 //! - [`manager`]: Active / Pending dataset management, delay timer.
 //! - [`mgmt`]: the `/c/ag` `/c/as` `/c/pg` `/c/ps` `/c/ar` TMF handlers and clients.
+//! - [`commissioner`] (feature `ftd`): the leader's commissioner session
+//!   (`/c/lp`, `/c/la`, `/c/cs`, `/c/cg`).
 //! - [`steering`]: the Steering Data bloom filter, Joiner ID derivation and
 //!   Joiner Discerner.
 
 #[cfg(test)]
 extern crate std;
 
+#[cfg(feature = "ftd")]
+pub mod commissioner;
 pub mod dataset;
 pub mod manager;
 pub mod mgmt;
@@ -29,6 +33,10 @@ pub mod tlv;
 mod dataset_tests;
 #[cfg(test)]
 mod dataset_vector_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod net_sim;
+#[cfg(all(test, feature = "ftd"))]
+mod sim_tests;
 #[cfg(test)]
 mod steering_tests;
 #[cfg(test)]
