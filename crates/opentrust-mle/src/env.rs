@@ -368,7 +368,7 @@ pub trait MleEnv {
         Ok(0)
     }
     /// Store Network Data received from the parent, together with the
-    /// Leader Data that versions it (parsing is not implemented yet).
+    /// Leader Data that versions it (the core does not parse it).
     fn set_network_data(&mut self, _leader: &LeaderData, _data: &[u8]) {}
     /// Timestamp of the Active Operational Dataset of the network (OT
     /// `ActiveDatasetManager::GetTimestamp`).

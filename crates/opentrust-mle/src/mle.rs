@@ -30,8 +30,8 @@
 //! - `router`, `router_link`, `advert` (feature `ftd`): the router and
 //!   leader role, router links, Advertisements, partitions (Phase 6c).
 //!
-//! Not part of the MLE core: Announce / Discovery (not implemented yet), the
-//! Address Solicit exchange over TMF (`opentrust-mesh`, hook:
+//! Discovery and Announce transport is in [`crate::discovery`]. Not part of
+//! the MLE core: the Address Solicit exchange over TMF (`opentrust-mesh`, hook:
 //! [`MleEnv::request_router_id`]).
 
 use core::net::Ipv6Addr;
