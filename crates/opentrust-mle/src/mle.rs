@@ -128,6 +128,7 @@ pub struct Mle<const C: usize> {
     pub(crate) attach: AttachCtx,
     pub(crate) announce: crate::discovery::AnnounceCtx,
     pub(crate) announce_sender: crate::announce_sender::AnnounceSender,
+    pub(crate) link_metrics: crate::link_metrics::SeriesTable<{ crate::link_metrics::MAX_SERIES }>,
     pub(crate) child: ChildCtx,
     pub(crate) children: ChildTable<C>,
     pub(crate) previous_partition_id: u32,
@@ -159,6 +160,7 @@ impl<const C: usize> Mle<C> {
             attach: AttachCtx::new(),
             announce: crate::discovery::AnnounceCtx::new(),
             announce_sender: crate::announce_sender::AnnounceSender::new(),
+            link_metrics: crate::link_metrics::SeriesTable::new(),
             child: ChildCtx::new(),
             children: ChildTable::new(),
             previous_partition_id: 0,
@@ -372,6 +374,7 @@ impl<const C: usize> Mle<C> {
     /// tied to the current attachment. Does not start an attach.
     pub(crate) fn reset_to_detached<E: MleEnv>(&mut self, env: &mut E) {
         self.set_role(env, Role::Detached);
+        self.link_metrics.clear();
         self.attach.reset();
         self.child.reset();
         self.parent = None;
@@ -521,6 +524,13 @@ impl<const C: usize> Mle<C> {
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
             Command::Advertisement => self.handle_advertisement(env, now, rx, nb)?,
             Command::Announce => self.handle_announce(env, now, rx)?,
+            Command::LinkMetricsManagementRequest => {
+                self.handle_link_metrics_management_request(env, rx, nb)?
+            }
+            Command::LinkMetricsManagementResponse => {
+                self.handle_link_metrics_management_response(env, rx, nb)?
+            }
+            Command::LinkProbe => self.handle_link_probe(rx, nb)?,
             #[cfg(feature = "ftd")]
             Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,
             #[cfg(feature = "ftd")]

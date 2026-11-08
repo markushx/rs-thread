@@ -437,6 +437,47 @@ pub trait MleEnv {
     ) {
     }
 
+    // ------------------------------------------------------------ link metrics
+
+    /// A Link Metrics Report arrived from `from` (OT Initiator report
+    /// callback): `values` unless the Subject answered with `status` only.
+    fn link_metrics_report(
+        &mut self,
+        _from: &Ipv6Addr,
+        _values: Option<&crate::link_metrics::MetricsValues>,
+        _status: crate::link_metrics::Status,
+    ) {
+    }
+    /// The Subject `from` answered a Link Metrics Management Request with
+    /// `status`.
+    fn link_metrics_management_response(
+        &mut self,
+        _from: &Ipv6Addr,
+        _status: crate::link_metrics::Status,
+    ) {
+    }
+    /// Link metrics decoded from the Enhanced ACKs of a neighbor (see
+    /// `Mle::process_enh_ack_ie_data`).
+    fn enh_ack_probing_report(
+        &mut self,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+        _values: &crate::link_metrics::MetricsValues,
+    ) {
+    }
+    /// Subject side of Enhanced-ACK probing: configure (non-empty `flags`)
+    /// or clear (empty) the metrics the radio puts into the ACKs to the
+    /// neighbor (OT `Radio::ConfigureEnhAckProbing`). Default: not
+    /// supported.
+    fn configure_enh_ack_probing(
+        &mut self,
+        _flags: opentrust_mac::mac::LinkMetricsFlags,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+    ) -> Result<()> {
+        Err(opentrust_core::Error::NotImplemented)
+    }
+
     // ------------------------------------------------------------ discovery
 
     /// A Discovery Request arrived at an eligible router: should it be

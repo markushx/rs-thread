@@ -366,6 +366,7 @@ impl<const C: usize> Mle<C> {
             env.indirect_remove_child(&c.neighbor.ext_address, c.neighbor.rloc16);
         }
         let _ = env.delete_child_info(&c.neighbor.ext_address);
+        self.link_metrics.remove_neighbor(&c.neighbor.ext_address);
     }
 
     fn child_to_valid<E: MleEnv>(&mut self, env: &mut E, now: Instant, idx: usize) {
@@ -1283,6 +1284,24 @@ impl<const C: usize> Mle<C> {
         let active_len = env.active_dataset(now, &mut active).unwrap_or(0);
         let pending_len = env.pending_dataset(now, &mut pending).unwrap_or(0);
         let route = self.parent_side.info.route64.clone();
+        let mut lm = [0u8; 32];
+        let mut lm_len = 0;
+        if list.contains(&ty::LINK_METRICS_REPORT) {
+            let query = t.link_metrics_query()?;
+            let ext = rx.meta.sender_ext_address();
+            lm_len = crate::link_metrics::report_for_query(
+                &self.link_metrics,
+                &ext,
+                query.as_bytes(),
+                rx.meta.link.lqi.unwrap_or(0),
+                rx.meta
+                    .link
+                    .rss
+                    .unwrap_or(crate::link_quality::INVALID_RSSI),
+                env.noise_floor(),
+                &mut lm,
+            )?;
+        }
         self.send(env, rx.meta.src, Command::DataResponse, |w| {
             w.source_address(rloc)?;
             w.leader_data(&leader)?;
@@ -1290,6 +1309,7 @@ impl<const C: usize> Mle<C> {
                 match r {
                     ty::NETWORK_DATA => w.network_data(&nd[..nd_len])?,
                     ty::ROUTE64 if !route.is_empty() => w.raw(ty::ROUTE64, &route)?,
+                    ty::LINK_METRICS_REPORT => w.link_metrics_report(&lm[..lm_len])?,
                     ty::ACTIVE_DATASET if active_len > 0 => {
                         if let Some(t) = &active_ts {
                             w.active_timestamp(t)?;

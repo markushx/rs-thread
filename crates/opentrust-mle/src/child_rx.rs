@@ -373,6 +373,9 @@ impl<const C: usize> Mle<C> {
         if !(from_parent || from_router) || !self.neighbor_is_valid(nb) {
             return Err(Error::Drop);
         }
+        if rx.tlvs.contains(ty::LINK_METRICS_REPORT) {
+            self.handle_link_metrics_report(env, rx);
+        }
         #[cfg(feature = "ftd")]
         if let Some(pid) = self
             .parent

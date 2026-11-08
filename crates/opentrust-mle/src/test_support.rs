@@ -68,6 +68,18 @@ pub struct StoredDatasets {
     pub pending_cleared: u32,
 }
 
+/// Link Metrics results seen by a [`TestEnv`].
+#[derive(Default)]
+pub struct LinkMetricsSeen {
+    pub reports: std::vec::Vec<(
+        Option<crate::link_metrics::MetricsValues>,
+        crate::link_metrics::Status,
+    )>,
+    pub management: std::vec::Vec<crate::link_metrics::Status>,
+    pub enh_ack: std::vec::Vec<crate::link_metrics::MetricsValues>,
+    pub configured: std::vec::Vec<opentrust_mac::mac::LinkMetricsFlags>,
+}
+
 pub struct TestEnv {
     pub keys: KeyManager<SoftCrypto>,
     pub ext: ExtAddress,
@@ -95,6 +107,7 @@ pub struct TestEnv {
     pub solicit_fails: bool,
     pub dataset_bridge: Option<std::boxed::Box<dyn DatasetBridge>>,
     pub stored: StoredDatasets,
+    pub lm: LinkMetricsSeen,
     pub alternate_short: Option<Rloc16>,
     pub active_ts: Option<Timestamp>,
     pub mac_pan_id: u16,
@@ -142,6 +155,7 @@ impl TestEnv {
             solicit_fails: false,
             dataset_bridge: None,
             stored: StoredDatasets::default(),
+            lm: LinkMetricsSeen::default(),
             alternate_short: None,
             active_ts: None,
             mac_pan_id: 0xface,
@@ -284,6 +298,38 @@ impl MleEnv for TestEnv {
         tlvs: &[u8],
     ) {
         self.discovery_responses.push((*info, tlvs.to_vec()));
+    }
+    fn link_metrics_report(
+        &mut self,
+        _from: &Ipv6Addr,
+        values: Option<&crate::link_metrics::MetricsValues>,
+        status: crate::link_metrics::Status,
+    ) {
+        self.lm.reports.push((values.copied(), status));
+    }
+    fn link_metrics_management_response(
+        &mut self,
+        _from: &Ipv6Addr,
+        status: crate::link_metrics::Status,
+    ) {
+        self.lm.management.push(status);
+    }
+    fn enh_ack_probing_report(
+        &mut self,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+        values: &crate::link_metrics::MetricsValues,
+    ) {
+        self.lm.enh_ack.push(*values);
+    }
+    fn configure_enh_ack_probing(
+        &mut self,
+        flags: opentrust_mac::mac::LinkMetricsFlags,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+    ) -> Result<()> {
+        self.lm.configured.push(flags);
+        Ok(())
     }
     fn set_alternate_short_address(&mut self, rloc16: Option<Rloc16>) {
         self.alternate_short = rloc16;

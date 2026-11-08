@@ -36,6 +36,8 @@ pub mod consts;
 pub mod discovery;
 pub mod endpoint;
 pub mod env;
+pub mod link_metrics;
+mod link_metrics_roles;
 pub mod link_quality;
 pub mod message;
 pub mod mle;
@@ -65,6 +67,8 @@ mod child_tests;
 mod discovery_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod link_metrics_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod mesh_tests;
 #[cfg(all(test, feature = "ftd"))]
