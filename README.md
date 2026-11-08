@@ -22,6 +22,7 @@ Designed to serve as the Thread transport for
 | `crates/opentrust-lowpan` | 6LoWPAN adaptation |
 | `crates/opentrust-net` | IPv6/UDP/ICMPv6, MPL, address resolution, SRP/DNS-SD |
 | `crates/opentrust-coap` | CoAP, TMF, CoAPS |
+| `crates/opentrust-dtls` | Sans-IO DTLS 1.2 with EC-JPAKE (`TLS_ECJPAKE_WITH_AES_128_CCM_8`) for commissioning / CoAPS |
 | `crates/opentrust-mle` | Mesh Link Establishment |
 | `crates/opentrust-mesh` | Routing, router IDs, Network Data |
 | `crates/opentrust-meshcop` | Commissioning, datasets |

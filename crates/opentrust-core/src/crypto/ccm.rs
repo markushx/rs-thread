@@ -1,5 +1,7 @@
 //! AES-128-CCM* (IEEE 802.15.4-2015 Annex B, RFC 3610) with L = 2 and a
-//! 13-byte nonce.
+//! 13-byte nonce ([`Ccm::new`]), or any nonce length from 7 to 13 bytes
+//! ([`Ccm::with_nonce`], e.g. the 12-byte RFC 6655 nonce of DTLS
+//! `AES_128_CCM_8`, L = 3).
 //!
 //! CCM* extends CCM with an authentication-tag length M = 0 (encryption
 //! only). Supported tag lengths are 0, 4, 6, 8, 10, 12, 14 and 16 bytes;
@@ -30,8 +32,8 @@ pub const MAX_TAG_LEN: usize = 16;
 /// Maximum payload length in bytes (L = 2).
 pub const MAX_MESSAGE_LEN: usize = 0xffff;
 
-/// Size of the length field L.
-const L: u8 = 2;
+/// Minimum nonce length accepted by [`Ccm::with_nonce`] (L = 8).
+pub const MIN_NONCE_LEN: usize = 7;
 
 /// IEEE 802.15.4 security level (Auxiliary Security Header, bits 0..2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -137,6 +139,34 @@ impl<'a, A: Aes128> Ccm<'a, A> {
         msg_len: usize,
         tag_len: usize,
     ) -> Result<Self> {
+        Self::init(cipher, nonce, aad_len, msg_len, tag_len)
+    }
+
+    /// Start a CCM* computation with a nonce of [`MIN_NONCE_LEN`] to
+    /// [`NONCE_LEN`] bytes (L = 15 - nonce length). The payload is still
+    /// limited to [`MAX_MESSAGE_LEN`] bytes.
+    pub fn with_nonce(
+        cipher: &'a A,
+        nonce: &[u8],
+        aad_len: usize,
+        msg_len: usize,
+        tag_len: usize,
+    ) -> Result<Self> {
+        if !(MIN_NONCE_LEN..=NONCE_LEN).contains(&nonce.len()) {
+            return Err(Error::InvalidArgs);
+        }
+        Self::init(cipher, nonce, aad_len, msg_len, tag_len)
+    }
+
+    fn init(
+        cipher: &'a A,
+        nonce: &[u8],
+        aad_len: usize,
+        msg_len: usize,
+        tag_len: usize,
+    ) -> Result<Self> {
+        // Size of the length field L.
+        let l = (15 - nonce.len()) as u8;
         let tag_ok = tag_len == 0 || (tag_len % 2 == 0 && (4..=MAX_TAG_LEN).contains(&tag_len));
         if !tag_ok || msg_len > MAX_MESSAGE_LEN || u32::try_from(aad_len).is_err() {
             return Err(Error::InvalidArgs);
@@ -155,15 +185,17 @@ impl<'a, A: Aes128> Ccm<'a, A> {
         };
 
         // A_0 = flags(L-1) || nonce || 0
-        this.ctr[0] = L - 1;
-        this.ctr[1..=NONCE_LEN].copy_from_slice(nonce);
+        this.ctr[0] = l - 1;
+        this.ctr[1..=nonce.len()].copy_from_slice(nonce);
 
         if this.authenticates() {
             // B_0 = flags || nonce || l(m)
             let m_prime = ((tag_len - 2) / 2) as u8;
             let adata = u8::from(aad_len > 0);
-            this.mac[0] = (adata << 6) | (m_prime << 3) | (L - 1);
-            this.mac[1..=NONCE_LEN].copy_from_slice(nonce);
+            this.mac[0] = (adata << 6) | (m_prime << 3) | (l - 1);
+            this.mac[1..=nonce.len()].copy_from_slice(nonce);
+            // l(m) in the last L bytes: msg_len <= 0xffff, so any length
+            // bytes above the last two stay zero.
             this.mac[14..].copy_from_slice(&(msg_len as u16).to_be_bytes());
             cipher.encrypt_block(&mut this.mac);
 

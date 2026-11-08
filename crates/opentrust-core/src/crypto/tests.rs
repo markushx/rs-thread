@@ -440,6 +440,63 @@ fn ccm_differential_vs_rustcrypto_ccm() {
     }
 }
 
+#[test]
+fn ccm_12_byte_nonce_sp800_38c_example3() {
+    // NIST SP 800-38C Appendix C, Example 3 (Nlen = 12, Tlen = 64: the
+    // RFC 6655 AES_128_CCM_8 shape).
+    let key = h16("404142434445464748494a4b4c4d4e4f");
+    let c = SoftCrypto.aes128(&key);
+    let nonce = h("101112131415161718191a1b");
+    let aad = h("000102030405060708090a0b0c0d0e0f10111213");
+    let mut data = h("202122232425262728292a2b2c2d2e2f3031323334353637");
+    let mut ccm = Ccm::with_nonce(&c, &nonce, aad.len(), data.len(), 8).unwrap();
+    ccm.aad(&aad).unwrap();
+    ccm.encrypt(&mut data).unwrap();
+    let mut tag = [0u8; 8];
+    ccm.finish(&mut tag).unwrap();
+    assert_eq!(data, h("e3b201a9f5b71a7a9b1ceaeccd97e70b6176aad9a4428aa5"));
+    assert_eq!(tag[..], h("484392fbc1b09951")[..]);
+
+    let mut ccm = Ccm::with_nonce(&c, &nonce, aad.len(), data.len(), 8).unwrap();
+    ccm.aad(&aad).unwrap();
+    ccm.decrypt(&mut data).unwrap();
+    ccm.verify(&tag).unwrap();
+    assert_eq!(data, h("202122232425262728292a2b2c2d2e2f3031323334353637"));
+
+    // Nonce length limits.
+    assert!(Ccm::with_nonce(&c, &[0; 6], 0, 0, 8).is_err());
+    assert!(Ccm::with_nonce(&c, &[0; 14], 0, 0, 8).is_err());
+}
+
+#[test]
+fn ccm_12_byte_nonce_differential_vs_rustcrypto_ccm() {
+    use ::ccm::aead::{AeadInOut, KeyInit as _};
+    use ::ccm::consts::{U8, U12};
+
+    let key = h16("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf");
+    let c = SoftCrypto.aes128(&key);
+    let nonce: [u8; 12] = core::array::from_fn(|i| 0xa0 + i as u8);
+    let rc = ::ccm::Ccm::<aes::Aes128, U8, U12>::new(&key.into());
+    let src: Vec<u8> = (0..2000u32).map(|i| (i * 7 + 3) as u8).collect();
+    for alen in [0usize, 13, 14, 15, 16, 17] {
+        for plen in [0usize, 1, 15, 16, 17, 768, 1500] {
+            let aad = &src[..alen];
+            let mut expect = src[200..200 + plen].to_vec();
+            let etag = rc
+                .encrypt_inout_detached(&nonce.into(), aad, expect.as_mut_slice().into())
+                .unwrap();
+            let mut ours = src[200..200 + plen].to_vec();
+            let mut ccm = Ccm::with_nonce(&c, &nonce, alen, plen, 8).unwrap();
+            ccm.aad(aad).unwrap();
+            ccm.encrypt(&mut ours).unwrap();
+            let mut tag = [0u8; 8];
+            ccm.finish(&mut tag).unwrap();
+            assert_eq!(ours, expect, "a={alen} p={plen}");
+            assert_eq!(&tag[..], &etag[..], "a={alen} p={plen}");
+        }
+    }
+}
+
 // ---------------------------------------------------------------- nonces / MLE
 
 #[test]
