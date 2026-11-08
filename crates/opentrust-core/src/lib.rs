@@ -12,6 +12,7 @@ pub mod message;
 pub mod settings;
 pub mod time;
 pub mod timer;
+pub mod tlv;
 pub mod trickle;
 pub mod types;
 
