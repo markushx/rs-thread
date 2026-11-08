@@ -19,8 +19,13 @@ log = ["dep:log", "opentrust-core/log", "opentrust-net/log"]
 [dependencies]
 opentrust-core = { workspace = true }
 opentrust-net = { workspace = true }
+rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Test oracle only: differential codec tests (host std); never used in no_std code.
+coap-lite = { version = "0.13", default-features = false }

@@ -6,4 +6,5 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod endpoint;
 pub mod message;
