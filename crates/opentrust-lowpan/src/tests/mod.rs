@@ -1,5 +1,6 @@
 //! Tests for the 6LoWPAN crate.
 
+mod forward_tests;
 mod frag_tests;
 mod ot_vectors;
 

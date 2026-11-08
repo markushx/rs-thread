@@ -8,11 +8,13 @@
 //!   (RFC 6282) with caller-provided 6LoWPAN contexts.
 //! - [`mesh`]: Mesh Addressing header (RFC 4944).
 //! - [`frag`]: FRAG1/FRAGN headers and the [`frag::Fragmenter`].
+//! - [`forward`]: top-level frame dispatch and FTD mesh forwarding decisions.
 //! - [`reassembly`]: fixed-capacity reassembly table with timeouts.
 
 #[cfg(test)]
 extern crate std;
 
+pub mod forward;
 pub mod frag;
 pub mod ip6;
 pub mod iphc;
