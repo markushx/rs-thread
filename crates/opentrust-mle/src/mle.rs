@@ -87,7 +87,6 @@ impl MleConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RxClass {
     /// Not (successfully) classified: never adopt.
-    #[allow(dead_code)]
     Unknown,
     /// From a known neighbor: adopt only the next sequence.
     Peer,
@@ -372,6 +371,9 @@ impl<const C: usize> Mle<C> {
         let class = match rx.command {
             Command::ParentResponse => self.handle_parent_response(env, now, rx, nb)?,
             Command::ChildIdResponse => self.handle_child_id_response(env, now, rx, nb)?,
+            Command::ChildUpdateRequest => self.handle_child_update_request(env, now, rx, nb)?,
+            Command::ChildUpdateResponse => self.handle_child_update_response(env, now, rx, nb)?,
+            Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
             #[cfg(feature = "ftd")]
             Command::ParentRequest => self.handle_parent_request(env, now, rx)?,
             #[cfg(feature = "ftd")]

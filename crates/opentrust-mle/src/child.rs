@@ -55,7 +55,6 @@ pub(crate) struct ChildCtx {
     pub child_update_attempts: u8,
     pub waiting_data_response: bool,
     pub data_request_attempts: u8,
-    #[allow(dead_code)]
     pub retrieve_new_network_data: bool,
     pub request_route_tlv: bool,
 }

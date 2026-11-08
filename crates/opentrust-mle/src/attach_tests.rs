@@ -16,14 +16,14 @@ use crate::security::MleFrameCounter;
 use crate::test_support::{Out, TestEnv, ll};
 use crate::tlv::{Connectivity, DeviceMode, LeaderData, ParentPriority, ty};
 
-const T0: Instant = Instant::from_secs(1000);
+pub(crate) const T0: Instant = Instant::from_secs(1000);
 
-fn mtd() -> Mle<0> {
+pub(crate) fn mtd() -> Mle<0> {
     Mle::new(MleConfig::new(DeviceMode::new(true, false, true)))
 }
 
 /// Poll `mle` at its next deadline; returns the new time.
-fn advance(mle: &mut Mle<0>, env: &mut TestEnv, now: Instant) -> Instant {
+pub(crate) fn advance(mle: &mut Mle<0>, env: &mut TestEnv, now: Instant) -> Instant {
     let d = mle.next_deadline().expect("deadline");
     let t = if d > now { d } else { now };
     mle.poll(env, t);
@@ -31,7 +31,7 @@ fn advance(mle: &mut Mle<0>, env: &mut TestEnv, now: Instant) -> Instant {
 }
 
 /// Decode an outgoing message with the (shared-key) keys of `env`.
-fn decode<R>(out: &Out, env: &TestEnv, f: impl FnOnce(&MleRx<'_>) -> R) -> R {
+pub(crate) fn decode<R>(out: &Out, env: &TestEnv, f: impl FnOnce(&MleRx<'_>) -> R) -> R {
     let meta = UdpMeta {
         peer: SocketAddrV6::new(out.src, MLE_UDP_PORT, 0, 0),
         local: SocketAddrV6::new(out.dst, MLE_UDP_PORT, 0, 0),
@@ -51,16 +51,16 @@ fn decode<R>(out: &Out, env: &TestEnv, f: impl FnOnce(&MleRx<'_>) -> R) -> R {
     f(&rx)
 }
 
-struct FakeParent {
-    env: TestEnv,
-    counter: MleFrameCounter,
-    rloc: Rloc16,
-    prio: ParentPriority,
-    margin_out: u8,
+pub(crate) struct FakeParent {
+    pub(crate) env: TestEnv,
+    pub(crate) counter: MleFrameCounter,
+    pub(crate) rloc: Rloc16,
+    pub(crate) prio: ParentPriority,
+    pub(crate) margin_out: u8,
 }
 
 impl FakeParent {
-    fn new(n: u8, rloc: u16) -> Self {
+    pub(crate) fn new(n: u8, rloc: u16) -> Self {
         Self {
             env: TestEnv::new(n),
             counter: MleFrameCounter::new(),
@@ -70,7 +70,7 @@ impl FakeParent {
         }
     }
 
-    fn leader() -> LeaderData {
+    pub(crate) fn leader() -> LeaderData {
         LeaderData {
             partition_id: 0x1122_3344,
             weighting: 64,
@@ -80,7 +80,7 @@ impl FakeParent {
         }
     }
 
-    fn parent_response(&mut self, to: &TestEnv, challenge: &[u8]) -> Out {
+    pub(crate) fn parent_response(&mut self, to: &TestEnv, challenge: &[u8]) -> Out {
         let (rloc, prio, margin) = (self.rloc, self.prio, self.margin_out);
         let link_fc = self.env.keys.frame_counter();
         let mle_fc = self.counter.current();
@@ -118,7 +118,18 @@ impl FakeParent {
         self.env.take_out().pop().unwrap()
     }
 
-    fn child_id_response(&mut self, to: &TestEnv, child_rloc: u16) -> Out {
+    /// Send an arbitrary secured message from this fake parent.
+    pub(crate) fn msg(
+        &mut self,
+        to: &TestEnv,
+        cmd: Command,
+        build: impl FnOnce(&mut crate::tlv::TlvWriter<'_>) -> opentrust_core::Result<()>,
+    ) -> Out {
+        tx(&mut self.env, &mut self.counter, ll(&to.ext), cmd, build).unwrap();
+        self.env.take_out().pop().unwrap()
+    }
+
+    pub(crate) fn child_id_response(&mut self, to: &TestEnv, child_rloc: u16) -> Out {
         let rloc = self.rloc;
         tx(
             &mut self.env,
@@ -138,7 +149,7 @@ impl FakeParent {
 }
 
 /// Start the child and run until the first Parent Request; returns it.
-fn first_parent_request(child: &mut Mle<0>, env: &mut TestEnv) -> (Out, Instant) {
+pub(crate) fn first_parent_request(child: &mut Mle<0>, env: &mut TestEnv) -> (Out, Instant) {
     child.start(env, T0).unwrap();
     let t = advance(child, env, T0);
     let out = env.take_out();
@@ -147,7 +158,7 @@ fn first_parent_request(child: &mut Mle<0>, env: &mut TestEnv) -> (Out, Instant)
     (req, t)
 }
 
-fn challenge_of(req: &Out, env: &TestEnv) -> Vec<u8, 8> {
+pub(crate) fn challenge_of(req: &Out, env: &TestEnv) -> Vec<u8, 8> {
     decode(req, env, |rx| {
         Vec::from_slice(rx.tlvs.challenge().unwrap()).unwrap()
     })

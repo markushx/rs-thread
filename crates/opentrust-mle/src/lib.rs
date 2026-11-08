@@ -13,6 +13,7 @@
 
 pub mod attach;
 pub mod child;
+mod child_rx;
 pub mod consts;
 pub mod endpoint;
 pub mod env;
@@ -28,5 +29,7 @@ pub use mle::{Mle, MleConfig};
 
 #[cfg(test)]
 mod attach_tests;
+#[cfg(test)]
+mod child_tests;
 #[cfg(test)]
 mod test_support;
