@@ -69,6 +69,8 @@ use opentrust_mle::{Mle, Role};
 use opentrust_net::netif::Netif;
 use opentrust_net::resolver::{AddressResolver, Resolution, ResolverEnv, ResolverEvent};
 
+use crate::indirect::{IndirectQueue, PollOutcome};
+
 /// Largest MAC payload of a frame without mesh header (short addresses,
 /// PAN ID compression, AES-CCM*-32 security).
 pub const MAX_FRAME_PAYLOAD: usize = 106;
@@ -286,10 +288,12 @@ struct Held {
 }
 
 /// The forwarder: holds datagrams for pending address queries (`HOLD` of
-/// them), the reassembly table (`SLOTS` datagrams) and the datagram tag
-/// counter.
+/// them), the reassembly table (`SLOTS` datagrams), the datagram tag
+/// counter and the indirect queue for sleepy children (`QUEUE` messages).
 #[derive(Debug)]
-pub struct MeshForwarder<const HOLD: usize = 2, const SLOTS: usize = 2> {
+pub struct MeshForwarder<const HOLD: usize = 2, const SLOTS: usize = 2, const QUEUE: usize = 4> {
+    /// Messages for sleepy children, released on data polls.
+    pub indirect: IndirectQueue<QUEUE>,
     held: [Option<Held>; HOLD],
     reasm: Reassembler<SLOTS>,
     tags: TagCounter,
@@ -300,10 +304,11 @@ fn hdr_of(datagram: &[u8]) -> Option<Ipv6Header> {
     Ipv6Header::parse(datagram).ok()
 }
 
-impl<const HOLD: usize, const SLOTS: usize> MeshForwarder<HOLD, SLOTS> {
+impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HOLD, SLOTS, QUEUE> {
     /// New forwarder; `tag_seed` seeds the datagram tags.
     pub fn new(tag_seed: u16) -> Self {
         Self {
+            indirect: IndirectQueue::new(tag_seed.wrapping_add(0x4000)),
             held: [const { None }; HOLD],
             reasm: Reassembler::new(),
             tags: TagCounter::new(tag_seed),
@@ -324,6 +329,7 @@ impl<const HOLD: usize, const SLOTS: usize> MeshForwarder<HOLD, SLOTS> {
     /// Drop everything in flight (role change, detach).
     pub fn clear(&mut self) {
         self.reasm.clear();
+        self.indirect.clear();
         for h in &mut self.held {
             *h = None;
         }
@@ -568,14 +574,74 @@ impl<const HOLD: usize, const SLOTS: usize> MeshForwarder<HOLD, SLOTS> {
         ND: NetworkData + ?Sized,
         S: FrameSink + ?Sized,
     {
+        self.send_datagram_with(
+            now,
+            datagram,
+            link_security,
+            false,
+            r,
+            resolver,
+            events,
+            sink,
+        )
+    }
+
+    /// [`MeshForwarder::send_datagram`] with the MPL retransmission flag:
+    /// retransmissions of a multicast datagram are not queued for sleepy
+    /// children again (only the first transmission is, OT
+    /// `SendMessage`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_datagram_with<
+        const C: usize,
+        const U: usize,
+        const M: usize,
+        const N: usize,
+        CP,
+        ND,
+        S,
+    >(
+        &mut self,
+        now: Instant,
+        datagram: &[u8],
+        link_security: bool,
+        mpl_retransmission: bool,
+        r: &Routing<'_, C, U, M, CP, ND>,
+        resolver: &mut AddressResolver<N>,
+        events: &mut impl FnMut(ResolverEvent),
+        sink: &mut S,
+    ) -> SendResult
+    where
+        CP: ContextProvider + ?Sized,
+        ND: NetworkData + ?Sized,
+        S: FrameSink + ?Sized,
+    {
         let Some(h) = hdr_of(datagram) else {
             return SendResult::Dropped(DropReason::Invalid);
         };
         if datagram.len() > MTU {
             return SendResult::Dropped(DropReason::Invalid);
         }
+        let queued = if h.dst.is_multicast() && !mpl_retransmission {
+            self.queue_multicast_for_sleepy_children(r, &h.dst, datagram)
+        } else {
+            0
+        };
+        // Multicast larger than realm-local is only for sleepy children
+        // (the IPv6 layer tunnels it to the MPL forwarders for everybody
+        // else).
+        if h.dst.is_multicast() && opentrust_net::addr::is_multicast_larger_than_realm_local(&h.dst)
+        {
+            return if queued > 0 {
+                SendResult::Sent
+            } else {
+                SendResult::Dropped(DropReason::Drop)
+            };
+        }
         match Self::route(now, r, resolver, &h.src, &h.dst, link_security, events) {
-            Ok(Route::Indirect { child }) => SendResult::Indirect(child),
+            Ok(Route::Indirect { child }) => match self.indirect.enqueue(child, datagram) {
+                Ok(()) => SendResult::Indirect(child),
+                Err(_) => SendResult::Dropped(DropReason::NoBufs),
+            },
             Ok(route) => match self.transmit(r, datagram, &h.src, route, link_security, sink) {
                 Ok(()) => SendResult::Sent,
                 Err(Error::NoBufs) => SendResult::Dropped(DropReason::NoBufs),
@@ -600,12 +666,110 @@ impl<const HOLD: usize, const SLOTS: usize> MeshForwarder<HOLD, SLOTS> {
         }
     }
 
+    /// Queue a copy of a multicast `datagram` for every sleepy child that
+    /// subscribed to `dst` (or all of them for the all-Thread-nodes
+    /// groups); returns how many children got it.
+    fn queue_multicast_for_sleepy_children<
+        const C: usize,
+        const U: usize,
+        const M: usize,
+        CP: ?Sized,
+        ND: ?Sized,
+    >(
+        &mut self,
+        r: &Routing<'_, C, U, M, CP, ND>,
+        dst: &Ipv6Addr,
+        datagram: &[u8],
+    ) -> usize {
+        let mlp = r.netif.mesh_local_prefix();
+        let for_all = *dst == opentrust_net::addr::link_local_all_thread_nodes(mlp)
+            || *dst == opentrust_net::addr::realm_local_all_thread_nodes(mlp);
+        let mut n = 0;
+        for c in r.mle.children().iter(StateFilter::Valid) {
+            if !c.neighbor.mode.rx_on_when_idle()
+                && (for_all || c.has_address(mlp, dst))
+                && self.indirect.enqueue(c.neighbor.rloc16, datagram).is_ok()
+            {
+                n += 1;
+            }
+        }
+        n
+    }
+
+    // ------------------------------------------------------------ sleepy children
+
+    /// The child (RLOC16) a data poll with MAC source `mac_src` came from.
+    fn poll_child<const C: usize, const U: usize, const M: usize, CP: ?Sized, ND: ?Sized>(
+        r: &Routing<'_, C, U, M, CP, ND>,
+        mac_src: &Address,
+    ) -> Option<Rloc16> {
+        let children = r.mle.children();
+        match mac_src {
+            Address::Short(s) => children
+                .find_by_rloc(Rloc16(s.0), StateFilter::Valid)
+                .map(|c| c.neighbor.rloc16),
+            Address::Extended(e) => children
+                .find_by_ext(e, StateFilter::Valid)
+                .map(|c| c.neighbor.rloc16),
+            Address::None => None,
+        }
+    }
+
+    /// The Frame Pending bit for the ACK of a data poll from `mac_src`
+    /// (OT source match table lookup).
+    pub fn data_poll_frame_pending<
+        const C: usize,
+        const U: usize,
+        const M: usize,
+        CP: ?Sized,
+        ND: ?Sized,
+    >(
+        &self,
+        mac_src: &Address,
+        r: &Routing<'_, C, U, M, CP, ND>,
+    ) -> bool {
+        Self::poll_child(r, mac_src).is_some_and(|c| self.indirect.frame_pending(c))
+    }
+
+    /// A data poll arrived from the sleepy child with MAC source `mac_src`:
+    /// send its next frame (empty if nothing is queued). The result is
+    /// [`PollOutcome::Sent`]; the caller then calls
+    /// `Mle::child_message_sent` to restart the child's supervision
+    /// interval. [`Error::NotFound`] if the sender is not a valid child.
+    pub fn handle_data_poll<
+        const C: usize,
+        const U: usize,
+        const M: usize,
+        CP: ContextProvider + ?Sized,
+        ND: ?Sized,
+        S: FrameSink + ?Sized,
+    >(
+        &mut self,
+        mac_src: &Address,
+        r: &Routing<'_, C, U, M, CP, ND>,
+        sink: &mut S,
+    ) -> Result<PollOutcome> {
+        let child = Self::poll_child(r, mac_src).ok_or(Error::NotFound)?;
+        self.indirect
+            .handle_data_poll(child, r.mle.rloc16(), r.contexts, MAX_FRAME_PAYLOAD, sink)
+    }
+
+    /// A child was removed or stopped sleeping (`MleEnv::indirect_remove_child`,
+    /// `MleEvent::ChildRemoved`): drop its queued messages.
+    pub fn child_removed(&mut self, rloc16: Rloc16) {
+        self.indirect.remove_child(rloc16);
+    }
+
+    /// `MleEnv::send_child_supervision`: queue a supervision message.
+    pub fn send_child_supervision(&mut self, rloc16: Rloc16) {
+        self.indirect.enqueue_supervision(rloc16);
+    }
+
     /// An address resolution finished (OT `MeshForwarder::HandleResolved`,
     /// fed with [`ResolverEvent::Resolved`] / [`ResolverEvent::ResolutionFailed`]).
     /// Datagrams held for `eid` are sent, or dropped if resolution failed;
     /// a dropped datagram that did not originate here is answered with a
-    /// destination unreachable through `sink`. Datagrams for a sleepy child
-    /// are returned to `indirect` (call with the child and the datagram).
+    /// destination unreachable through `sink`.
     #[allow(clippy::too_many_arguments)]
     pub fn handle_resolved<
         const C: usize,
@@ -624,7 +788,6 @@ impl<const HOLD: usize, const SLOTS: usize> MeshForwarder<HOLD, SLOTS> {
         resolver: &mut AddressResolver<N>,
         events: &mut impl FnMut(ResolverEvent),
         sink: &mut S,
-        indirect: &mut impl FnMut(Rloc16, &[u8]),
     ) where
         CP: ContextProvider + ?Sized,
         ND: NetworkData + ?Sized,
@@ -642,12 +805,9 @@ impl<const HOLD: usize, const SLOTS: usize> MeshForwarder<HOLD, SLOTS> {
                 }
                 continue;
             }
-            match self.send_datagram(now, data, h.link_security, r, resolver, events, sink) {
-                SendResult::Indirect(child) => indirect(child, data),
-                SendResult::Dropped(DropReason::NoRoute) => {
-                    sink.dest_unreachable(&data[..data.len().min(Ipv6Header::LEN)]);
-                }
-                _ => {}
+            let result = self.send_datagram(now, data, h.link_security, r, resolver, events, sink);
+            if result == SendResult::Dropped(DropReason::NoRoute) {
+                sink.dest_unreachable(&data[..data.len().min(Ipv6Header::LEN)]);
             }
         }
     }

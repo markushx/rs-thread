@@ -15,6 +15,8 @@
 //!   resolution (the cache is `opentrust_net::resolver`).
 //! - `forwarder` (feature `ftd`): route lookup, mesh header insertion and
 //!   forwarding, address resolution glue, ICMPv6 unreachable decisions.
+//! - `indirect` (feature `ftd`): per-child queues for sleepy end devices,
+//!   Frame Pending and source match bookkeeping, release on data polls.
 //! - `router_id` (feature `ftd`): `/a/as` and `/a/ar`, the leader-side
 //!   handlers and the client side around
 //!   [`MleEnv::request_router_id`](opentrust_mle::MleEnv::request_router_id).
@@ -26,6 +28,8 @@ pub mod address;
 #[cfg(feature = "ftd")]
 pub mod forwarder;
 #[cfg(feature = "ftd")]
+pub mod indirect;
+#[cfg(feature = "ftd")]
 pub mod router_id;
 pub mod tlv;
 
@@ -33,6 +37,8 @@ pub mod tlv;
 mod address_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod forwarder_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod indirect_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod router_id_tests;
 #[cfg(all(test, feature = "ftd"))]

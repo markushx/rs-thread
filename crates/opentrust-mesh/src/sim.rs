@@ -137,6 +137,8 @@ pub struct TmfNode {
     pub dropped: std::vec::Vec<DropReason>,
     /// Mesh frames forwarded to a next hop.
     pub forwarded: u32,
+    /// Indirect list of the MLE environment at the last look.
+    pub indirect_seen: std::vec::Vec<Rloc16>,
 }
 
 /// Network Data of the simulator: one optional on-mesh prefix.
@@ -155,6 +157,8 @@ impl NetworkData for SimNd {
 #[derive(Default)]
 pub struct FwdSink {
     pub frames: std::vec::Vec<(MacDest, std::vec::Vec<u8>, bool)>,
+    /// Frame Pending bit of every indirect frame sent.
+    pub pending_log: std::vec::Vec<bool>,
     pub unreachable: std::vec::Vec<std::vec::Vec<u8>>,
     pub loops: std::vec::Vec<(Rloc16, Rloc16)>,
 }
@@ -162,6 +166,9 @@ pub struct FwdSink {
 impl FrameSink for FwdSink {
     fn transmit(&mut self, f: &TxFrame<'_>) -> Result<()> {
         self.frames.push((f.dst, f.payload.to_vec(), f.indirect));
+        if f.indirect {
+            self.pending_log.push(f.frame_pending);
+        }
         Ok(())
     }
     fn dest_unreachable(&mut self, invoking: &[u8]) {
@@ -267,6 +274,7 @@ impl MeshSim {
                     delivered: std::vec::Vec::new(),
                     dropped: std::vec::Vec::new(),
                     forwarded: 0,
+                    indirect_seen: std::vec::Vec::new(),
                     resolver: AddressResolver::new(),
                     rx: Default::default(),
                     resolved: std::vec::Vec::new(),
@@ -384,7 +392,6 @@ impl MeshSim {
                 &mut t.resolver,
                 &mut |e| events.push(e),
                 &mut t.fsink,
-                &mut |_, _| {},
             );
         }
         self.handle_events(i, events);
@@ -482,7 +489,8 @@ impl MeshSim {
                         MacDest::Short(r) => self.sim.nodes[j].mle.rloc16() == r,
                         MacDest::Extended(e) => self.sim.nodes[j].env.ext == e,
                     };
-                    if for_j {
+                    let asleep = !self.sim.nodes[j].env.rx_on;
+                    if for_j && (indirect || !asleep) {
                         self.frame_log.push((i, j, payload.clone()));
                         self.deliver_frame(i, j, dst, &payload);
                     }
@@ -500,6 +508,42 @@ impl MeshSim {
             }
         }
         moved
+    }
+
+    /// A data poll of sleepy node `child` to its parent: the Frame Pending
+    /// bit of the ACK and what the parent sent in answer.
+    pub fn data_poll(
+        &mut self,
+        child: usize,
+    ) -> (bool, opentrust_core::Result<crate::indirect::PollOutcome>) {
+        let (_, parent_rloc) = self.sim.nodes[child].env.parent.expect("attached");
+        let p = (0..self.tmf.len())
+            .find(|&i| self.sim.nodes[i].mle.rloc16() == parent_rloc)
+            .expect("parent node");
+        let child_rloc = Address::Short(self.sim.nodes[child].mle.rloc16().into());
+        self.sync_netif(p);
+        let (pending, outcome) = {
+            let n = &self.sim.nodes[p];
+            let t = &mut self.tmf[p];
+            let routing = Routing {
+                mle: &n.mle,
+                netif: &t.ip6.netif,
+                contexts: &NoContexts,
+                nd: &self.nd,
+                ext: n.env.ext,
+            };
+            let pending = t.fwd.data_poll_frame_pending(&child_rloc, &routing);
+            (
+                pending,
+                t.fwd.handle_data_poll(&child_rloc, &routing, &mut t.fsink),
+            )
+        };
+        if outcome.is_ok() {
+            let c = self.sim.nodes[child].mle.rloc16();
+            self.sim.nodes[p].mle.child_message_sent(c);
+        }
+        self.pump();
+        (pending, outcome)
     }
 
     /// Deliver a hand-made frame as if `from` had sent it to `to`.
@@ -602,6 +646,20 @@ impl MeshSim {
                 while let Some(r) = n.env.released.pop() {
                     moved = true;
                     self.tmf[i].outbox.release_router_id(r);
+                }
+                // The indirect hooks of the MLE core.
+                {
+                    let t = &mut self.tmf[i];
+                    while let Some((_, rloc)) = n.env.supervised.pop() {
+                        moved = true;
+                        t.fwd.send_child_supervision(rloc);
+                    }
+                    let now_list: std::vec::Vec<Rloc16> =
+                        n.env.indirect.iter().map(|(_, r)| *r).collect();
+                    for gone in t.indirect_seen.iter().filter(|r| !now_list.contains(r)) {
+                        t.fwd.child_removed(*gone);
+                    }
+                    t.indirect_seen = now_list;
                 }
                 let t = &mut self.tmf[i];
                 if t.outbox.is_pending() {
