@@ -148,16 +148,19 @@ pub struct TxParams {
 impl Default for TxParams {
     /// 2000 ms, 3/2, 4 (OT `kDefault*`).
     fn default() -> Self {
-        Self {
-            ack_timeout_ms: 2000,
-            random_factor_num: 3,
-            random_factor_den: 2,
-            max_retransmit: 4,
-        }
+        Self::DEFAULT
     }
 }
 
 impl TxParams {
+    /// OT defaults: 2000 ms, 3/2, 4 retransmissions.
+    pub const DEFAULT: TxParams = TxParams {
+        ack_timeout_ms: 2000,
+        random_factor_num: 3,
+        random_factor_den: 2,
+        max_retransmit: 4,
+    };
+
     /// OT `TxParameters::IsValid` (without the overflow check, which `u64`
     /// arithmetic makes unnecessary).
     pub const fn is_valid(&self) -> bool {
