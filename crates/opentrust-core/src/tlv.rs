@@ -13,7 +13,7 @@
 //! [`crate::message::Message`] exposes its payload as a slice.
 //!
 //! - Parse: [`Tlv::parse`], [`TlvIter`], [`find`], [`Tlv::read_u8`] ...
-//! - Build: [`write`], [`write_uint`], [`write_str`], [`write_with`].
+//! - Build: [`write()`], [`write_u8`] / `write_u16` / `write_u32` / `write_u64`, [`write_str`], [`write_with`].
 
 use crate::bytes::Writer;
 use crate::error::{Error, Result};

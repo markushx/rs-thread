@@ -31,6 +31,13 @@ clippy:
     - cargo clippy --all-targets -- -D warnings
     - cargo clippy --all-targets --features opentrust-core/log,opentrust-core/ecjpake -- -D warnings
 
+doc:
+  stage: check
+  variables:
+    RUSTDOCFLAGS: "-D warnings"
+  script:
+    - cargo doc --no-deps --workspace --exclude openthread-sys
+
 embedded:
   stage: check
   parallel:
