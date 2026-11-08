@@ -36,6 +36,8 @@ pub mod tlv;
 #[cfg(all(test, feature = "ftd"))]
 mod address_tests;
 #[cfg(all(test, feature = "ftd"))]
+mod e2e_tests;
+#[cfg(all(test, feature = "ftd"))]
 mod forwarder_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod indirect_tests;
