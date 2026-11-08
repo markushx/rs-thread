@@ -361,7 +361,12 @@ impl<const C: usize> Mle<C> {
         rx: &MleRx<'_>,
         nb: Option<NbRef>,
     ) -> Result<RxClass> {
-        if nb != Some(NbRef::Parent) || !self.neighbor_is_valid(nb) || self.role != Role::Child {
+        let from_parent = nb == Some(NbRef::Parent) && self.role == Role::Child;
+        #[cfg(feature = "ftd")]
+        let from_router = matches!(nb, Some(NbRef::Router(_))) && self.role == Role::Router;
+        #[cfg(not(feature = "ftd"))]
+        let from_router = false;
+        if !(from_parent || from_router) || !self.neighbor_is_valid(nb) {
             return Err(Error::Drop);
         }
         #[cfg(feature = "ftd")]
@@ -373,6 +378,9 @@ impl<const C: usize> Mle<C> {
             self.read_and_process_route_on_ftd_child(env, now, &rx.tlvs, pid)?;
         }
         let r = self.handle_leader_data(env, now, rx);
+        if from_router {
+            return r.map(|()| RxClass::Peer);
+        }
         if self.child.waiting_data_response {
             self.child.waiting_data_response = false;
             self.child.data_request_attempts = 0;
@@ -383,6 +391,84 @@ impl<const C: usize> Mle<C> {
         }
         r?;
         self.parent_frame_received(now);
+        Ok(RxClass::Peer)
+    }
+
+    /// Network Data in `leader` is newer than ours (OT `IsNetworkDataNewer`).
+    fn is_network_data_newer(&self, leader: &crate::tlv::LeaderData) -> bool {
+        if self.cfg.mode.full_network_data() {
+            serial_greater(leader.data_version, self.leader_data.data_version)
+        } else {
+            serial_greater(
+                leader.stable_data_version,
+                self.leader_data.stable_data_version,
+            )
+        }
+    }
+
+    /// OT `HandleAdvertisement`: Leader Data of a neighbor router (or of the
+    /// parent) tells whether the partition or the Network Data changed.
+    pub(crate) fn handle_advertisement<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: Instant,
+        rx: &MleRx<'_>,
+        nb: Option<NbRef>,
+    ) -> Result<RxClass> {
+        if !self.role.is_attached() {
+            return Ok(RxClass::Unknown);
+        }
+        let t = &rx.tlvs;
+        let source = t.source_address()?;
+        let leader = t.leader_data()?;
+        #[cfg(feature = "ftd")]
+        if self.is_full_thread_device() {
+            self.handle_advertisement_on_ftd(env, now, rx, nb, source, &leader)?;
+        }
+        if self.role == Role::Child {
+            // FTD processing may have changed the role.
+            if nb != Some(NbRef::Parent) || self.parent.is_none() {
+                return Ok(RxClass::Unknown);
+            }
+            let parent_rloc = self.parent.as_ref().map(|p| p.router.neighbor.rloc16);
+            if parent_rloc != Some(source) {
+                self.become_detached(env, now);
+                return Ok(RxClass::Unknown);
+            }
+            if leader.partition_id != self.leader_data.partition_id
+                || leader.leader_router_id != self.leader_data.leader_router_id
+            {
+                self.update_leader_data(env, leader);
+                #[cfg(feature = "ftd")]
+                if let Some(pid) = parent_rloc.map(opentrust_core::types::Rloc16::router_id) {
+                    self.read_and_process_route_on_ftd_child(env, now, t, pid)?;
+                }
+                self.child.retrieve_new_network_data = true;
+            }
+            if let Some(p) = self.parent.as_mut() {
+                p.router.neighbor.last_heard = now;
+            }
+        } else if !self.neighbor_is_valid(nb) {
+            return Ok(RxClass::Unknown);
+        }
+        if self.child.retrieve_new_network_data || self.is_network_data_newer(&leader) {
+            #[cfg(feature = "ftd")]
+            {
+                let d = opentrust_core::time::Duration::from_millis(
+                    1 + u64::from(Self::rand_range(
+                        env,
+                        0,
+                        crate::consts::MAX_DATA_REQUEST_DELAY.as_millis() as u32,
+                    )),
+                );
+                self.schedule_delayed(
+                    now.saturating_add(d),
+                    crate::router_link::DelayedKind::DataRequest(rx.meta.src),
+                );
+            }
+            #[cfg(not(feature = "ftd"))]
+            let _ = self.send_data_request(env, now);
+        }
         Ok(RxClass::Peer)
     }
 }

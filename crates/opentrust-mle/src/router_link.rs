@@ -55,6 +55,8 @@ pub(crate) struct LinkAcceptInfo {
 pub(crate) enum DelayedKind {
     LinkRequest(u8),
     LinkAccept(LinkAcceptInfo),
+    Advertisement(core::net::Ipv6Addr),
+    DataRequest(core::net::Ipv6Addr),
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +168,12 @@ impl<const C: usize> Mle<C> {
             }
             DelayedKind::LinkAccept(info) => {
                 let _ = self.send_link_accept(env, &info);
+            }
+            DelayedKind::Advertisement(dst) => {
+                let _ = self.send_advertisement(env, now, dst);
+            }
+            DelayedKind::DataRequest(dst) => {
+                let _ = self.send_data_request_to(env, dst);
             }
         }
     }
@@ -628,6 +636,7 @@ impl<const C: usize> Mle<C> {
                     changed = true;
                 }
             }
+            self.neighbor_reports_no_link(env, now, neighbor_id, e.link_quality_out);
         }
         let link_cost_to_neighbor = self.link_cost(neighbor_id);
         for (id, e) in route.entries() {

@@ -47,6 +47,8 @@ pub use env::{MleEnv, MleEvent, Role};
 pub use mle::{Mle, MleConfig};
 pub use router_config::{DeviceProperties, PowerSupply, RouterConfig};
 
+#[cfg(all(test, feature = "ftd"))]
+mod advert_tests;
 #[cfg(test)]
 mod attach_tests;
 #[cfg(test)]

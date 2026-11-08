@@ -368,6 +368,7 @@ impl<const C: usize> Mle<C> {
         {
             self.poll_parent(env, now);
             self.poll_router_link(env, now);
+            self.poll_advert(env, now);
             if self.rtr.tick.is_some_and(|t| now >= t) {
                 self.router_tick(env, now);
             }
@@ -431,6 +432,7 @@ impl<const C: usize> Mle<C> {
             Command::ChildUpdateRequest => self.handle_child_update_request(env, now, rx, nb)?,
             Command::ChildUpdateResponse => self.handle_child_update_response(env, now, rx, nb)?,
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
+            Command::Advertisement => self.handle_advertisement(env, now, rx, nb)?,
             #[cfg(feature = "ftd")]
             Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,
             #[cfg(feature = "ftd")]

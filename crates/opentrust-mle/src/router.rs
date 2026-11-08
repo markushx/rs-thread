@@ -131,6 +131,8 @@ pub(crate) struct RouterCtx {
     pub previous_partition_id_sequence: u8,
     pub delayed: Vec<crate::router_link::Delayed, { crate::router_link::DELAYED_CAPACITY }>,
     pub restorer: crate::router_link::Restorer,
+    /// Advertisement timer (Trickle for routers, plain for REEDs).
+    pub advert: opentrust_core::trickle::Trickle,
 }
 
 impl RouterCtx {
@@ -152,6 +154,7 @@ impl RouterCtx {
             previous_partition_id_sequence: 0,
             delayed: Vec::new(),
             restorer: crate::router_link::Restorer::new(),
+            advert: crate::advert::initial_trickle(),
         }
     }
 }
@@ -1091,10 +1094,14 @@ impl<const C: usize> Mle<C> {
     // ------------------------------------------------------------ per-second tick
 
     pub(crate) fn router_deadline(&self) -> Option<Instant> {
-        [self.rtr.tick, self.router_link_deadline()]
-            .into_iter()
-            .flatten()
-            .min()
+        [
+            self.rtr.tick,
+            self.router_link_deadline(),
+            self.advert_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// OT `HandleTimeTick` for the router / REED parts (child timeouts live
@@ -1182,7 +1189,6 @@ impl<const C: usize> Mle<C> {
 
     /// Advertisement interval maximum from the neighbor count (OT
     /// `DetermineAdvertiseIntervalMax`).
-    #[allow(dead_code)] // used by the Advertisement code
     pub(crate) fn advertise_interval_max(&self) -> Duration {
         let n = self
             .rtr

@@ -1125,8 +1125,11 @@ impl<const C: usize> Mle<C> {
         rx: &MleRx<'_>,
         nb: Option<NbRef>,
     ) -> Result<RxClass> {
-        let Some(NbRef::Child(idx)) = nb else {
-            return Err(Error::Security);
+        // Children and (neighboring) routers may ask for Network Data.
+        let idx = match nb {
+            Some(NbRef::Child(idx)) => Some(idx),
+            Some(NbRef::Router(_)) => None,
+            _ => return Err(Error::Security),
         };
         if !self.role.is_router_or_leader() || !self.neighbor_is_valid(nb) {
             return Err(Error::Security);
@@ -1149,9 +1152,12 @@ impl<const C: usize> Mle<C> {
         if let Some(sec) = rx.meta.security {
             self.process_key_sequence(env, now, RxClass::Peer, sec, nb);
         }
-        let mode = self.children.get(idx).ok_or(Error::NotFound)?.neighbor.mode;
+        let mode = match idx {
+            Some(idx) => self.children.get(idx).ok_or(Error::NotFound)?.neighbor.mode,
+            None => DeviceMode::new(true, true, true),
+        };
         let ver = self.network_data_version_for(mode);
-        if let Some(c) = self.children.get_mut(idx) {
+        if let Some(c) = idx.and_then(|i| self.children.get_mut(i)) {
             c.network_data_version = ver;
             c.neighbor.last_heard = now;
         }
