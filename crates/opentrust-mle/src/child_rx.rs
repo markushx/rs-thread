@@ -328,6 +328,10 @@ impl<const C: usize> Mle<C> {
         }
         self.handle_leader_data(env, now, rx)?;
         match t.timeout() {
+            Ok(0) if self.attach.detaching => {
+                self.stop(env);
+                return Ok(RxClass::Peer);
+            }
             Ok(secs) => {
                 let secs = secs.clamp(MIN_CHILD_TIMEOUT_SECS, MAX_CHILD_TIMEOUT_SECS);
                 if secs != self.cfg.timeout_secs {

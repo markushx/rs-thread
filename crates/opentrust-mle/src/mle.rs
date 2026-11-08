@@ -37,7 +37,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
-use opentrust_core::time::Instant;
+use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_core::{Error, Result};
 use opentrust_net::udp::UdpMeta;
@@ -74,6 +74,10 @@ pub struct MleConfig {
     /// Router role configuration (eligibility, thresholds, leader weight).
     pub router: RouterConfig,
 }
+
+/// How long a graceful detach waits for the parent / leader (OT
+/// `kDetachGracefullyTimeout`).
+pub const DETACH_GRACEFULLY_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl MleConfig {
     /// Defaults of OpenThread for the given mode.
@@ -262,6 +266,7 @@ impl<const C: usize> Mle<C> {
         if self.role == Role::Disabled {
             return;
         }
+        let detaching = core::mem::take(&mut self.attach.detaching);
         self.reset_to_detached(env);
         self.announce = crate::discovery::AnnounceCtx::new();
         self.announce_sender = crate::announce_sender::AnnounceSender::new();
@@ -269,6 +274,49 @@ impl<const C: usize> Mle<C> {
         env.keys_mut().stop();
         self.children.clear();
         self.set_role(env, Role::Disabled);
+        if detaching {
+            env.event(MleEvent::DetachedGracefully);
+        }
+    }
+
+    /// Leave the network politely, then stop (OT `Mle::DetachGracefully`):
+    /// a child sends a Child Update Request with timeout 0 to its parent, a
+    /// router releases its router ID ([`MleEnv::release_router_id`]); after
+    /// [`DETACH_GRACEFULLY_TIMEOUT`] (or as soon as the parent confirms the
+    /// zero timeout) the device stops and raises
+    /// [`MleEvent::DetachedGracefully`]. A device that is detached already
+    /// stops at the next poll; a disabled one reports at once.
+    pub fn detach_gracefully<E: MleEnv>(&mut self, env: &mut E, now: Instant) -> Result<()> {
+        if self.attach.detaching {
+            return Err(Error::Busy);
+        }
+        let mut timeout = DETACH_GRACEFULLY_TIMEOUT;
+        match self.role {
+            Role::Disabled => {
+                env.event(MleEvent::DetachedGracefully);
+                return Ok(());
+            }
+            Role::Leader => {}
+            Role::Router =>
+            {
+                #[cfg(feature = "ftd")]
+                if let Some(id) = self.router_id() {
+                    env.release_router_id(Rloc16::from_router_id(id).unwrap_or(Rloc16::INVALID));
+                }
+            }
+            Role::Child => {
+                let _ = self.send_child_update_request_with(
+                    env,
+                    now,
+                    crate::child::ChildUpdateMode::ZeroTimeout,
+                );
+            }
+            Role::Detached => timeout = Duration::ZERO,
+        }
+        // A failed Child Update Request may have detached us already.
+        self.attach.detaching = true;
+        self.attach.deadline = Some(now.saturating_add(timeout));
+        Ok(())
     }
 
     /// Change the device mode. A change between rx-on and sleepy takes

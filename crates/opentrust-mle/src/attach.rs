@@ -189,6 +189,9 @@ pub(crate) struct AttachCtx {
     pub announce_delay: Duration,
     /// Reattach with the stored datasets (OT `mReattachState`).
     pub reattach: ReattachState,
+    /// A graceful detach is waiting for its 1 s timeout (OT
+    /// `mDetachingGracefully`).
+    pub detaching: bool,
 }
 
 impl AttachCtx {
@@ -205,6 +208,7 @@ impl AttachCtx {
             announce_channel: 0,
             announce_delay: Duration::ZERO,
             reattach: ReattachState::Stop,
+            detaching: false,
         }
     }
 
@@ -355,6 +359,10 @@ impl<const C: usize> Mle<C> {
     /// The attach timer fired (OT `HandleAttachTimer`).
     pub(crate) fn handle_attach_timer<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
         let mut delay = Duration::ZERO;
+        if self.attach.detaching {
+            self.stop(env);
+            return;
+        }
         if self.has_acceptable_parent_candidate(env) && self.send_child_id_request(env).is_ok() {
             self.attach.state = AttachState::ChildIdRequest;
             self.attach.deadline = Some(now.saturating_add(CHILD_ID_RESPONSE_TIMEOUT));

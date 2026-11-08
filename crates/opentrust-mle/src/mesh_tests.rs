@@ -159,3 +159,22 @@ fn line_of_four_routers_has_hop_count_costs() {
     assert_eq!(sim.nodes[3].mle.fill_connectivity().leader_cost, 3);
     assert_eq!(sim.nodes[3].mle.active_router_count(), 4);
 }
+
+#[test]
+fn graceful_detach_of_a_router_releases_its_id() {
+    let mut sim = Sim::new(2);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    sim.upgrade(0, 1);
+    let rloc = sim.nodes[1].mle.rloc16();
+    let now = sim.now;
+    let n = &mut sim.nodes[1];
+    n.mle.detach_gracefully(&mut n.env, now).unwrap();
+    assert_eq!(n.env.released.as_slice(), &[rloc]);
+    sim.run(Duration::from_millis(1100));
+    assert_eq!(sim.role(1), Role::Disabled);
+    assert!(sim.nodes[1].env.has_event(MleEvent::DetachedGracefully));
+}

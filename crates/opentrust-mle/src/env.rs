@@ -163,6 +163,9 @@ pub enum MleEvent {
     /// The router table changed (route costs, next hops, ID set): the
     /// routing layer should refresh what it derives from it.
     RouterTableChanged,
+    /// A graceful detach finished (OT `DetachGracefully` callback): the
+    /// role is now `Disabled`.
+    DetachedGracefully,
 }
 
 /// MAC-level options of an outgoing MLE message (Discovery Request /
