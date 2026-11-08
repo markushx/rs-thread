@@ -13,6 +13,7 @@
 //! - [`tlv`]: the Thread network-layer TLVs (OT `ThreadTlv`).
 //! - [`address`]: `/a/aq`, `/a/an`, `/a/ae`, the TMF side of address
 //!   resolution (the cache is `opentrust_net::resolver`).
+//! - [`netdata`]: Network Data TLVs, typed iterators and the stable copy.
 //! - `forwarder` (feature `ftd`): route lookup, mesh header insertion and
 //!   forwarding, address resolution glue, ICMPv6 unreachable decisions.
 //! - `indirect` (feature `ftd`): per-child queues for sleepy end devices,
@@ -29,6 +30,7 @@ pub mod address;
 pub mod forwarder;
 #[cfg(feature = "ftd")]
 pub mod indirect;
+pub mod netdata;
 #[cfg(feature = "ftd")]
 pub mod router_id;
 pub mod tlv;
