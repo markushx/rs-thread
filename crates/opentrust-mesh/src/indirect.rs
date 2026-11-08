@@ -262,6 +262,19 @@ impl<const N: usize> IndirectQueue<N> {
         n
     }
 
+    /// Remove the oldest queued datagram of `child` and copy it to `out`
+    /// (supervision messages are dropped); `None` if there is none. Used
+    /// to convert indirect messages to direct ones when the child stops
+    /// sleeping (OT `IndirectSender::HandleChildModeChange`).
+    pub fn take_datagram(&mut self, child: Rloc16, out: &mut [u8; MAX_DATAGRAM]) -> Option<usize> {
+        self.drop_supervision(child);
+        let i = self.head(child)?;
+        let e = self.slots[i].take()?;
+        out[..e.len].copy_from_slice(&e.datagram[..e.len]);
+        self.dirty |= self.count(child) == 0;
+        Some(e.len)
+    }
+
     /// Build the frame to send to `child` after its data poll into `out`
     /// (at most `max_payload` bytes): the next frame of its oldest message,
     /// or an empty frame. Nothing is consumed until

@@ -298,7 +298,12 @@ pub struct MeshForwarder<const HOLD: usize = 2, const SLOTS: usize = 2, const QU
     reasm: Reassembler<SLOTS>,
     tags: TagCounter,
     rx_buf: [u8; MTU],
+    sent_children: [Option<Rloc16>; SENT_CHILDREN],
 }
+
+/// Children whose "message sent" notification is buffered for
+/// [`MeshForwarder::take_child_message_sent`].
+const SENT_CHILDREN: usize = 4;
 
 fn hdr_of(datagram: &[u8]) -> Option<Ipv6Header> {
     Ipv6Header::parse(datagram).ok()
@@ -313,6 +318,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             reasm: Reassembler::new(),
             tags: TagCounter::new(tag_seed),
             rx_buf: [0; MTU],
+            sent_children: [None; SENT_CHILDREN],
         }
     }
 
@@ -732,10 +738,12 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
     }
 
     /// A data poll arrived from the sleepy child with MAC source `mac_src`:
-    /// send its next frame (empty if nothing is queued). The result is
-    /// [`PollOutcome::Sent`]; the caller then calls
-    /// `Mle::child_message_sent` to restart the child's supervision
-    /// interval. [`Error::NotFound`] if the sender is not a valid child.
+    /// send its next frame (empty if nothing is queued). After
+    /// [`PollOutcome::Sent`] the child is buffered for
+    /// [`MeshForwarder::take_child_message_sent`] (the caller restarts the
+    /// child's supervision interval with `Mle::child_message_sent`; the
+    /// forwarder only sees the MLE core through a shared reference).
+    /// [`Error::NotFound`] if the sender is not a valid child.
     pub fn handle_data_poll<
         const C: usize,
         const U: usize,
@@ -750,8 +758,68 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         sink: &mut S,
     ) -> Result<PollOutcome> {
         let child = Self::poll_child(r, mac_src).ok_or(Error::NotFound)?;
-        self.indirect
-            .handle_data_poll(child, r.mle.rloc16(), r.contexts, MAX_FRAME_PAYLOAD, sink)
+        let out = self.indirect.handle_data_poll(
+            child,
+            r.mle.rloc16(),
+            r.contexts,
+            MAX_FRAME_PAYLOAD,
+            sink,
+        );
+        if matches!(out, Ok(PollOutcome::Sent { .. })) {
+            self.note_child_message_sent(child);
+        }
+        out
+    }
+
+    fn note_child_message_sent(&mut self, child: Rloc16) {
+        if self.sent_children.contains(&Some(child)) {
+            return;
+        }
+        if let Some(s) = self.sent_children.iter_mut().find(|s| s.is_none()) {
+            *s = Some(child);
+        }
+    }
+
+    /// Next child that was sent a message since the last call (OT
+    /// `ChildSupervisor::UpdateOnSend`): call `Mle::child_message_sent`
+    /// with it, in a loop until `None`.
+    pub fn take_child_message_sent(&mut self) -> Option<Rloc16> {
+        self.sent_children.iter_mut().find_map(Option::take)
+    }
+
+    /// A sleepy child switched to rx-on-when-idle
+    /// (`MleEnv::indirect_remove_child` for a child that stays valid; OT
+    /// `IndirectSender::HandleChildModeChange`): its queued datagrams are
+    /// sent directly, oldest first; returns how many were handed to
+    /// `sink`. Supervision messages are dropped.
+    pub fn child_became_rx_on<
+        const C: usize,
+        const U: usize,
+        const M: usize,
+        CP: ContextProvider + ?Sized,
+        ND: ?Sized,
+        S: FrameSink + ?Sized,
+    >(
+        &mut self,
+        rloc16: Rloc16,
+        r: &Routing<'_, C, U, M, CP, ND>,
+        sink: &mut S,
+    ) -> usize {
+        let mut sent = 0;
+        let mut buf = [0u8; MTU];
+        while let Some(n) = self.indirect.take_datagram(rloc16, &mut buf) {
+            let Some(h) = hdr_of(&buf[..n]) else { continue };
+            let route = Route::Direct {
+                dst: MacDest::Short(rloc16),
+            };
+            if self
+                .transmit(r, &buf[..n], &h.src, route, true, sink)
+                .is_ok()
+            {
+                sent += 1;
+            }
+        }
+        sent
     }
 
     /// A child was removed or stopped sleeping (`MleEnv::indirect_remove_child`,

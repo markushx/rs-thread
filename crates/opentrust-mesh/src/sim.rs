@@ -812,8 +812,7 @@ impl MeshSim {
                 (pending, fwd.handle_data_poll(&child_rloc, routing, fsink))
             })
         };
-        if outcome.is_ok() {
-            let c = self.sim.nodes[child].mle.rloc16();
+        while let Some(c) = self.tmf[p].fwd.take_child_message_sent() {
             self.sim.nodes[p].mle.child_message_sent(c);
         }
         self.pump();
@@ -941,8 +940,35 @@ impl MeshSim {
                     }
                     let now_list: std::vec::Vec<Rloc16> =
                         n.env.indirect.iter().map(|(_, r)| *r).collect();
-                    for gone in t.indirect_seen.iter().filter(|r| !now_list.contains(r)) {
-                        t.fwd.child_removed(*gone);
+                    let gone_list: std::vec::Vec<Rloc16> = t
+                        .indirect_seen
+                        .iter()
+                        .filter(|r| !now_list.contains(r))
+                        .copied()
+                        .collect();
+                    for gone in &gone_list {
+                        // A child that is still valid and no longer sleeps
+                        // gets its messages sent directly.
+                        let rx_on = n
+                            .mle
+                            .children()
+                            .find_by_rloc(*gone, opentrust_mle::neighbor::StateFilter::Valid)
+                            .is_some_and(|c| c.neighbor.is_rx_on_when_idle());
+                        if rx_on {
+                            moved = true;
+                            let TmfNode {
+                                fwd,
+                                fsink,
+                                ip6,
+                                netdata,
+                                ..
+                            } = &mut *t;
+                            with_routing(&n.mle, n.env.ext, ip6, netdata, &self.nd, |routing| {
+                                fwd.child_became_rx_on(*gone, routing, fsink);
+                            });
+                        } else {
+                            t.fwd.child_removed(*gone);
+                        }
                     }
                     t.indirect_seen = now_list;
                 }

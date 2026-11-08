@@ -404,3 +404,26 @@ fn multicast_is_queued_for_subscribed_sleepy_children_only() {
         SendResult::Dropped(DropReason::Drop)
     );
 }
+
+#[test]
+fn queued_messages_become_direct_when_the_child_stops_sleeping() {
+    let mut m = line_with_sleepy();
+    let eid = m.ml_eid(4);
+    m.send_udp(0, eid, b"first");
+    assert!(m.run_until(secs(10), |s| queued(s) == 1));
+    m.send_udp(0, eid, b"second");
+    assert!(m.run_until(secs(10), |s| queued(s) == 2));
+    assert!(m.tmf[4].delivered.is_empty());
+    // The child becomes rx-on-when-idle (Child Update Request with the new
+    // mode): the parent sends both messages directly, in order.
+    let now = m.sim.now;
+    let n = &mut m.sim.nodes[4];
+    n.mle
+        .set_device_mode(&mut n.env, now, DeviceMode::new(true, true, true))
+        .unwrap();
+    assert!(m.run_until(secs(10), |s| s.tmf[4].delivered.len() == 2));
+    assert_eq!(&m.tmf[4].delivered[0][48..], b"first");
+    assert_eq!(&m.tmf[4].delivered[1][48..], b"second");
+    assert_eq!(queued(&m), 0);
+    assert!(m.tmf[3].fwd.indirect.src_match_children().next().is_none());
+}
