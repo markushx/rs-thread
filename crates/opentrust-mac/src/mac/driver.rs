@@ -183,6 +183,16 @@ where
         let res = match action {
             RadioAction::Configure(cfg) => self.radio.set_config(&cfg).await,
             RadioAction::SetSrcMatch(cfg) => self.radio.set_src_match_config(&cfg).await,
+            RadioAction::SetCsl(csl) => self.radio.set_csl(&csl).await,
+            RadioAction::ReceiveAt {
+                channel,
+                start_us,
+                duration_us,
+            } => {
+                self.radio
+                    .set_receive_at(channel, start_us, duration_us)
+                    .await
+            }
             RadioAction::SetMacKeys(keys) => self.radio.set_mac_keys(keys.as_ref()).await,
             RadioAction::SetMacFrameCounter {
                 frame_counter,

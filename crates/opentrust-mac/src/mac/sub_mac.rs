@@ -69,6 +69,17 @@ pub(crate) struct TxOp {
     pub retransmission: bool,
     /// The radio assigned frame counter / CSL IE already (`TRANSMIT_SEC`).
     pub header_updated: bool,
+    /// Frame carries a CSL IE (a CSL receiver's frame): the phase is
+    /// filled in for every attempt.
+    pub csl_ie: bool,
+    /// Software CSL IE: the frame as handed over, before the CSL IE and the
+    /// security were applied; every attempt starts from it so that the
+    /// phase is current and the frame gets a new frame counter.
+    pub csl_plain: Option<FrameBuf>,
+    /// A CSL transmission to a synchronized child (parent side).
+    pub csl_tx: bool,
+    /// SFD time to transmit at (radio clock, microseconds): timed CSL frame.
+    pub tx_at_us: Option<u64>,
     pub max_csma_backoffs: u8,
     pub max_frame_retries: u8,
     pub csma_backoffs: u8,

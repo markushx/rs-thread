@@ -1,21 +1,22 @@
 //! The sans-IO MAC state machine. See the [module docs](super) for the
 //! interface contract.
 
-use heapless::Deque;
+use heapless::{Deque, Vec};
 use opentrust_core::bytes::Writer;
 use opentrust_core::crypto::SecurityLevel;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::timer::TimerQueue;
 use opentrust_core::types::{Channel, ExtAddress, PanId, ShortAddress};
 use opentrust_core::{Error, Result};
-use opentrust_platform::radio::MacKeys;
 use opentrust_platform::radio::{
     Capabilities, Config, MacCapabilities, PsduRxInfo, PsduTxInfo, RSSI_INVALID, RadioCaps,
     RadioErrorKind, SoftMacNeeds, SrcMatchConfig,
 };
+use opentrust_platform::radio::{CslConfig, MacKeys};
 use rand_core::Rng;
 
 use super::consts::*;
+use super::csl::*;
 use super::fcs::fcs;
 use super::filter::{FilterError, FilterParams};
 use super::indirect::{IndirectQueue, NeighborMap, SrcMatch, ext_to_u64};
@@ -25,7 +26,7 @@ use super::sub_mac::{
 };
 use super::types::*;
 use crate::frame::{
-    Address, Beacon, FCS_LEN, Frame, FrameBuilder, FrameMut, FrameType, FrameVersion,
+    Address, Beacon, CslIe, FCS_LEN, Frame, FrameBuilder, FrameMut, FrameType, FrameVersion,
     KeyIdentifier, MacCommand, SecurityHeader, ThreadBeaconPayload,
 };
 use crate::frame_security::{FrameSecurity, RxSecurityInfo};
@@ -90,6 +91,8 @@ pub enum Operation {
     TransmitBeacon,
     /// Sending a frame to a polling child.
     TransmitDataIndirect,
+    /// Sending a frame to a CSL synchronized child at its sample window.
+    TransmitDataCsl,
     /// Sending a data poll.
     TransmitPoll,
     /// Sending a direct frame.
@@ -103,6 +106,7 @@ const P_ACTIVE_SCAN: u8 = 1 << 1;
 const P_ENERGY_SCAN: u8 = 1 << 2;
 const P_BEACON: u8 = 1 << 3;
 const P_POLL: u8 = 1 << 4;
+const P_CSL_TX: u8 = 1 << 5;
 
 /// What the MAC believes the radio is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +130,10 @@ enum TimerId {
     SubMac,
     /// Scan dwell time / data poll receive window.
     Operation,
+    /// CSL receiver: next sample window / window end.
+    CslRx,
+    /// CSL transmitter: time to hand the next child frame to the radio.
+    CslTx,
 }
 
 #[derive(Debug, Default)]
@@ -197,6 +205,7 @@ pub struct Mac<
     const EVQ: usize = EVENT_QUEUE_LEN,
     const POLLQ: usize = POLL_REQUEST_QUEUE_LEN,
     const NBQ: usize = NEIGHBOR_MAP_LEN,
+    const CSLQ: usize = CSL_CHILD_LEN,
 > {
     caps: RadioCaps,
     needs: SoftMacNeeds,
@@ -232,10 +241,16 @@ pub struct Mac<
     neighbors: NeighborMap<NBQ>,
     scan: ScanState,
     poll: PollSender,
-    timers: TimerQueue<TimerId, 2>,
+    timers: TimerQueue<TimerId, 4>,
     events: Deque<Event, EVQ>,
     counters: MacCounters,
     hw_sec: HwSecurity,
+    csl: CslReceiver,
+    csl_children: Vec<CslChild, CSLQ>,
+    csl_tx_child: Option<Address>,
+    csl_dirty: bool,
+    /// SFD time for the frame the next `start_frame` creates (CSL tx).
+    next_tx_timed: Option<u64>,
 }
 
 impl<
@@ -246,7 +261,8 @@ impl<
     const EVQ: usize,
     const POLLQ: usize,
     const NBQ: usize,
-> core::fmt::Debug for Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ>
+    const CSLQ: usize,
+> core::fmt::Debug for Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ, CSLQ>
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Mac")
@@ -302,7 +318,8 @@ impl<
     const EVQ: usize,
     const POLLQ: usize,
     const NBQ: usize,
-> Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ>
+    const CSLQ: usize,
+> Mac<S, G, TXQ, IND, EVQ, POLLQ, NBQ, CSLQ>
 {
     /// A MAC with explicit queue capacities (const generics: direct
     /// transmit queue `TXQ`, indirect queue `IND`, upward events `EVQ`,
@@ -352,6 +369,11 @@ impl<
             timers: TimerQueue::new(),
             events: Deque::new(),
             counters: MacCounters::default(),
+            csl: CslReceiver::new(),
+            csl_children: Vec::new(),
+            csl_tx_child: None,
+            csl_dirty: false,
+            next_tx_timed: None,
             hw_sec: HwSecurity {
                 enabled: caps
                     .phy
@@ -513,6 +535,450 @@ impl<
     }
 
     // ------------------------------------------------------------------
+    // CSL (Thread 1.2+): receiver (SSED) and transmitter (parent)
+    // ------------------------------------------------------------------
+
+    /// The radio clock in microseconds, if the radio has one
+    /// ([`RadioCaps::clock`]); CSL needs it.
+    fn radio_now_us(&self) -> Option<u64> {
+        self.caps.clock.map(|c| c.now_us())
+    }
+
+    fn csl_rx_channel(&self) -> u8 {
+        if self.csl.channel == 0 {
+            self.channel
+        } else {
+            self.csl.channel
+        }
+    }
+
+    /// Configure CSL reception (OpenThread `SubMac::SetCslParams`): sample
+    /// the channel every `period` (units of 10 symbols, [`MIN_CSL_PERIOD`]
+    /// or more; 0 turns CSL off) on `channel` (0 = the PAN channel), the
+    /// parent being `parent_short` / `parent_ext` (the peer the CSL IE in
+    /// enhanced ACKs is for). The first sample time is `now`.
+    ///
+    /// Radios with `Capabilities::RECEIVE_TIMING` get one timed receive
+    /// window per period ([`RadioAction::ReceiveAt`]) and the schedule for
+    /// their enhanced ACKs ([`RadioAction::SetCsl`]); without it the MAC
+    /// turns the receiver on and off itself. The radio needs a clock
+    /// ([`RadioCaps::clock`]): [`Error::NotImplemented`] without.
+    /// [`Error::InvalidArgs`] for a period shorter than the minimum.
+    pub fn set_csl(
+        &mut self,
+        period: u16,
+        channel: u8,
+        parent_short: ShortAddress,
+        parent_ext: ExtAddress,
+        now: Instant,
+    ) -> Result<()> {
+        if period != 0 {
+            if period < MIN_CSL_PERIOD {
+                return Err(Error::InvalidArgs);
+            }
+            if self.caps.clock.is_none() {
+                return Err(Error::NotImplemented);
+            }
+        }
+        let diff_period = period != self.csl.period;
+        let diff_peer = parent_short != self.csl.peer_short || parent_ext != self.csl.peer_ext;
+        self.csl.channel = channel;
+        if !(diff_period || diff_peer) {
+            return Ok(());
+        }
+        self.csl.peer_short = parent_short;
+        self.csl.peer_ext = parent_ext;
+        self.csl.period = period;
+        self.csl.sampling = false;
+        self.csl.window = None;
+        self.csl.last_sync = None;
+        self.timers.stop(TimerId::CslRx);
+        self.csl.radio_dirty = self.caps.hw_csl();
+        if period != 0 {
+            self.csl.sample_radio = self.radio_now_us().unwrap_or(0) as u32;
+            self.csl.sample_local = now;
+            self.csl_timer();
+        }
+        Ok(())
+    }
+
+    /// CSL period in units of 10 symbols (0 = off).
+    pub fn csl_period(&self) -> u16 {
+        self.csl.period
+    }
+
+    /// The CSL channel (0 = the PAN channel).
+    pub fn csl_channel(&self) -> u8 {
+        self.csl.channel
+    }
+
+    /// The parent's CSL accuracy (MLE CSL Accuracy TLV); until it is known
+    /// the worst case is assumed ([`CslAccuracy::WORST`]).
+    pub fn set_csl_parent_accuracy(&mut self, accuracy: CslAccuracy) {
+        self.csl.parent = accuracy;
+    }
+
+    /// The next sample time (low 32 bits of the radio clock, microseconds).
+    pub fn csl_sample_time(&self) -> u32 {
+        self.csl.sample_radio
+    }
+
+    /// The time the receiver listens before / after the sample time at
+    /// radio time `radio_now_us` (see [`window_edges`]); `None` if CSL is
+    /// off.
+    pub fn csl_window_edges(&self, radio_now_us: u64) -> Option<(u32, u32)> {
+        self.csl.enabled().then(|| {
+            let elapsed = self
+                .csl
+                .last_sync
+                .map_or(u32::MAX, |s| (radio_now_us as u32).wrapping_sub(s));
+            window_edges(
+                self.csl.period,
+                elapsed,
+                self.caps.csl_accuracy_ppm,
+                self.caps.csl_uncertainty,
+                self.csl.parent,
+            )
+        })
+    }
+
+    /// The CSL timer (OpenThread `SubMac::HandleCslTimer`): arm the next
+    /// sample window.
+    fn csl_timer(&mut self) {
+        if !self.csl.enabled() {
+            return;
+        }
+        let Some(radio_now) = self.radio_now_us() else {
+            return;
+        };
+        let Some((ahead, after)) = self.csl_window_edges(radio_now) else {
+            return;
+        };
+        let period_us = self.csl.period_us();
+        let period = Duration::from_micros(u64::from(period_us));
+        if self.caps.hw_csl() {
+            // One call per period: the timer fires `ahead` before the next
+            // sample, the radio listens in the window by itself.
+            let at = (self.csl.sample_local + period)
+                .saturating_sub(Duration::from_micros(ahead.into()));
+            let _ = self.timers.start(TimerId::CslRx, at);
+            let ahead = ahead.saturating_sub(CSL_RECEIVE_TIME_AHEAD);
+            let start32 = self.csl.sample_radio.wrapping_sub(ahead);
+            let delta = start32.wrapping_sub(radio_now as u32) as i32;
+            let start = (radio_now as i64 + i64::from(delta)).max(0) as u64;
+            self.csl.sample_radio = self.csl.sample_radio.wrapping_add(period_us);
+            self.csl.sample_local += period;
+            self.csl.radio_dirty = true;
+            self.csl.window = Some((self.csl_rx_channel(), start, ahead + after));
+        } else if self.csl.sampling {
+            self.csl.sampling = false;
+            let at = self
+                .csl
+                .sample_local
+                .saturating_sub(Duration::from_micros(ahead.into()));
+            let _ = self.timers.start(TimerId::CslRx, at);
+        } else {
+            // Listen from now until `after` the sample time.
+            let at = self.csl.sample_local + Duration::from_micros(after.into());
+            let _ = self.timers.start(TimerId::CslRx, at);
+            self.csl.sampling = true;
+            self.csl.sample_radio = self.csl.sample_radio.wrapping_add(period_us);
+            self.csl.sample_local += period;
+        }
+    }
+
+    /// Set the CSL IE phase of the frame about to be sent and secure it
+    /// again (new frame counter), for a software-secured CSL frame
+    /// (Thread §3.2.6.3.7); the radio does this itself with
+    /// `Capabilities::TRANSMIT_SEC`. The SFD time is estimated as now plus
+    /// the CCA and the SHR (OpenThread leaves the exact moment to the radio).
+    /// Returns `false` if the frame failed and the attempt was completed.
+    fn refresh_soft_csl(&mut self, now: Instant) -> bool {
+        let Some(mut frame) = self.tx.as_ref().and_then(|t| t.csl_plain.clone()) else {
+            return true;
+        };
+        if self.csl.enabled() {
+            let sfd = (self.radio_now_us().unwrap_or(0) as u32)
+                .wrapping_add(CCA_SAMPLE_INTERVAL + SHR_DURATION);
+            let phase = csl_phase(self.csl.sample_radio, sfd, self.csl.period);
+            let set =
+                FrameMut::new(&mut frame).and_then(|mut m| m.set_csl_ie(phase, self.csl.period));
+            if set.is_err() {
+                self.attempt_done(Err(TxError::Abort), now);
+                return false;
+            }
+        }
+        if self.security.secure_tx(&mut frame, &self.ext).is_err() {
+            self.attempt_done(Err(TxError::Security), now);
+            return false;
+        }
+        if let Some(tx) = self.tx.as_mut() {
+            tx.frame = frame;
+        }
+        true
+    }
+
+    /// Track `child` for CSL transmissions (parent side). Its CSL IEs (in
+    /// secured 2015 frames and enhanced ACKs from it) then synchronize it,
+    /// and indirect frames queued for it
+    /// ([`transmit_indirect`](Self::transmit_indirect)) are sent into its
+    /// sample windows instead of waiting for a data poll. Needs a radio
+    /// clock ([`Error::NotImplemented`]); [`Error::NoBufs`] if the table is
+    /// full.
+    pub fn csl_add_child(&mut self, child: Address) -> Result<()> {
+        if child.is_none() || child.is_broadcast() {
+            return Err(Error::InvalidArgs);
+        }
+        if self.caps.clock.is_none() {
+            return Err(Error::NotImplemented);
+        }
+        if self
+            .csl_children
+            .iter()
+            .any(|c| self.neighbors.same_device(c.addr, child))
+        {
+            return Ok(());
+        }
+        self.csl_children
+            .push(CslChild::new(child))
+            .map_err(|_| Error::NoBufs)
+    }
+
+    /// Stop CSL tracking of `child`.
+    pub fn csl_remove_child(&mut self, child: Address) -> bool {
+        let Some(i) = self
+            .csl_children
+            .iter()
+            .position(|c| self.neighbors.same_device(c.addr, child))
+        else {
+            return false;
+        };
+        self.csl_children.remove(i);
+        self.csl_dirty = true;
+        true
+    }
+
+    /// The CSL state of `child`.
+    pub fn csl_child(&self, child: Address) -> Option<&CslChild> {
+        self.csl_children
+            .iter()
+            .find(|c| self.neighbors.same_device(c.addr, child))
+    }
+
+    /// All tracked CSL children.
+    pub fn csl_children(&self) -> &[CslChild] {
+        &self.csl_children
+    }
+
+    /// Set the CSL channel of `child` (MLE CSL Channel TLV; 0 = the PAN
+    /// channel). [`Error::NotFound`] if it is not tracked.
+    pub fn csl_set_child_channel(&mut self, child: Address, channel: u8) -> Result<()> {
+        let i = self
+            .csl_children
+            .iter()
+            .position(|c| self.neighbors.same_device(c.addr, child))
+            .ok_or(Error::NotFound)?;
+        self.csl_children[i].channel = channel;
+        Ok(())
+    }
+
+    /// Mark `child` as not synchronized (CSL synchronized timeout expired,
+    /// child detached): frames wait for its data polls.
+    pub fn csl_child_desync(&mut self, child: Address) {
+        if let Some(i) = self
+            .csl_children
+            .iter()
+            .position(|c| self.neighbors.same_device(c.addr, child))
+        {
+            self.csl_children[i].synchronized = false;
+            self.csl_children[i].tx_attempts = 0;
+            self.csl_dirty = true;
+        }
+    }
+
+    /// Microseconds before a CSL window the MAC takes the frame
+    /// (`CslTxScheduler::mCslFrameRequestAheadUs`).
+    pub fn csl_request_ahead_us(&self) -> u32 {
+        let mut bus = self.caps.bus_latency_us;
+        if self.caps.bus_speed != 0 {
+            bus += (u64::from(CSL_BUS_FRAME_SIZE) * 8 * 1_000_000)
+                .div_ceil(u64::from(self.caps.bus_speed)) as u32;
+        }
+        CSL_REQUEST_AHEAD + bus
+    }
+
+    /// The CSL IE of a received frame or ACK from a tracked child
+    /// (OpenThread `Mac::ProcessCsl`).
+    fn csl_update_child(&mut self, f: &Frame<'_>, src: Address, ts: Option<u64>, now: Instant) {
+        if self.csl_children.is_empty() || f.version() != FrameVersion::V2015 {
+            return;
+        }
+        if !f.security_enabled() {
+            return;
+        }
+        let Some(ie) = f.csl_ie() else {
+            return;
+        };
+        let Some(i) = self
+            .csl_children
+            .iter()
+            .position(|c| self.neighbors.same_device(c.addr, src))
+        else {
+            return;
+        };
+        if ie.period < MIN_CSL_IE_PERIOD {
+            return;
+        }
+        let Some(ts) = ts.or_else(|| self.radio_now_us()) else {
+            return;
+        };
+        let c = &mut self.csl_children[i];
+        c.period = ie.period;
+        c.phase = ie.phase;
+        c.synchronized = true;
+        c.last_heard = Some(now);
+        c.last_rx_timestamp_us = ts;
+        self.csl_dirty = true;
+    }
+
+    /// Pick the child whose next window is first and arm the timer that
+    /// hands its frame to the radio `csl_request_ahead_us` before it
+    /// (`CslTxScheduler::RescheduleCslTx`).
+    fn csl_reschedule(&mut self, now: Instant) {
+        self.csl_dirty = false;
+        if self.operation == Operation::TransmitDataCsl || self.pending & P_CSL_TX != 0 {
+            return; // rescheduled when that transmission is done
+        }
+        self.timers.stop(TimerId::CslTx);
+        self.csl_tx_child = None;
+        let Some(radio_now) = self.radio_now_us() else {
+            return;
+        };
+        let ahead = self.csl_request_ahead_us();
+        let mut best: Option<(Address, u32)> = None;
+        for c in self.csl_children.iter() {
+            if !c.synchronized
+                || c.period == 0
+                || self.indirect.count_for(c.addr, &self.neighbors) == 0
+            {
+                continue;
+            }
+            let (_, _, delay) =
+                next_tx_window(radio_now, c.period, c.phase, c.last_rx_timestamp_us, ahead);
+            if best.is_none_or(|(_, d)| delay < d) {
+                best = Some((c.addr, delay));
+            }
+        }
+        if let Some((addr, delay)) = best {
+            self.csl_tx_child = Some(addr);
+            let _ = self
+                .timers
+                .start(TimerId::CslTx, now + Duration::from_micros(delay.into()));
+        }
+    }
+
+    /// Start the CSL transmission to the chosen child
+    /// (`CslTxScheduler::HandleFrameRequest`).
+    fn start_csl_tx(&mut self, now: Instant) {
+        let child = self
+            .csl_tx_child
+            .take()
+            .and_then(|a| self.csl_children.iter().find(|c| c.addr == a).copied());
+        let radio_now = self.radio_now_us();
+        let (Some(child), Some(radio_now)) = (child, radio_now) else {
+            self.finish_operation();
+            self.csl_dirty = true;
+            return;
+        };
+        let i = self.indirect.find_for(child.addr, &self.neighbors);
+        let Some(i) = i.filter(|_| child.synchronized && child.period != 0) else {
+            self.finish_operation();
+            self.csl_dirty = true;
+            return;
+        };
+        let (window, _, delay) = next_tx_window(
+            radio_now,
+            child.period,
+            child.phase,
+            child.last_rx_timestamp_us,
+            0,
+        );
+        // Busy with something else and late: this window is gone.
+        if delay > self.csl_request_ahead_us() + FRAME_PREPARATION_GUARD {
+            self.finish_operation();
+            self.csl_dirty = true;
+            return;
+        }
+        if !self.prepare_indirect_frame(i) {
+            self.csl_dirty = true;
+            return;
+        }
+        let f = &self.indirect.frames[i];
+        let (handle, frame, processed, retx) =
+            (f.handle, f.frame.clone(), f.security_processed, f.sent);
+        let channel = if child.channel == 0 {
+            self.channel
+        } else {
+            child.channel
+        };
+        self.next_tx_timed = Some(window);
+        self.start_frame(
+            TxKind::Indirect(Some(handle)),
+            frame,
+            channel,
+            true,
+            processed,
+            now,
+        );
+        if let Some(tx) = self.tx.as_mut() {
+            tx.retransmission = retx;
+        }
+    }
+
+    /// Completion of a CSL transmission (`CslTxScheduler::HandleSentFrame`):
+    /// success completes the frame; a failure leaves it queued (with the
+    /// frame counter and sequence number it was sent with), and after
+    /// [`MAX_CSL_TX_ATTEMPTS`] failures without ACK the child is out of sync.
+    fn csl_tx_done(&mut self, i: usize, handle: TxHandle, tx: TxOp, res: TxResult) {
+        let ci = self
+            .csl_children
+            .iter()
+            .position(|c| c.addr == tx.dst || self.neighbors.same_device(c.addr, tx.dst));
+        match res {
+            Ok(_) => {
+                if let Some(ci) = ci {
+                    self.csl_children[ci].tx_attempts = 0;
+                }
+                self.indirect.remove(i);
+                self.update_src_match();
+                self.push_event(Event::TxDone {
+                    handle,
+                    result: res,
+                });
+            }
+            Err(e) => {
+                let f = &mut self.indirect.frames[i];
+                f.frame = tx.frame;
+                f.security_processed = tx.security_processed;
+                f.prepared = true;
+                f.sent = true;
+                if e == TxError::NoAck {
+                    if let Some(ci) = ci {
+                        let c = &mut self.csl_children[ci];
+                        c.tx_attempts += 1;
+                        if c.tx_attempts >= MAX_CSL_TX_ATTEMPTS {
+                            c.synchronized = false;
+                            c.tx_attempts = 0;
+                            let addr = c.addr;
+                            self.push_event(Event::CslChildOutOfSync(addr));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Upper-layer requests
     // ------------------------------------------------------------------
 
@@ -547,6 +1013,7 @@ impl<
         let buf = Self::validate_frame(frame)?;
         self.indirect.push(handle, dst, buf)?;
         self.update_src_match();
+        self.csl_dirty = true;
         Ok(())
     }
 
@@ -563,6 +1030,7 @@ impl<
             n += 1;
         }
         self.update_src_match();
+        self.csl_dirty = true;
         n
     }
 
@@ -577,6 +1045,7 @@ impl<
             result: Err(TxError::Abort),
         });
         self.update_src_match();
+        self.csl_dirty = true;
         true
     }
 
@@ -797,7 +1266,13 @@ impl<
             return None;
         }
         self.process_timers(now);
+        if self.csl_dirty {
+            self.csl_reschedule(now);
+        }
         self.schedule_operations(now);
+        if self.csl_dirty {
+            self.csl_reschedule(now); // an operation may have ended
+        }
 
         if let Some((ack, channel)) = self.pending_ack.take() {
             self.in_flight = Some(InFlight::Ack(channel));
@@ -829,6 +1304,15 @@ impl<
         if let Some(a) = self.poll_hw_security() {
             return Some(a);
         }
+        if self.csl.radio_dirty {
+            self.csl.radio_dirty = false;
+            return Some(RadioAction::SetCsl(CslConfig {
+                period: u32::from(self.csl.period),
+                short_addr: self.csl.peer_short.0,
+                ext_addr: ext_to_u64(&self.csl.peer_ext),
+                sample_time_us: self.csl.sample_radio,
+            }));
+        }
         let ready_channel = match &self.tx {
             Some(tx) if tx.state == TxState::Ready => Some(tx.channel),
             _ => None,
@@ -857,6 +1341,22 @@ impl<
             });
         }
         let desired = self.desired_mode();
+        if let Some((channel, start_us, duration_us)) = self.csl.window {
+            let stale = self
+                .radio_now_us()
+                .is_none_or(|n| start_us + u64::from(duration_us) <= n);
+            if stale || (self.rx_on_when_idle && desired != RadioMode::Sleep) {
+                self.csl.window = None;
+            } else if desired == RadioMode::Sleep && self.radio_mode == RadioMode::Sleep {
+                // The radio sleeps and wakes up for this window by itself.
+                self.csl.window = None;
+                return Some(RadioAction::ReceiveAt {
+                    channel,
+                    start_us,
+                    duration_us,
+                });
+            }
+        }
         if desired != self.radio_mode && desired != RadioMode::Unknown {
             self.radio_mode = desired;
             return Some(match desired {
@@ -961,6 +1461,9 @@ impl<
             Operation::WaitingForData => RadioMode::Receive(self.channel),
             Operation::EnergyScan => self.radio_mode,
             _ if idle_rx => RadioMode::Receive(self.channel),
+            _ if self.csl.sampling && !self.caps.hw_csl() => {
+                RadioMode::Receive(self.csl_rx_channel())
+            }
             _ => RadioMode::Sleep,
         }
     }
@@ -974,6 +1477,10 @@ impl<
     }
 
     fn begin_transmit(&mut self, now: Instant) -> Option<RadioAction> {
+        if !self.refresh_soft_csl(now) {
+            return None;
+        }
+        let hw_timing = self.caps.phy.contains(Capabilities::TRANSMIT_TIMING);
         let soft_csma = self.needs.contains(SoftMacNeeds::CSMA);
         let hw_tx_ack = self.caps.hw_tx_ack();
         let abortable = hw_tx_ack && !self.caps.hw_ack_timeout() && !self.caps.hw_retransmit();
@@ -981,7 +1488,7 @@ impl<
         tx.state = TxState::InFlight;
         self.in_flight = Some(InFlight::Frame);
         self.counters.tx_attempts += 1;
-        let csma = tx.max_csma_backoffs > 0;
+        let csma = tx.max_csma_backoffs > 0 || tx.tx_at_us.is_some();
         let psdu = Self::with_fcs(&tx.frame);
         let wait_ack = tx.ack_request && hw_tx_ack;
         let abort_at = (wait_ack && abortable).then(|| {
@@ -998,11 +1505,15 @@ impl<
                     || tx.security_processed
                     || tx.retries > 0
                     || tx.retransmission,
-                csl_present: false,
+                csl_present: tx.csl_ie && self.csl.enabled(),
                 retransmission: tx.retries > 0 || tx.retransmission,
-                tx_at_us: None,
+                tx_at_us: if hw_timing { tx.tx_at_us } else { None },
                 // With software CSMA the backoff is done: a single CCA.
-                max_csma_backoffs: Some(if soft_csma { 0 } else { tx.max_csma_backoffs }),
+                max_csma_backoffs: Some(if soft_csma || tx.tx_at_us.is_some() {
+                    0
+                } else {
+                    tx.max_csma_backoffs
+                }),
             },
             psdu,
             channel: tx.channel,
@@ -1045,14 +1556,14 @@ impl<
                 }
                 Ok(false)
             }
-            TxOutcome::Acked { ack, .. } => {
+            TxOutcome::Acked { ack, info } => {
                 let dst = tx.dst;
                 match ack
                     .len()
                     .checked_sub(FCS_LEN)
                     .and_then(|n| FrameBuf::from_slice(&ack[..n]).ok())
                 {
-                    Some(mut buf) => match self.check_ack(&mut buf, dst) {
+                    Some(mut buf) => match self.check_ack(&mut buf, dst, &info, now) {
                         Some(fp) => Ok(fp),
                         None => Err(TxError::NoAck),
                     },
@@ -1078,7 +1589,13 @@ impl<
     }
 
     /// Validate an ACK (unsecuring an enhanced ACK); its Frame Pending bit.
-    fn check_ack(&mut self, buf: &mut FrameBuf, peer: Address) -> Option<bool> {
+    fn check_ack(
+        &mut self,
+        buf: &mut FrameBuf,
+        peer: Address,
+        info: &PsduRxInfo,
+        now: Instant,
+    ) -> Option<bool> {
         let (fp, secured) = {
             let f = Frame::parse(buf).ok()?;
             if !f.is_ack() {
@@ -1092,6 +1609,15 @@ impl<
                 self.counters.rx_err_sec += 1;
                 return None;
             }
+        }
+        if self.tx.as_ref().is_some_and(|tx| tx.csl_ie) {
+            // Our frame carried a CSL IE and was acknowledged: the parent is
+            // synchronized to us as of now (OpenThread
+            // `UpdateCslLastSyncTimestamp`).
+            self.csl.last_sync = self.radio_now_us().map(|n| n as u32);
+        }
+        if let Ok(f) = Frame::parse(buf) {
+            self.csl_update_child(&f, peer, info.timestamp_us, now);
         }
         Some(fp)
     }
@@ -1122,6 +1648,8 @@ impl<
             match id {
                 TimerId::SubMac => self.sub_mac_timer(now),
                 TimerId::Operation => self.operation_timer(now),
+                TimerId::CslRx => self.csl_timer(),
+                TimerId::CslTx => self.pending |= P_CSL_TX,
             }
         }
         if self.poll.take_expired(now) {
@@ -1171,6 +1699,8 @@ impl<
                 Operation::EnergyScan
             } else if p & P_BEACON != 0 {
                 Operation::TransmitBeacon
+            } else if p & P_CSL_TX != 0 {
+                Operation::TransmitDataCsl
             } else if !self.poll_requests.is_empty() {
                 Operation::TransmitDataIndirect
             } else if p & P_POLL != 0 && (self.direct.is_empty() || self.tx_poll_before_data) {
@@ -1189,6 +1719,7 @@ impl<
                 Operation::EnergyScan => P_ENERGY_SCAN,
                 Operation::TransmitBeacon => P_BEACON,
                 Operation::TransmitPoll => P_POLL,
+                Operation::TransmitDataCsl => P_CSL_TX,
                 _ => 0,
             };
             if next == Operation::TransmitPoll {
@@ -1221,6 +1752,7 @@ impl<
                 Err(_) => self.operation = Operation::Idle,
             },
             Operation::TransmitDataIndirect => self.start_indirect(now),
+            Operation::TransmitDataCsl => self.start_csl_tx(now),
             Operation::TransmitPoll => self.start_poll(now),
             Operation::TransmitDataDirect => self.start_direct(now),
         }
@@ -1300,10 +1832,19 @@ impl<
         if self.caps.hw_tx_security() {
             return Ok(false);
         }
+        if self.csl.enabled() && Self::has_csl_ie(frame) {
+            // CSL IE: phase and frame counter are set per attempt
+            // (`refresh_soft_csl`).
+            return Ok(true);
+        }
         self.security
             .secure_tx(frame, &self.ext)
             .map_err(|_| TxError::Security)?;
         Ok(true)
+    }
+
+    fn has_csl_ie(frame: &[u8]) -> bool {
+        Frame::parse(frame).is_ok_and(|f| f.csl_ie().is_some())
     }
 
     fn start_frame(
@@ -1330,7 +1871,20 @@ impl<
                 self.config.max_frame_retries_direct,
             )
         };
+        let timed = self.next_tx_timed.take();
+        let csl_ie = self.csl.enabled() && Self::has_csl_ie(&frame);
+        let secured = Frame::parse(&frame).is_ok_and(|f| f.security_enabled());
+        let csl_plain = (csl_ie && secured && !self.caps.hw_tx_security()).then(|| frame.clone());
+        let max_csma_backoffs = if timed.is_some() {
+            0
+        } else {
+            max_csma_backoffs
+        };
         self.tx = Some(TxOp {
+            csl_ie,
+            csl_plain,
+            csl_tx: timed.is_some(),
+            tx_at_us: timed,
             kind,
             frame,
             channel,
@@ -1352,9 +1906,30 @@ impl<
 
     fn start_csma_backoff(&mut self, now: Instant) {
         let soft = self.needs.contains(SoftMacNeeds::CSMA);
+        let hw_timing = self.caps.phy.contains(Capabilities::TRANSMIT_TIMING);
+        let radio_now = self.radio_now_us();
         let Some(tx) = self.tx.as_mut() else {
             return;
         };
+        if let Some(at) = tx.tx_at_us {
+            // Timed (CSL) frame: no random backoff, a single CCA. A radio
+            // without timed transmit gets it in time by the MAC
+            // (OpenThread `SubMac::StartCsmaBackoff`, kStateCslTransmit).
+            let ahead = u64::from(CCA_SAMPLE_INTERVAL + CSL_TRANSMIT_TIME_AHEAD + SHR_DURATION);
+            let wait = match radio_now {
+                Some(n) if !hw_timing => at.saturating_sub(ahead).saturating_sub(n),
+                _ => 0,
+            };
+            if wait == 0 {
+                tx.state = TxState::Ready;
+            } else {
+                tx.state = TxState::Backoff;
+                let _ = self
+                    .timers
+                    .start(TimerId::SubMac, now + Duration::from_micros(wait));
+            }
+            return;
+        }
         if tx.max_csma_backoffs > 0 && soft {
             let be = csma_backoff_exponent(tx.csma_backoffs);
             let d = random_backoff(&mut self.rng, be);
@@ -1431,6 +2006,33 @@ impl<
             }
             return;
         };
+        if !self.prepare_indirect_frame(i) {
+            return;
+        }
+        let f = &self.indirect.frames[i];
+        let (handle, frame, processed, retx) = (
+            f.handle,
+            f.frame.clone(),
+            f.security_processed,
+            f.attempts > 0,
+        );
+        self.start_frame(
+            TxKind::Indirect(Some(handle)),
+            frame,
+            self.channel,
+            true,
+            processed,
+            now,
+        );
+        if let Some(tx) = self.tx.as_mut() {
+            tx.retransmission = retx;
+        }
+    }
+
+    /// Sequence number, Frame Pending and security of the queued frame `i`
+    /// before its first attempt. `false` if that failed: the frame was
+    /// dropped and reported, the operation finished.
+    fn prepare_indirect_frame(&mut self, i: usize) -> bool {
         if !self.indirect.frames[i].prepared {
             let more = self
                 .indirect
@@ -1462,28 +2064,11 @@ impl<
                         handle: f.handle,
                         result: Err(e),
                     });
-                    return;
+                    return false;
                 }
             }
         }
-        let f = &self.indirect.frames[i];
-        let (handle, frame, processed, retx) = (
-            f.handle,
-            f.frame.clone(),
-            f.security_processed,
-            f.attempts > 0,
-        );
-        self.start_frame(
-            TxKind::Indirect(Some(handle)),
-            frame,
-            self.channel,
-            true,
-            processed,
-            now,
-        );
-        if let Some(tx) = self.tx.as_mut() {
-            tx.retransmission = retx;
-        }
+        true
     }
 
     fn own_src_for(&self, dst: Address) -> Address {
@@ -1684,9 +2269,14 @@ impl<
                 let Some(handle) = handle else {
                     return;
                 };
+                self.csl_dirty = true;
                 let Some(i) = self.indirect.position(handle) else {
                     return; // purged meanwhile
                 };
+                if tx.csl_tx {
+                    self.csl_tx_done(i, handle, tx, res);
+                    return;
+                }
                 let done = match res {
                     Ok(_) => true,
                     Err(_) => {
@@ -1735,14 +2325,21 @@ impl<
         eligible && self.src_match.frame_pending(m.src, &self.neighbors)
     }
 
-    fn queue_soft_ack(&mut self, buf: &FrameBuf, frame_pending: bool, channel: u8) {
+    fn queue_soft_ack(&mut self, buf: &FrameBuf, frame_pending: bool, info: &PsduRxInfo) {
+        let channel = info.channel;
         let mut out = [0u8; MAX_FRAME_LEN];
         let len = {
             let Ok(f) = Frame::parse(buf) else {
                 return;
             };
+            let csl_ie = self.csl_ack_ie(&f, info, buf.len() + FCS_LEN);
             let r = if f.version() == FrameVersion::V2015 {
-                FrameBuilder::enh_ack(&mut out, &f, frame_pending).and_then(FrameBuilder::build)
+                FrameBuilder::enh_ack(&mut out, &f, frame_pending)
+                    .map(|b| match csl_ie {
+                        Some(ie) => b.header_ie(ie),
+                        None => b,
+                    })
+                    .and_then(FrameBuilder::build)
             } else {
                 FrameBuilder::imm_ack_for(&mut out, &f, frame_pending)
             };
@@ -1766,13 +2363,50 @@ impl<
                 return;
             }
         }
+        if secured && self.csl.enabled() && Self::has_csl_ie(&ack) {
+            // Acked with a secured enhanced ACK carrying our CSL IE.
+            self.csl.last_sync = info
+                .timestamp_us
+                .or_else(|| self.radio_now_us())
+                .map(|t| t as u32);
+        }
         self.pending_ack = Some((ack, channel));
+    }
+
+    /// The CSL IE for the enhanced ACK of `rx`, if it comes from our CSL
+    /// parent: the phase to our next sample at the time the ACK's SFD is on
+    /// the air (frame end + turnaround + SHR).
+    fn csl_ack_ie(&self, rx: &Frame<'_>, info: &PsduRxInfo, psdu_len: usize) -> Option<CslIe> {
+        if !self.csl.enabled() || rx.version() != FrameVersion::V2015 {
+            return None;
+        }
+        if !self.csl.is_peer(rx.src_address()) {
+            return None;
+        }
+        let sfd = match info.timestamp_us {
+            Some(ts) => (ts as u32)
+                .wrapping_add((psdu_len as u32 + 1) * 32)
+                .wrapping_add(TURNAROUND_TIME + SHR_DURATION),
+            None => (self.radio_now_us()? as u32).wrapping_add(TURNAROUND_TIME + SHR_DURATION),
+        };
+        Some(CslIe {
+            phase: csl_phase(self.csl.sample_radio, sfd, self.csl.period),
+            period: self.csl.period,
+            rendezvous_time: None,
+        })
     }
 
     /// A frame from [`Radio::receive`](opentrust_platform::Radio::receive):
     /// `psdu` is the PSDU **including** the FCS (`info.len` octets).
     pub fn on_rx(&mut self, psdu: &[u8], info: &PsduRxInfo, now: Instant) {
         self.counters.rx_total += 1;
+        if self.csl.enabled() && info.ack_security.is_some() {
+            // Acked with a secured enhanced ACK by the radio.
+            self.csl.last_sync = info
+                .timestamp_us
+                .or_else(|| self.radio_now_us())
+                .map(|t| t as u32);
+        }
         if let Some(a) = &info.ack_security {
             self.security.ack_frame_counter_used(a);
             self.hw_sec.counter = self
@@ -1797,7 +2431,7 @@ impl<
             }
         };
         if meta.ftype == FrameType::Ack {
-            self.handle_ack(&mut buf, &meta, now);
+            self.handle_ack(&mut buf, &meta, info, now);
             return;
         }
         if self.promiscuous {
@@ -1827,7 +2461,7 @@ impl<
         let acked_fp = if meta.ack_request && unicast {
             if self.needs.contains(SoftMacNeeds::SEND_ACK) {
                 let fp = self.ack_frame_pending(&meta);
-                self.queue_soft_ack(&buf, fp, info.channel);
+                self.queue_soft_ack(&buf, fp, info);
                 fp
             } else {
                 info.acked_with_frame_pending
@@ -1879,6 +2513,10 @@ impl<
             let _ = self.send_data_poll(now);
         }
 
+        if let Ok(f) = Frame::parse(&buf) {
+            self.csl_update_child(&f, meta.src, info.timestamp_us, now);
+        }
+
         match meta.ftype {
             FrameType::MacCmd => {
                 let cmd = Frame::parse(&buf).ok().and_then(|f| f.command());
@@ -1911,7 +2549,7 @@ impl<
         }
     }
 
-    fn handle_ack(&mut self, buf: &mut FrameBuf, meta: &RxMeta, now: Instant) {
+    fn handle_ack(&mut self, buf: &mut FrameBuf, meta: &RxMeta, info: &PsduRxInfo, now: Instant) {
         let peer = match &self.tx {
             Some(tx) if tx.state == TxState::WaitAck && tx.seq.is_some() && tx.seq == meta.seq => {
                 tx.dst
@@ -1921,7 +2559,7 @@ impl<
                 return;
             }
         };
-        let Some(fp) = self.check_ack(buf, peer) else {
+        let Some(fp) = self.check_ack(buf, peer, info, now) else {
             return; // keep waiting for a valid ACK
         };
         self.timers.stop(TimerId::SubMac);

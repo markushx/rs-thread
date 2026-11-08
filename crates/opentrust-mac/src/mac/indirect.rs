@@ -99,6 +99,8 @@ pub(crate) struct IndirectFrame {
     pub prepared: bool,
     /// Security done by the MAC or not needed (else left to the radio).
     pub security_processed: bool,
+    /// Sent at least once in a CSL window (a retransmission is flagged).
+    pub sent: bool,
 }
 
 /// The parent's indirect queue.
@@ -120,6 +122,7 @@ impl<const N: usize> IndirectQueue<N> {
                 attempts: 0,
                 prepared: false,
                 security_processed: false,
+                sent: false,
             })
             .map_err(|_| Error::NoBufs)
     }

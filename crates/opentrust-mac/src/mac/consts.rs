@@ -110,3 +110,7 @@ pub const POLL_REQUEST_QUEUE_LEN: usize = 4;
 /// Capacity of the source-match table (per address type), as in the radio
 /// trait.
 pub const SRC_MATCH_CAPACITY: usize = opentrust_platform::radio::SRC_MATCH_CAPACITY;
+
+/// Default capacity of the table of CSL children (parent side, const
+/// generic of [`Mac`](super::Mac)).
+pub const CSL_CHILD_LEN: usize = 8;

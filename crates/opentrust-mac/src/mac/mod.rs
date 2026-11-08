@@ -115,6 +115,7 @@
 //!   sequence number (DSN) like OpenThread's `Mac::BeginTransmit`.
 
 mod consts;
+mod csl;
 mod driver;
 mod fcs;
 mod filter;
@@ -128,6 +129,7 @@ mod types;
 mod tests;
 
 pub use consts::*;
+pub use csl::*;
 pub use driver::{MacDriver, RunResult};
 pub use fcs::{crc16, fcs};
 pub use filter::{FilterError, FilterParams};

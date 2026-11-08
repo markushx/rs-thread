@@ -5,7 +5,8 @@ use opentrust_core::Result;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{ExtAddress, PanId};
 use opentrust_platform::radio::{
-    Config, MacKeys, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig, sim::MAX_PSDU_LEN,
+    Config, CslConfig, MacKeys, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig,
+    sim::MAX_PSDU_LEN,
 };
 
 use crate::frame::{Address, FCS_LEN, Frame, ThreadBeaconPayload};
@@ -145,6 +146,9 @@ pub enum Event {
     },
     /// The energy scan finished.
     EnergyScanDone,
+    /// CSL transmissions to this child failed too often without an ACK: it
+    /// is no longer CSL synchronized (queued frames wait for its data poll).
+    CslChildOutOfSync(Address),
 }
 
 /// Upper-layer requests, for facades that pass requests through a queue
@@ -229,6 +233,20 @@ pub enum RadioAction {
         frame_counter: u32,
         /// Only raise the radio's counter.
         if_larger: bool,
+    },
+    /// [`Radio::set_csl`](opentrust_platform::Radio::set_csl) (radios with
+    /// `Capabilities::RECEIVE_TIMING`): the CSL schedule for their enhanced
+    /// ACKs; sent again before every sample window.
+    SetCsl(CslConfig),
+    /// [`Radio::set_receive_at`](opentrust_platform::Radio::set_receive_at):
+    /// one CSL sample window (radios with `Capabilities::RECEIVE_TIMING`).
+    ReceiveAt {
+        /// Channel.
+        channel: u8,
+        /// Window start, radio clock in microseconds.
+        start_us: u64,
+        /// Window duration in microseconds.
+        duration_us: u32,
     },
     /// [`Radio::set_receive`](opentrust_platform::Radio::set_receive).
     Receive {
