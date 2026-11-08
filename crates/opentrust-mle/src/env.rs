@@ -163,6 +163,9 @@ pub enum MleEvent {
     /// The router table changed (route costs, next hops, ID set): the
     /// routing layer should refresh what it derives from it.
     RouterTableChanged,
+    /// A graceful detach finished (OT `DetachGracefully` callback): the
+    /// role is now `Disabled`.
+    DetachedGracefully,
 }
 
 /// MAC-level options of an outgoing MLE message (Discovery Request /
@@ -207,6 +210,16 @@ pub struct DiscoveryResponseInfo {
     pub rss: Option<i8>,
     /// LQI.
     pub lqi: Option<u8>,
+}
+
+/// Which stored Operational Dataset a reattach step restores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum StoredDataset {
+    /// The Active Operational Dataset.
+    Active,
+    /// The Pending Operational Dataset.
+    Pending,
 }
 
 /// Why a REED asks the leader for a router ID (Thread Status TLV values of
@@ -397,6 +410,24 @@ pub trait MleEnv {
     fn pending_dataset(&self, _now: Instant, _out: &mut [u8]) -> Result<usize> {
         Ok(0)
     }
+    /// `true` if the Active Dataset holds at least the network key, channel
+    /// and PAN ID (OT `IsPartiallyComplete`). Defaults to "an Active
+    /// Timestamp is known".
+    fn active_dataset_partially_complete(&self) -> bool {
+        self.active_timestamp().is_some()
+    }
+    /// Reload a stored Operational Dataset from non-volatile memory (OT
+    /// `DatasetManager::Restore`; for the Active Dataset this applies its
+    /// configuration: channel, PAN ID, network key). Returns `false` if none
+    /// is stored.
+    fn restore_dataset(&mut self, _now: Instant, _which: StoredDataset) -> bool {
+        false
+    }
+    /// Apply the configuration of the (restored) Pending Dataset: channel,
+    /// PAN ID, network key (OT `PendingDatasetManager::ApplyConfiguration`).
+    fn apply_pending_configuration(&mut self, _now: Instant) {}
+    /// Delete the Pending Dataset (OT `PendingDatasetManager::Clear`).
+    fn clear_pending_dataset(&mut self, _now: Instant) {}
     /// Datasets received in a Child ID Response / Data Response.
     fn dataset_received(
         &mut self,
@@ -404,6 +435,47 @@ pub trait MleEnv {
         _active: Option<(Timestamp, Option<&[u8]>)>,
         _pending: Option<(Timestamp, Option<&[u8]>)>,
     ) {
+    }
+
+    // ------------------------------------------------------------ link metrics
+
+    /// A Link Metrics Report arrived from `from` (OT Initiator report
+    /// callback): `values` unless the Subject answered with `status` only.
+    fn link_metrics_report(
+        &mut self,
+        _from: &Ipv6Addr,
+        _values: Option<&crate::link_metrics::MetricsValues>,
+        _status: crate::link_metrics::Status,
+    ) {
+    }
+    /// The Subject `from` answered a Link Metrics Management Request with
+    /// `status`.
+    fn link_metrics_management_response(
+        &mut self,
+        _from: &Ipv6Addr,
+        _status: crate::link_metrics::Status,
+    ) {
+    }
+    /// Link metrics decoded from the Enhanced ACKs of a neighbor (see
+    /// `Mle::process_enh_ack_ie_data`).
+    fn enh_ack_probing_report(
+        &mut self,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+        _values: &crate::link_metrics::MetricsValues,
+    ) {
+    }
+    /// Subject side of Enhanced-ACK probing: configure (non-empty `flags`)
+    /// or clear (empty) the metrics the radio puts into the ACKs to the
+    /// neighbor (OT `Radio::ConfigureEnhAckProbing`). Default: not
+    /// supported.
+    fn configure_enh_ack_probing(
+        &mut self,
+        _flags: opentrust_mac::mac::LinkMetricsFlags,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+    ) -> Result<()> {
+        Err(opentrust_core::Error::NotImplemented)
     }
 
     // ------------------------------------------------------------ discovery
@@ -483,6 +555,10 @@ pub trait MleEnv {
     fn request_router_id(&mut self, _request: &RouterIdRequest) -> Result<()> {
         Err(opentrust_core::Error::NotImplemented)
     }
+    /// Also accept frames addressed to `rloc16` (the former child RLOC16 of a
+    /// REED that became a router) or stop doing so (`None`); OT
+    /// `Mac::SetAlternateShortAddress`. Default: no-op.
+    fn set_alternate_short_address(&mut self, _rloc16: Option<Rloc16>) {}
     /// Send an Address Release (`/a/ar`) for `rloc16` to the leader (router
     /// downgrade). Default: nothing is sent.
     fn release_router_id(&mut self, _rloc16: Rloc16) {}

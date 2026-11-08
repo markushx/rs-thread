@@ -24,7 +24,6 @@
 //! | parent (child) | partition / leader change detection, Route64 into the routes |
 //! | newer Network Data version | Data Request after 1..1000 ms |
 
-use core::convert::Infallible;
 use core::net::Ipv6Addr;
 
 use opentrust_core::time::{Duration, Instant};
@@ -32,6 +31,7 @@ use opentrust_core::trickle::{Trickle, TrickleConfig, TrickleEvent, TrickleMode}
 use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_core::{Error, Result};
 
+use crate::announce_sender::EnvRng;
 use crate::attach::AttachMode;
 use crate::child_rx::serial_greater;
 use crate::consts::{
@@ -50,31 +50,6 @@ use crate::mle::{Mle, NbRef};
 use crate::neighbor::{NeighborState, StateFilter};
 use crate::router_link::DelayedKind;
 use crate::tlv::{DeviceMode, LeaderData, Route64};
-
-/// Adapter that lets the [`Trickle`] timer draw from the environment's
-/// random source.
-pub(crate) struct EnvRng<'a, E: MleEnv>(pub &'a mut E);
-
-impl<E: MleEnv> rand_core::TryRng for EnvRng<'_, E> {
-    type Error = Infallible;
-
-    fn try_next_u32(&mut self) -> core::result::Result<u32, Infallible> {
-        let mut b = [0u8; 4];
-        self.0.fill_random(&mut b);
-        Ok(u32::from_le_bytes(b))
-    }
-
-    fn try_next_u64(&mut self) -> core::result::Result<u64, Infallible> {
-        let mut b = [0u8; 8];
-        self.0.fill_random(&mut b);
-        Ok(u64::from_le_bytes(b))
-    }
-
-    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> core::result::Result<(), Infallible> {
-        self.0.fill_random(dst);
-        Ok(())
-    }
-}
 
 /// The initial (stopped) Advertisement timer.
 pub(crate) const fn initial_trickle() -> Trickle {

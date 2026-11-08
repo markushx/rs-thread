@@ -168,3 +168,10 @@ pub const GRADUAL_LINK_PROBABILITY_PERCENT: u8 = 5;
 pub const MAX_ROUTERS_IN_LINK_ACCEPT_ROUTE: usize = 20;
 /// Sequence rollback applied to a truncated Route64 of a Link Accept.
 pub const LINK_ACCEPT_SEQUENCE_ROLLBACK: u8 = 64;
+
+/// Delay that aggregates several changes into one Child Update Request of
+/// an MTD child (OT `kChildUpdateRequestDelay`).
+pub const CHILD_UPDATE_REQUEST_DELAY: Duration = Duration::from_millis(100);
+/// Maximum jitter of an unsolicited multicast Data Response of a router
+/// (OT `kUnsolicitedDataResponseJitter`).
+pub const UNSOLICITED_DATA_RESPONSE_JITTER_MS: u32 = 500;

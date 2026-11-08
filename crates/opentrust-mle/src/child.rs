@@ -51,6 +51,9 @@ pub enum ChildUpdateMode {
 pub(crate) struct ChildCtx {
     pub tx_deadline: Option<Instant>,
     pub supervision_deadline: Option<Instant>,
+    /// Delayed Child Update Request that aggregates changes (OT
+    /// `ScheduleChildUpdateRequestToParent`).
+    pub update_deadline: Option<Instant>,
     pub waiting_child_update_response: bool,
     pub child_update_attempts: u8,
     pub waiting_data_response: bool,
@@ -64,6 +67,7 @@ impl ChildCtx {
         Self {
             tx_deadline: None,
             supervision_deadline: None,
+            update_deadline: None,
             waiting_child_update_response: false,
             child_update_attempts: 0,
             waiting_data_response: false,
@@ -84,6 +88,7 @@ impl<const C: usize> Mle<C> {
         self.set_rloc16(env, rloc16);
         self.set_role(env, Role::Child);
         self.attach.state = crate::attach::AttachState::Idle;
+        self.attach.reattach = crate::attach::ReattachState::Stop;
         self.attach.deadline = Some(now.saturating_add(crate::attach::ATTACH_BACKOFF_RESET));
         self.announce_attach_succeeded(env);
         self.child.child_update_attempts = 0;
@@ -183,6 +188,27 @@ impl<const C: usize> Mle<C> {
         }
         if self.send_child_update_request(env, now).is_ok() {
             self.child.child_update_attempts += 1;
+        }
+    }
+
+    /// OT `ScheduleChildUpdateRequestIfMtdChild`: the addresses of an MTD
+    /// child changed (or another detail its parent keeps); send a Child
+    /// Update Request after [`crate::consts::CHILD_UPDATE_REQUEST_DELAY`] so that several
+    /// changes share one message. Does nothing for other roles / FTDs.
+    pub fn schedule_child_update_request<E: MleEnv>(&mut self, _env: &mut E, now: Instant) {
+        if self.role == Role::Child
+            && !self.is_full_thread_device()
+            && self.child.update_deadline.is_none()
+        {
+            self.child.update_deadline =
+                Some(now.saturating_add(crate::consts::CHILD_UPDATE_REQUEST_DELAY));
+        }
+    }
+
+    pub(crate) fn poll_child_update_request<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
+        if self.child.update_deadline.is_some_and(|d| now >= d) {
+            self.child.update_deadline = None;
+            let _ = self.send_child_update_request(env, now);
         }
     }
 

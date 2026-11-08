@@ -328,6 +328,10 @@ impl<const C: usize> Mle<C> {
         }
         self.handle_leader_data(env, now, rx)?;
         match t.timeout() {
+            Ok(0) if self.attach.detaching => {
+                self.stop(env);
+                return Ok(RxClass::Peer);
+            }
             Ok(secs) => {
                 let secs = secs.clamp(MIN_CHILD_TIMEOUT_SECS, MAX_CHILD_TIMEOUT_SECS);
                 if secs != self.cfg.timeout_secs {
@@ -368,6 +372,9 @@ impl<const C: usize> Mle<C> {
         let from_router = false;
         if !(from_parent || from_router) || !self.neighbor_is_valid(nb) {
             return Err(Error::Drop);
+        }
+        if rx.tlvs.contains(ty::LINK_METRICS_REPORT) {
+            self.handle_link_metrics_report(env, rx);
         }
         #[cfg(feature = "ftd")]
         if let Some(pid) = self

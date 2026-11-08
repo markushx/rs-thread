@@ -260,3 +260,35 @@ fn address_error_with_own_ml_eid_is_ignored() {
             .is_none()
     );
 }
+
+#[test]
+fn mle_events_restart_queries_and_clear_the_cache() {
+    use opentrust_mle::MleEvent;
+    let mut m = mesh_with_child();
+    let own = m.ml_eid(1);
+    assert_eq!(m.resolve(0, &own), Ok(Resolution::QueryPending));
+    assert!(m.run_until(secs(10), |s| resolved(s, 0, &own)));
+    // A pending query for an unknown address is sent again when the router
+    // table changes.
+    let unknown: Ipv6Addr = "fd00:dead::beef".parse().unwrap();
+    assert_eq!(m.resolve(0, &unknown), Ok(Resolution::QueryPending));
+    let now = m.sim.now;
+    let mut ev = std::vec::Vec::new();
+    handle_mle_event(
+        &mut m.tmf[0].resolver,
+        now,
+        &MleEvent::RouterTableChanged,
+        &mut |e| ev.push(e),
+    );
+    assert_eq!(ev, [ResolverEvent::SendQuery { eid: unknown }]);
+    // A partition change clears everything.
+    ev.clear();
+    handle_mle_event(
+        &mut m.tmf[0].resolver,
+        now,
+        &MleEvent::PartitionChanged { partition_id: 9 },
+        &mut |e| ev.push(e),
+    );
+    assert_eq!(ev, [ResolverEvent::ResolutionFailed { eid: unknown }]);
+    assert!(m.tmf[0].resolver.info(&own).is_none());
+}

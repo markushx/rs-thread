@@ -270,3 +270,61 @@ fn timeout_change_informs_parent() {
     });
     assert_eq!(env.poll, Some(Duration::from_secs(1)));
 }
+
+#[test]
+fn graceful_detach_of_a_child_sends_zero_timeout_and_stops() {
+    let (mut child, mut env, mut p, t) = attached(RX_ON);
+    env.take_out();
+    child.detach_gracefully(&mut env, t).unwrap();
+    assert_eq!(
+        child.detach_gracefully(&mut env, t),
+        Err(opentrust_core::Error::Busy)
+    );
+    let out = env.take_out();
+    assert_eq!(out.len(), 1);
+    decode(&out[0], &env, |rx| {
+        assert_eq!(rx.command, Command::ChildUpdateRequest);
+        assert_eq!(rx.tlvs.timeout().unwrap(), 0);
+        assert!(rx.tlvs.contains(ty::MODE));
+    });
+    // The parent echoes the zero timeout: stop at once.
+    assert_eq!(child.role(), Role::Child);
+    let r = cu_response(&mut p, &env, RX_ON, 0);
+    TestEnv::deliver(&r, &mut child, &mut env, t, -60).unwrap();
+    assert_eq!(child.role(), Role::Disabled);
+    assert!(env.has_event(MleEvent::DetachedGracefully));
+}
+
+#[test]
+fn graceful_detach_without_answer_stops_after_one_second() {
+    let (mut child, mut env, _p, t) = attached(RX_ON);
+    child.detach_gracefully(&mut env, t).unwrap();
+    child.poll(&mut env, t + Duration::from_millis(999));
+    assert_eq!(child.role(), Role::Child);
+    child.poll(&mut env, t + Duration::from_millis(1000));
+    assert_eq!(child.role(), Role::Disabled);
+    assert!(env.has_event(MleEvent::DetachedGracefully));
+    // Disabled and detached devices report without a message.
+    env.events.clear();
+    child.detach_gracefully(&mut env, t).unwrap();
+    assert!(env.has_event(MleEvent::DetachedGracefully));
+}
+
+#[test]
+fn mtd_child_aggregates_changes_into_one_delayed_child_update_request() {
+    let (mut child, mut env, _p, t) = attached(SLEEPY);
+    env.take_out();
+    child.schedule_child_update_request(&mut env, t);
+    child.schedule_child_update_request(&mut env, t + Duration::from_millis(50));
+    child.poll(&mut env, t + Duration::from_millis(99));
+    assert!(env.out.is_empty());
+    child.poll(&mut env, t + Duration::from_millis(100));
+    let out = env.take_out();
+    assert_eq!(out.len(), 1);
+    decode(&out[0], &env, |rx| {
+        assert_eq!(rx.command, Command::ChildUpdateRequest)
+    });
+    // Nothing more is pending.
+    child.poll(&mut env, t + Duration::from_millis(500));
+    assert!(env.out.is_empty());
+}

@@ -37,7 +37,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
-use opentrust_core::time::Instant;
+use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_core::{Error, Result};
 use opentrust_net::udp::UdpMeta;
@@ -74,6 +74,10 @@ pub struct MleConfig {
     /// Router role configuration (eligibility, thresholds, leader weight).
     pub router: RouterConfig,
 }
+
+/// How long a graceful detach waits for the parent / leader (OT
+/// `kDetachGracefullyTimeout`).
+pub const DETACH_GRACEFULLY_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl MleConfig {
     /// Defaults of OpenThread for the given mode.
@@ -123,6 +127,8 @@ pub struct Mle<const C: usize> {
     pub(crate) parent: Option<Parent>,
     pub(crate) attach: AttachCtx,
     pub(crate) announce: crate::discovery::AnnounceCtx,
+    pub(crate) announce_sender: crate::announce_sender::AnnounceSender,
+    pub(crate) link_metrics: crate::link_metrics::SeriesTable<{ crate::link_metrics::MAX_SERIES }>,
     pub(crate) child: ChildCtx,
     pub(crate) children: ChildTable<C>,
     pub(crate) previous_partition_id: u32,
@@ -153,6 +159,8 @@ impl<const C: usize> Mle<C> {
             parent: None,
             attach: AttachCtx::new(),
             announce: crate::discovery::AnnounceCtx::new(),
+            announce_sender: crate::announce_sender::AnnounceSender::new(),
+            link_metrics: crate::link_metrics::SeriesTable::new(),
             child: ChildCtx::new(),
             children: ChildTable::new(),
             previous_partition_id: 0,
@@ -242,6 +250,7 @@ impl<const C: usize> Mle<C> {
         self.set_role(env, Role::Detached);
         self.set_rloc16(env, Rloc16::INVALID);
         self.attach.counter = 0;
+        self.attach.reattach = crate::attach::ReattachState::Start;
         env.keys_mut().start(now);
         #[cfg(feature = "ftd")]
         {
@@ -259,11 +268,57 @@ impl<const C: usize> Mle<C> {
         if self.role == Role::Disabled {
             return;
         }
+        let detaching = core::mem::take(&mut self.attach.detaching);
         self.reset_to_detached(env);
         self.announce = crate::discovery::AnnounceCtx::new();
+        self.announce_sender = crate::announce_sender::AnnounceSender::new();
+        self.attach.reattach = crate::attach::ReattachState::Stop;
         env.keys_mut().stop();
         self.children.clear();
         self.set_role(env, Role::Disabled);
+        if detaching {
+            env.event(MleEvent::DetachedGracefully);
+        }
+    }
+
+    /// Leave the network politely, then stop (OT `Mle::DetachGracefully`):
+    /// a child sends a Child Update Request with timeout 0 to its parent, a
+    /// router releases its router ID ([`MleEnv::release_router_id`]); after
+    /// [`DETACH_GRACEFULLY_TIMEOUT`] (or as soon as the parent confirms the
+    /// zero timeout) the device stops and raises
+    /// [`MleEvent::DetachedGracefully`]. A device that is detached already
+    /// stops at the next poll; a disabled one reports at once.
+    pub fn detach_gracefully<E: MleEnv>(&mut self, env: &mut E, now: Instant) -> Result<()> {
+        if self.attach.detaching {
+            return Err(Error::Busy);
+        }
+        let mut timeout = DETACH_GRACEFULLY_TIMEOUT;
+        match self.role {
+            Role::Disabled => {
+                env.event(MleEvent::DetachedGracefully);
+                return Ok(());
+            }
+            Role::Leader => {}
+            Role::Router =>
+            {
+                #[cfg(feature = "ftd")]
+                if let Some(id) = self.router_id() {
+                    env.release_router_id(Rloc16::from_router_id(id).unwrap_or(Rloc16::INVALID));
+                }
+            }
+            Role::Child => {
+                let _ = self.send_child_update_request_with(
+                    env,
+                    now,
+                    crate::child::ChildUpdateMode::ZeroTimeout,
+                );
+            }
+            Role::Detached => timeout = Duration::ZERO,
+        }
+        // A failed Child Update Request may have detached us already.
+        self.attach.detaching = true;
+        self.attach.deadline = Some(now.saturating_add(timeout));
+        Ok(())
     }
 
     /// Change the device mode. A change between rx-on and sleepy takes
@@ -277,11 +332,16 @@ impl<const C: usize> Mle<C> {
         if mode == self.cfg.mode {
             return Ok(());
         }
-        if !mode.full_thread_device() && self.cfg.mode.full_thread_device() && C > 0 {
-            // FTD -> MTD while holding children: not handled yet.
-            return Err(Error::InvalidState);
-        }
+        let ftd_changed = mode.full_thread_device() != self.cfg.mode.full_thread_device();
         self.cfg.mode = mode;
+        if ftd_changed && self.role.is_attached() {
+            // Switching between FTD and MTD needs a re-attach; becoming
+            // detached drops the children and the router state (OT
+            // `SetDeviceMode`).
+            self.attach.counter = 0;
+            self.become_detached(env, now);
+            return Ok(());
+        }
         if self.role == Role::Child {
             self.apply_rx_mode(env);
             self.recalculate_poll_period(env);
@@ -314,6 +374,7 @@ impl<const C: usize> Mle<C> {
     /// tied to the current attachment. Does not start an attach.
     pub(crate) fn reset_to_detached<E: MleEnv>(&mut self, env: &mut E) {
         self.set_role(env, Role::Detached);
+        self.link_metrics.clear();
         self.attach.reset();
         self.child.reset();
         self.parent = None;
@@ -350,8 +411,10 @@ impl<const C: usize> Mle<C> {
         let d = [
             self.attach.deadline,
             self.announce.deadline,
+            self.announce_sender.deadline(),
             self.child.tx_deadline,
             self.child.supervision_deadline,
+            self.child.update_deadline,
         ]
         .into_iter()
         .flatten()
@@ -379,6 +442,7 @@ impl<const C: usize> Mle<C> {
             self.handle_attach_timer(env, now);
         }
         self.poll_announce(env, now);
+        self.poll_announce_sender(env, now);
         if self.child.tx_deadline.is_some_and(|d| now >= d) {
             self.child.tx_deadline = None;
             self.handle_message_tx_timer(env, now);
@@ -386,6 +450,7 @@ impl<const C: usize> Mle<C> {
         if self.child.supervision_deadline.is_some_and(|d| now >= d) {
             self.handle_supervision_timer(env, now);
         }
+        self.poll_child_update_request(env, now);
         #[cfg(feature = "ftd")]
         {
             self.poll_parent(env, now);
@@ -459,6 +524,13 @@ impl<const C: usize> Mle<C> {
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
             Command::Advertisement => self.handle_advertisement(env, now, rx, nb)?,
             Command::Announce => self.handle_announce(env, now, rx)?,
+            Command::LinkMetricsManagementRequest => {
+                self.handle_link_metrics_management_request(env, rx, nb)?
+            }
+            Command::LinkMetricsManagementResponse => {
+                self.handle_link_metrics_management_response(env, rx, nb)?
+            }
+            Command::LinkProbe => self.handle_link_probe(rx, nb)?,
             #[cfg(feature = "ftd")]
             Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,
             #[cfg(feature = "ftd")]
@@ -474,6 +546,7 @@ impl<const C: usize> Mle<C> {
             _ => return Err(Error::Drop),
         };
         self.process_key_sequence(env, now, class, sec, nb);
+        self.update_announce_sender(env, now);
         self.store_if_needed(env);
         Ok(rx.command)
     }

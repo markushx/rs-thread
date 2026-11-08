@@ -10,6 +10,11 @@
 //! - [`message`], [`security`]: commands, message building, MLE security.
 //! - [`neighbor`], [`link_quality`]: neighbor/child/router data model, tables.
 //! - [`endpoint`]: UDP glue (port 19788, rx validation/decryption, dispatch, tx).
+//! - [`link_metrics`]: Link Metrics sub-TLV codecs and Forward Tracking Series
+//!   (Initiator and Subject on [`Mle`]).
+//! - [`discovery`]: Discovery and Announce; the periodic Announce sender of
+//!   routers, reattach with the stored datasets ([`attach`]) and graceful
+//!   detach ([`Mle::detach_gracefully`]) are part of the state machine.
 //!
 //! The sans-IO state machine [`Mle`] covers child-side
 //! [`attach`], child role operation ([`child`]), parent-side child handling
@@ -28,6 +33,7 @@
 
 #[cfg(feature = "ftd")]
 mod advert;
+mod announce_sender;
 pub mod attach;
 pub mod child;
 mod child_rx;
@@ -35,6 +41,8 @@ pub mod consts;
 pub mod discovery;
 pub mod endpoint;
 pub mod env;
+pub mod link_metrics;
+mod link_metrics_roles;
 pub mod link_quality;
 pub mod message;
 pub mod mle;
@@ -50,7 +58,7 @@ mod router_link;
 pub mod security;
 pub mod tlv;
 
-pub use env::{MleEnv, MleEvent, Role};
+pub use env::{MleEnv, MleEvent, Role, StoredDataset};
 pub use mle::{Mle, MleConfig};
 pub use router_config::{DeviceProperties, PowerSupply, RouterConfig, RoutingPolicy};
 
@@ -64,6 +72,8 @@ mod child_tests;
 mod discovery_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod link_metrics_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod mesh_tests;
 #[cfg(all(test, feature = "ftd"))]

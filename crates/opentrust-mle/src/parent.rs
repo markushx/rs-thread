@@ -188,6 +188,19 @@ impl<const C: usize> Mle<C> {
         }
         if self.role == Role::Leader {
             self.reset_advertise_interval(env, now);
+            let _ = self.send_multicast_data_response(env, now);
+        } else if !self.rtr.delayed.iter().any(|d| {
+            matches!(
+                d.kind,
+                crate::router_link::DelayedKind::MulticastDataResponse
+            )
+        }) {
+            let jitter =
+                Self::rand_range(env, 0, crate::consts::UNSOLICITED_DATA_RESPONSE_JITTER_MS);
+            self.schedule_delayed(
+                now.saturating_add(Duration::from_millis(1 + u64::from(jitter))),
+                crate::router_link::DelayedKind::MulticastDataResponse,
+            );
         }
         let mut behind: heapless::Vec<usize, C> = heapless::Vec::new();
         for (idx, c) in self.children.iter_indexed(StateFilter::Valid) {
@@ -307,6 +320,36 @@ impl<const C: usize> Mle<C> {
         }
     }
 
+    /// OT `UpdateEidRlocCacheAndStaleChild`, second half: a mesh-forwarded
+    /// datagram from `src` arrived with mesh source `mesh_src`. If `src` is
+    /// the address of one of our minimal (non-FTD) children but `mesh_src`
+    /// belongs to another router, the child has moved to a new parent and is
+    /// removed. Returns whether a child was removed. The forwarder calls this
+    /// for every unicast mesh-header frame with a short mesh source.
+    pub fn remove_child_that_moved<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        src: &Ipv6Addr,
+        mesh_src: Rloc16,
+    ) -> bool {
+        if !self.role.is_router_or_leader() || mesh_src.router_id() == self.rloc16.router_id() {
+            return false;
+        }
+        let prefix = env.mesh_local_prefix();
+        let found = self
+            .children
+            .iter_indexed(StateFilter::ValidOrRestoring)
+            .find(|(_, c)| !c.neighbor.mode.full_thread_device() && c.has_address(&prefix, src))
+            .map(|(i, _)| i);
+        match found {
+            Some(i) => {
+                self.remove_child(env, i);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Remove a child: notify, drop its indirect state and its settings
     /// record (OT `RemoveNeighbor(child)` + `ChildTable` removal).
     pub(crate) fn remove_child<E: MleEnv>(&mut self, env: &mut E, idx: usize) {
@@ -323,6 +366,7 @@ impl<const C: usize> Mle<C> {
             env.indirect_remove_child(&c.neighbor.ext_address, c.neighbor.rloc16);
         }
         let _ = env.delete_child_info(&c.neighbor.ext_address);
+        self.link_metrics.remove_neighbor(&c.neighbor.ext_address);
     }
 
     fn child_to_valid<E: MleEnv>(&mut self, env: &mut E, now: Instant, idx: usize) {
@@ -1147,6 +1191,40 @@ impl<const C: usize> Mle<C> {
 
     // ------------------------------------------------------------ Data Request / Response
 
+    /// OT `SendMulticastDataResponse`: the Network Data (full) with the
+    /// Leader Data to the link-local all-nodes address, when it changed.
+    pub(crate) fn send_multicast_data_response<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        _now: Instant,
+    ) -> Result<()> {
+        if !self.role.is_attached() {
+            return Err(Error::InvalidState);
+        }
+        let rloc = self.rloc16;
+        let leader = self.leader_data;
+        let (active_ts, pending_ts) = (env.active_timestamp(), env.pending_timestamp());
+        let mut nd = [0u8; 400];
+        let n = env.network_data(false, &mut nd)?;
+        self.send(
+            env,
+            ipv6::LINK_LOCAL_ALL_NODES,
+            Command::DataResponse,
+            |w| {
+                w.source_address(rloc)?;
+                w.leader_data(&leader)?;
+                // The timestamps let receivers notice a newer dataset.
+                if let Some(t) = &active_ts {
+                    w.active_timestamp(t)?;
+                }
+                if let Some(t) = &pending_ts {
+                    w.pending_timestamp(t)?;
+                }
+                w.network_data(&nd[..n])
+            },
+        )
+    }
+
     /// OT `HandleDataRequest` + `SendDataResponse` (unicast to a child).
     pub(crate) fn handle_data_request<E: MleEnv>(
         &mut self,
@@ -1206,6 +1284,24 @@ impl<const C: usize> Mle<C> {
         let active_len = env.active_dataset(now, &mut active).unwrap_or(0);
         let pending_len = env.pending_dataset(now, &mut pending).unwrap_or(0);
         let route = self.parent_side.info.route64.clone();
+        let mut lm = [0u8; 32];
+        let mut lm_len = 0;
+        if list.contains(&ty::LINK_METRICS_REPORT) {
+            let query = t.link_metrics_query()?;
+            let ext = rx.meta.sender_ext_address();
+            lm_len = crate::link_metrics::report_for_query(
+                &self.link_metrics,
+                &ext,
+                query.as_bytes(),
+                rx.meta.link.lqi.unwrap_or(0),
+                rx.meta
+                    .link
+                    .rss
+                    .unwrap_or(crate::link_quality::INVALID_RSSI),
+                env.noise_floor(),
+                &mut lm,
+            )?;
+        }
         self.send(env, rx.meta.src, Command::DataResponse, |w| {
             w.source_address(rloc)?;
             w.leader_data(&leader)?;
@@ -1213,6 +1309,7 @@ impl<const C: usize> Mle<C> {
                 match r {
                     ty::NETWORK_DATA => w.network_data(&nd[..nd_len])?,
                     ty::ROUTE64 if !route.is_empty() => w.raw(ty::ROUTE64, &route)?,
+                    ty::LINK_METRICS_REPORT => w.link_metrics_report(&lm[..lm_len])?,
                     ty::ACTIVE_DATASET if active_len > 0 => {
                         if let Some(t) = &active_ts {
                             w.active_timestamp(t)?;

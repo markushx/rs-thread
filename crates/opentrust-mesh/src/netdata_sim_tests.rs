@@ -285,6 +285,10 @@ fn router_removal_clears_its_entries() {
         let n = &mut m.sim.nodes[0];
         n.mle.release_router_id(&mut n.env, now, id).unwrap();
     }
+    // Router 1 is a child now and would register its route again: keep its
+    // TMF requests away so that the removal stays visible.
+    m.blocked.push((1, 0));
+    m.blocked.push((1, 2));
     assert!(m.run_until(secs(60), |s| {
         (0..3)
             .filter(|&i| i != 1)

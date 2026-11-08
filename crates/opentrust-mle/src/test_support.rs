@@ -47,6 +47,37 @@ pub trait DatasetBridge {
         active: Option<(Timestamp, Option<&[u8]>)>,
         pending: Option<(Timestamp, Option<&[u8]>)>,
     );
+    /// Restore the stored Active / Pending Dataset; `false` if none.
+    fn restore(&mut self, _now: Instant, _active: bool) -> bool {
+        false
+    }
+    /// Apply the restored Pending Dataset's configuration.
+    fn apply_pending(&mut self, _now: Instant) {}
+    /// Delete the Pending Dataset.
+    fn clear_pending(&mut self, _now: Instant) {}
+}
+
+/// Stored datasets of a [`TestEnv`] without a [`DatasetBridge`], and the
+/// reattach steps taken.
+#[derive(Default)]
+pub struct StoredDatasets {
+    pub active: bool,
+    pub pending: bool,
+    pub restored: std::vec::Vec<crate::env::StoredDataset>,
+    pub pending_applied: u32,
+    pub pending_cleared: u32,
+}
+
+/// Link Metrics results seen by a [`TestEnv`].
+#[derive(Default)]
+pub struct LinkMetricsSeen {
+    pub reports: std::vec::Vec<(
+        Option<crate::link_metrics::MetricsValues>,
+        crate::link_metrics::Status,
+    )>,
+    pub management: std::vec::Vec<crate::link_metrics::Status>,
+    pub enh_ack: std::vec::Vec<crate::link_metrics::MetricsValues>,
+    pub configured: std::vec::Vec<opentrust_mac::mac::LinkMetricsFlags>,
 }
 
 pub struct TestEnv {
@@ -75,6 +106,9 @@ pub struct TestEnv {
     /// `request_router_id` fails (no TMF available).
     pub solicit_fails: bool,
     pub dataset_bridge: Option<std::boxed::Box<dyn DatasetBridge>>,
+    pub stored: StoredDatasets,
+    pub lm: LinkMetricsSeen,
+    pub alternate_short: Option<Rloc16>,
     pub active_ts: Option<Timestamp>,
     pub mac_pan_id: u16,
     pub mac_channel: u8,
@@ -120,6 +154,9 @@ impl TestEnv {
             released: Vec::new(),
             solicit_fails: false,
             dataset_bridge: None,
+            stored: StoredDatasets::default(),
+            lm: LinkMetricsSeen::default(),
+            alternate_short: None,
             active_ts: None,
             mac_pan_id: 0xface,
             mac_channel: 15,
@@ -262,6 +299,41 @@ impl MleEnv for TestEnv {
     ) {
         self.discovery_responses.push((*info, tlvs.to_vec()));
     }
+    fn link_metrics_report(
+        &mut self,
+        _from: &Ipv6Addr,
+        values: Option<&crate::link_metrics::MetricsValues>,
+        status: crate::link_metrics::Status,
+    ) {
+        self.lm.reports.push((values.copied(), status));
+    }
+    fn link_metrics_management_response(
+        &mut self,
+        _from: &Ipv6Addr,
+        status: crate::link_metrics::Status,
+    ) {
+        self.lm.management.push(status);
+    }
+    fn enh_ack_probing_report(
+        &mut self,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+        values: &crate::link_metrics::MetricsValues,
+    ) {
+        self.lm.enh_ack.push(*values);
+    }
+    fn configure_enh_ack_probing(
+        &mut self,
+        flags: opentrust_mac::mac::LinkMetricsFlags,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+    ) -> Result<()> {
+        self.lm.configured.push(flags);
+        Ok(())
+    }
+    fn set_alternate_short_address(&mut self, rloc16: Option<Rloc16>) {
+        self.alternate_short = rloc16;
+    }
     fn set_short_address(&mut self, rloc16: Rloc16) {
         self.short = rloc16;
     }
@@ -328,6 +400,28 @@ impl MleEnv for TestEnv {
             Some(b) => b.dataset(false, now, out),
             None => Ok(0),
         }
+    }
+    fn restore_dataset(&mut self, now: Instant, which: crate::env::StoredDataset) -> bool {
+        if let Some(b) = &mut self.dataset_bridge {
+            return b.restore(now, which == crate::env::StoredDataset::Active);
+        }
+        self.stored.restored.push(which);
+        match which {
+            crate::env::StoredDataset::Active => self.stored.active,
+            crate::env::StoredDataset::Pending => self.stored.pending,
+        }
+    }
+    fn apply_pending_configuration(&mut self, now: Instant) {
+        if let Some(b) = &mut self.dataset_bridge {
+            b.apply_pending(now);
+        }
+        self.stored.pending_applied += 1;
+    }
+    fn clear_pending_dataset(&mut self, now: Instant) {
+        if let Some(b) = &mut self.dataset_bridge {
+            b.clear_pending(now);
+        }
+        self.stored.pending_cleared += 1;
     }
     fn dataset_received(
         &mut self,

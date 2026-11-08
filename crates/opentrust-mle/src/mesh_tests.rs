@@ -159,3 +159,115 @@ fn line_of_four_routers_has_hop_count_costs() {
     assert_eq!(sim.nodes[3].mle.fill_connectivity().leader_cost, 3);
     assert_eq!(sim.nodes[3].mle.active_router_count(), 4);
 }
+
+#[test]
+fn graceful_detach_of_a_router_releases_its_id() {
+    let mut sim = Sim::new(2);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    sim.upgrade(0, 1);
+    let rloc = sim.nodes[1].mle.rloc16();
+    let now = sim.now;
+    let n = &mut sim.nodes[1];
+    n.mle.detach_gracefully(&mut n.env, now).unwrap();
+    assert_eq!(n.env.released.as_slice(), &[rloc]);
+    sim.run(Duration::from_millis(1100));
+    assert_eq!(sim.role(1), Role::Disabled);
+    assert!(sim.nodes[1].env.has_event(MleEvent::DetachedGracefully));
+}
+
+#[test]
+fn reed_keeps_its_child_rloc16_for_eight_seconds_after_becoming_router() {
+    let mut sim = Sim::new(2);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    let child_rloc = sim.nodes[1].mle.rloc16();
+    sim.upgrade(0, 1);
+    assert_eq!(sim.nodes[1].env.alternate_short, Some(child_rloc));
+    sim.run(secs(7));
+    assert_eq!(sim.nodes[1].env.alternate_short, Some(child_rloc));
+    sim.run(secs(2));
+    assert_eq!(sim.nodes[1].env.alternate_short, None);
+}
+
+#[test]
+fn former_child_that_moved_to_another_parent_is_removed() {
+    use crate::tlv::DeviceMode;
+    let modes = [FTD, DeviceMode::new(true, false, true)];
+    let mut sim = Sim::with_modes(&modes);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    assert_eq!(
+        sim.nodes[0].mle.children().iter(StateFilter::Valid).count(),
+        1
+    );
+    let eid = sim.nodes[1].env.ml_eid();
+    let own = sim.nodes[0].mle.rloc16();
+    let n = &mut sim.nodes[0];
+    // Same router ID: nothing happens.
+    assert!(!n.mle.remove_child_that_moved(&mut n.env, &eid, own));
+    // Another router forwards the child's datagram: it moved.
+    let other = opentrust_core::types::Rloc16(0x0800);
+    assert!(n.mle.remove_child_that_moved(&mut n.env, &eid, other));
+    assert_eq!(n.mle.children().iter(StateFilter::Valid).count(), 0);
+}
+
+#[test]
+fn device_mode_change_between_ftd_and_mtd_reattaches() {
+    use crate::tlv::DeviceMode;
+    let mut sim = Sim::new(2);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    // The leader has a child; becoming an MTD drops it and the router role.
+    let now = sim.now;
+    let n = &mut sim.nodes[0];
+    n.mle
+        .set_device_mode(&mut n.env, now, DeviceMode::new(true, false, true))
+        .unwrap();
+    assert_eq!(n.mle.role(), Role::Detached);
+    assert_eq!(
+        n.mle.children().iter(StateFilter::AnyExceptInvalid).count(),
+        0
+    );
+}
+
+#[test]
+fn network_data_update_sends_a_multicast_data_response() {
+    use crate::attach_tests::decode;
+    use opentrust_core::types::ipv6;
+    let mut sim = Sim::new(2);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    sim.upgrade(0, 1);
+    let is_data_response = |n: &crate::sim::Node, o: &crate::test_support::Out| {
+        o.dst == ipv6::LINK_LOCAL_ALL_NODES
+            && decode(o, &n.env, |rx| rx.command) == Command::DataResponse
+    };
+    // The leader answers at once, a router after 1..=500 ms.
+    let now = sim.now;
+    let n = &mut sim.nodes[0];
+    n.env.out.clear();
+    n.mle.network_data_updated(&mut n.env, now);
+    assert!(n.env.out.iter().any(|o| is_data_response(n, o)));
+    let n = &mut sim.nodes[1];
+    n.env.out.clear();
+    n.mle.network_data_updated(&mut n.env, now);
+    assert!(n.env.out.iter().all(|o| !is_data_response(n, o)));
+    n.mle.poll(&mut n.env, now + Duration::from_millis(501));
+    assert!(n.env.out.iter().any(|o| is_data_response(n, o)));
+}

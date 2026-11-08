@@ -112,7 +112,8 @@ fn announce_older_network_is_answered_newer_raises_event() {
     n.mle.send_announce(&mut n.env, 15, false, None).unwrap();
     sim.pump();
     assert_eq!(sim.nodes[0].count_rx(Command::Announce), 1);
-    assert_eq!(sim.nodes[1].count_rx(Command::Announce), 1);
+    // A broadcast and a unicast Announce.
+    assert_eq!(sim.nodes[1].count_rx(Command::Announce), 2);
     assert!(
         sim.nodes[1]
             .env
@@ -143,13 +144,13 @@ fn announce_older_network_is_answered_newer_raises_event() {
     let n = &mut sim.nodes[1];
     n.mle.send_announce(&mut n.env, 15, true, None).unwrap();
     sim.pump();
-    assert_eq!(sim.nodes[1].count_rx(Command::Announce), before + 1);
+    assert_eq!(sim.nodes[1].count_rx(Command::Announce), before + 2);
     sim.nodes[1].env.mac_channel = 15;
     sim.nodes[1].env.mac_pan_id = 0xface;
     let n = &mut sim.nodes[1];
     n.mle.send_announce(&mut n.env, 15, true, None).unwrap();
     sim.pump();
-    assert_eq!(sim.nodes[1].count_rx(Command::Announce), before + 1);
+    assert_eq!(sim.nodes[1].count_rx(Command::Announce), before + 2);
 }
 
 #[test]
@@ -162,4 +163,32 @@ fn announce_without_active_timestamp_is_dropped_and_args_checked() {
     n.mle.send_announce(&mut n.env, 15, false, None).unwrap();
     sim.pump();
     assert_eq!(sim.nodes[0].count_rx(Command::Announce), 0);
+}
+
+#[test]
+fn announce_sender_cycles_and_is_suppressed_by_equal_announces() {
+    let mut sim = setup();
+    sim.nodes[0].env.active_ts = Some(ts(10));
+    sim.nodes[1].env.active_ts = Some(ts(10));
+    let base = sim.nodes[0].count_tx(Command::Announce);
+    // The Trickle interval is 688 s: the first transmission is in its
+    // second half, and starts a cycle over all 16 channels.
+    sim.run(Duration::from_secs(300));
+    assert_eq!(sim.nodes[0].count_tx(Command::Announce), base);
+    sim.run(Duration::from_secs(1200));
+    let sent = sim.nodes[0].count_tx(Command::Announce) - base;
+    assert!((1..=48).contains(&sent), "{sent}");
+
+    // Equal Announces heard at least k = 8 times per interval suppress ours.
+    let base = sim.nodes[0].count_tx(Command::Announce);
+    for _ in 0..80 {
+        let n = &mut sim.nodes[1];
+        n.mle.send_announce(&mut n.env, 15, false, None).unwrap();
+        sim.pump();
+        sim.run(Duration::from_secs(20));
+    }
+    // Trickle intervals overlap the loop's start, so allow the tail of a
+    // running cycle but nothing near two full cycles.
+    let sent = sim.nodes[0].count_tx(Command::Announce) - base;
+    assert!(sent <= 16, "{sent}");
 }

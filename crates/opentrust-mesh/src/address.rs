@@ -35,7 +35,7 @@ use opentrust_core::message::Priority;
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Iid, Rloc16, ipv6};
 use opentrust_core::{Error, Result};
-use opentrust_mle::MleEnv;
+use opentrust_mle::{MleEnv, MleEvent};
 use opentrust_net::netif::Netif;
 use opentrust_net::resolver::{AddressResolver, NotifyOutcome, ResolverEvent};
 use rand_core::Rng;
@@ -280,6 +280,27 @@ pub fn send_resolver_event<
             None
         }
         other => Some(other),
+    }
+}
+
+/// React to an [`MleEvent`] the way OT's MLE does towards the address cache:
+/// a partition change clears it (`HandlePartitionChange`), a router table
+/// change or attaching in a role restarts the pending queries
+/// (`RestartAddressQueries`). Resulting cache events go to `sink`; pass them
+/// to [`send_resolver_event`] like any other.
+pub fn handle_mle_event<const N: usize>(
+    resolver: &mut AddressResolver<N>,
+    now: Instant,
+    event: &MleEvent,
+    sink: &mut impl FnMut(ResolverEvent),
+) {
+    match event {
+        MleEvent::PartitionChanged { .. } => resolver.clear(sink),
+        MleEvent::RouterTableChanged => resolver.restart_queries(now, sink),
+        MleEvent::RoleChanged { new, .. } if new.is_attached() => {
+            resolver.restart_queries(now, sink);
+        }
+        _ => {}
     }
 }
 
