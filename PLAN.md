@@ -80,10 +80,18 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 3 – 6LoWPAN adaptation (§3.3–3.5, RFC 4944/6282)
 
-- [ ] IPHC / NHC (UDP) compression & decompression with context IDs
-- [ ] Mesh header, fragmentation header, reassembly with timeouts
-- [ ] Mesh forwarding (mesh header) for FTD
-- [ ] Port OT `test_lowpan.cpp` vectors as Rust tests
+- [x] IPHC / NHC (UDP) compression & decompression with context IDs (`opentrust_lowpan::iphc`: stateless/stateful unicast and multicast, TF/NH/HLIM, NHC UDP/Hop-by-Hop/IP-in-IP, `ContextProvider` trait + `ContextTable`, ECN helpers)
+  - [ ] Network Data implementing `ContextProvider` (Phase 7); context 0 = mesh-local prefix is wired by the caller (`ContextTable::set_mesh_local`)
+  - [ ] Compression of Destination Options / Routing / Fragment extension headers (OT only compresses Hop-by-Hop; others are sent inline)
+- [x] Mesh header, fragmentation header, reassembly with timeouts (`mesh`, `frag`, `reassembly`: `MeshHeader`, `FragmentHeader`, sans-IO `Fragmenter`, fixed-capacity `Reassembler`, 2 s timeout like OT)
+  - [ ] Out-of-order reassembly (OT drops out-of-order fragments; so do we)
+  - [ ] Sleepy-device reassembly rules (clear list on new secure first fragment / mismatch): call `Reassembler::clear` from the MLE/role layer
+  - [ ] Reassembling into `Message`s from the pool and queueing the Tx side (`Fragmenter` frames -> MAC) belongs to the Phase 4/6 mesh forwarder glue
+  - [ ] MLE messages that need fragmentation must be link-secured (`MeshForwarder` retry with security) and delay-aware queue management (Phase 6)
+- [x] Mesh forwarding (mesh header) for FTD (`forward`: `classify`/`parse_frame`, `handle_mesh` deliver/forward/drop with `LocalRlocs` + `NextHops` traits, hops-left handling, 2-hop loop detection)
+  - [ ] Routing table / next-hop provider, ICMPv6 destination-unreachable on no route, EID-RLOC cache update from forwarded frames, forwarding queue (Phase 4/7)
+- [x] Port OT `test_lowpan.cpp` vectors as Rust tests (all 58 IPHC vectors + `TestLowpanMeshHeader` + `TestLowpanFragmentHeader`), plus randomized round-trips and no-panic tests
+  - [ ] Differential tests against OpenThread's `Lowpan` via `openthread-sys` (Phase 11)
 
 ## Phase 4 – IPv6 / UDP / ICMPv6 core (§5)
 

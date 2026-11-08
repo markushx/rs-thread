@@ -92,3 +92,32 @@ Keep this file up to date with every change that deviates from OpenThread.
 | Enh-ACK probing (initiator) | `Mac::ProcessEnhAckProbing` -> `Initiator::ProcessEnhAckIeData` with the neighbor's configured metrics | `track_enh_ack_probing` keeps the metrics per neighbor; the IE of ACKs to our frames is reported as `Event::EnhAckLinkMetrics` | MLE (Phase 6) calls it | none |
 
 Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries` = 15 for direct frames (Thread §3.2); indirect frames use 0 retries per poll and up to 4 polls.
+
+## 6LoWPAN (`opentrust-lowpan`)
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| API shape | `Lowpan::Compress/Decompress` work on `Message` + `FrameBuilder`/`FrameData` and read Network Data directly | Functions on byte slices (`compress`, `decompress`, `decompress_datagram`); contexts come from a `ContextProvider` trait (`ContextTable` is a ready implementation) | Sans-IO, no global Network Data; Phase 7 implements the trait | API |
+| IPv6 types | Full `Ip6::Header`/`Udp::Header` | Minimal `Ipv6Header`/`UdpHeader` in `opentrust_lowpan::ip6` (documented seam to Phase 4); the codecs take/produce raw datagram bytes | Phase 4 owns IPv6 | API |
+| Context prefix length | Up to 128 bits | Same (bits beyond /64 are applied to the IID); stateful multicast uses the first 64 prefix bits like OT | — | none |
+| Link-local detection when compressing | `IsLinkLocalUnicast` (`fe80::/10`); the decompressor restores `fe80::/64`, so `fe80:0:0:1::x` would be corrupted | Only `fe80::/64` is treated as link-local, other `fe80::/10` addresses fall through to context/inline | Round-trip correctness | none |
+| Stateful multicast without context 0 | Compares against a cleared context (prefix length 0, all-zero prefix), which can wrongly match | Requires a real context 0 | Round-trip correctness | none |
+| Multicast with an all-zero group (`ffXX::`) | Emits no address bytes | Sent inline (128 bit) | Round-trip correctness | none |
+| SAM/DAM = 11 without MAC address | Source: IID left zero; destination: parse error | Parse error for both | Do not invent addresses | stricter |
+| Context applied to link-local mode 3 | `ComputeIid` applies context 0's bits beyond /64 even when SAC = 0 | Context only used when SAC/DAC = 1 | RFC 6282 | none |
+| Traffic class/IPv6 version | Compress reads the header without checking the version | `Ipv6Header::parse` requires version 6 (`Error::Parse`) | Defensive parsing | stricter |
+| NHC chaining at the header-depth limit | When the compressed-header budget forces fewer compressed headers, the Hop-by-Hop NHC may still announce a compressed next header | NH bit only set if the next header will really be compressed | Round-trip correctness | none |
+| ECN accessors | `DecompressEcn`/`MarkCompressedEcn` read the byte at offset 2 even when a context-ID byte is present | `iphc_ecn`/`iphc_mark_ecn` skip the context-ID byte | Correctness | none |
+| Extension headers | Compresses Hop-by-Hop only; decompresses Hop-by-Hop/Routing/Fragment/Destination/IP-in-IP NHC | Same | — | none |
+| UDP checksum | NHC with elided checksum rejected | Same (Thread requires inline checksum) | — | none |
+| Mesh header | Short originator/destination only; hops left 0-255 (deep hops) | Same; `MESH_HEADER_HOPS_LEFT` = 19 (`kMaxRouteCost` 16 + 3) | — | none |
+| Fragment header | Offset in 8-byte units; `FRAGN` with offset 0 accepted and treated as first fragment | Same | — | none |
+| Reassembly storage | `Message`s from the pool in a reassembly list | Fixed const-generic slots (`Reassembler<SLOTS, MAX_DATAGRAM>`, default 1280 B each) holding the uncompressed datagram; completion returns `&[u8]` | No alloc; Phase 4 copies into a `Message` if needed | API |
+| Reassembly key | Datagram size + tag (+ offset, link security); source address not compared | (originator address, size, tag) plus offset and link security | Avoid mixing datagrams of different senders with equal tags | stricter |
+| Duplicate FRAG1 | A second reassembly is started | Dropped while a reassembly with the same key is pending | Retransmitted FRAG1 must not reset progress | none |
+| Out-of-order / duplicate FRAGN | Dropped, pending reassembly kept | Same (`Error::Drop`) | — | none |
+| Reassembly timeout | 2 s granularity via the 1 s time ticker, refreshed by each fragment | Exact deadline (`next_deadline`/`expire`, 2 s), refreshed by each accepted fragment | Sans-IO timers | none |
+| Sleepy-device reassembly | Clears the list on a new secure first/mismatching next fragment | Not built in; `Reassembler::clear()` for the role layer | Role is MLE's concern | none |
+| Fragmenter | Per-message state in `Message` (offset, tag), 0 = unset tag | `Fragmenter` iterator with caller-supplied tag; `TagCounter` never yields 0 | Sans-IO | API |
+| Fragment size limit | `uint16_t` size masked to 11 bits | Datagrams above 2047 bytes are rejected when fragmenting (`InvalidArgs`) | Avoid silently wrong size | stricter |
+| Mesh forwarding | `HandleMesh` mixes parsing, routing, queueing | `handle_mesh` only decides (deliver/forward/drop) via `LocalRlocs`/`NextHops`; a 2-hop loop is reported as `DropReason::RoutingLoop` and the caller invalidates the route; no route is detected immediately (OT drops at send time) | Routing table is Phase 7 | API |
