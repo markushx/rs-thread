@@ -16,12 +16,16 @@
 //! reset 20 s after becoming a child. 4+2 Parent Requests (2 to routers,
 //! 4 to routers and REEDs) in the first cycle, 1+1 in later ones.
 //!
+//! An FTD adds partition logic: while attached it only accepts parents that
+//! fit the attach mode (a different partition, a newer router ID sequence of
+//! the same one, or a strictly better partition: weight, then not being a
+//! singleton, then partition ID), prefers the better partition among
+//! several candidates, and starts a partition of its own (becomes leader)
+//! when an attach to any partition finds none.
+//!
 //! Deviations from OT: no Announce attach state (Phase 8), no
-//! "reattach with stored Active/Pending dataset" sequence (Phase 8), the
-//! FTD-specific partition checks of `HandleParentResponse` and the FTD
-//! fallbacks of `Reattach` (become leader) belong to Phase 6c and are
-//! marked where they would go. A Parent Response is only accepted while
-//! Parent Requests are being sent.
+//! "reattach with stored Active/Pending dataset" sequence (Phase 8). A
+//! Parent Response is only accepted while Parent Requests are being sent.
 
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{Rloc16, ipv6};
@@ -72,13 +76,14 @@ const DEFAULT_SED_DATAGRAM_COUNT: u8 = 1;
 pub enum AttachMode {
     /// Any partition (detached device).
     AnyPartition,
-    /// Only the partition we are in (router upgrade fallback; Phase 6c).
+    /// Only the partition we are in (leader lost; router id sequence must
+    /// advance).
     SamePartition,
-    /// A partition better than ours (Phase 6c).
+    /// A partition better than ours (heard in an Advertisement).
     BetterPartition,
     /// A better parent in the same partition (child only).
     BetterParent,
-    /// Downgrade a router to a REED (Phase 6c).
+    /// Downgrade a router to a REED (same partition, no newer sequence).
     DowngradeToReed,
     /// A specific parent chosen by parent search.
     SelectedParent,
@@ -114,9 +119,9 @@ pub(crate) struct Candidate {
     pub lq3: u8,
     pub lq2: u8,
     pub lq1: u8,
-    #[allow(dead_code)] // partition comparison, Phase 6c
+    #[cfg_attr(not(feature = "ftd"), allow(dead_code))]
     pub leader_data: LeaderData,
-    #[allow(dead_code)] // partition comparison, Phase 6c
+    #[cfg_attr(not(feature = "ftd"), allow(dead_code))]
     pub singleton: bool,
     /// Two-way link margin in dB.
     pub link_margin: u8,
@@ -337,7 +342,11 @@ impl<const C: usize> Mle<C> {
         match self.attach.mode {
             AttachMode::AnyPartition | AttachMode::BetterParent | AttachMode::SelectedParent => {
                 if self.role != Role::Child {
-                    // Phase 6c: an FTD may become leader here instead.
+                    // No partition found: an FTD starts its own.
+                    #[cfg(feature = "ftd")]
+                    if self.is_full_thread_device() && self.become_leader(env, now, false).is_ok() {
+                        return;
+                    }
                     self.become_detached(env, now);
                 } else if !self.is_rx_on_when_idle() {
                     env.set_poll_attach_mode(false);
@@ -474,14 +483,57 @@ impl<const C: usize> Mle<C> {
         let rss = rx.meta.link.rss.unwrap_or(INVALID_RSSI);
         let two_way_margin = compute_link_margin(env.noise_floor(), rss).min(margin_out);
         let conn = t.connectivity()?;
-        // Phase 6c: FTD attach-mode checks on partition id / id sequence go here.
+        #[cfg(feature = "ftd")]
+        if self.is_full_thread_device() && self.role != Role::Detached {
+            let same = leader_data.partition_id == self.leader_data.partition_id;
+            let seq_same = conn.id_sequence == self.router_id_sequence();
+            let seq_greater =
+                crate::child_rx::serial_greater(conn.id_sequence, self.router_id_sequence());
+            let fits = match self.attach.mode {
+                AttachMode::AnyPartition => !same || seq_greater,
+                AttachMode::SamePartition => same && seq_greater,
+                AttachMode::DowngradeToReed => same && (seq_same || seq_greater),
+                AttachMode::BetterPartition => {
+                    !same
+                        && crate::advert::compare_partitions(
+                            conn.is_singleton(),
+                            &leader_data,
+                            self.is_singleton(),
+                            &self.leader_data,
+                        ) > 0
+                }
+                AttachMode::BetterParent | AttachMode::SelectedParent => true,
+            };
+            if !fits {
+                return Ok(RxClass::Authoritative);
+            }
+        }
 
         if let Some(c) = &self.attach.candidate {
             if c.parent.router.neighbor.state == NeighborState::ParentResponse
                 && c.parent.router.neighbor.ext_address != ext
             {
-                // FTD would compare partitions first (Phase 6c).
-                if !Self::is_better_parent(c, source, two_way_margin, &conn, version) {
+                // Only consider partitions that are the same or better; among
+                // parents of the same partition the better parent wins.
+                #[cfg(feature = "ftd")]
+                let compare = if self.is_full_thread_device() {
+                    crate::advert::compare_partitions(
+                        conn.is_singleton(),
+                        &leader_data,
+                        c.singleton,
+                        &c.leader_data,
+                    )
+                } else {
+                    0
+                };
+                #[cfg(not(feature = "ftd"))]
+                let compare = 0;
+                if compare < 0 {
+                    return Ok(RxClass::Authoritative);
+                }
+                if compare == 0
+                    && !Self::is_better_parent(c, source, two_way_margin, &conn, version)
+                {
                     return Ok(RxClass::Authoritative);
                 }
             }
@@ -629,7 +681,20 @@ impl<const C: usize> Mle<C> {
         // OT SetStateDetached(): leaves the old attachment.
         self.attach.reset();
         self.child.reset();
-        self.leader_data = leader;
+        #[cfg(feature = "ftd")]
+        if self.role.is_router_or_leader() {
+            self.router_left_router_role(env);
+        }
+        self.update_leader_data(env, leader);
+        #[cfg(feature = "ftd")]
+        if self.is_full_thread_device() {
+            if let Err(e) =
+                self.read_and_process_route_on_ftd_child(env, now, &rx.tlvs, source.router_id())
+            {
+                self.become_detached(env, now);
+                return Err(e);
+            }
+        }
         let mut parent = cand.parent;
         parent.router.neighbor.rloc16 = source;
         parent.router.neighbor.state = NeighborState::Valid;

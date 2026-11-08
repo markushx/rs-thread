@@ -26,6 +26,7 @@ opentrust-mac = { workspace = true }
 opentrust-net = { workspace = true }
 opentrust-coap = { workspace = true }
 heapless = { workspace = true }
+rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 

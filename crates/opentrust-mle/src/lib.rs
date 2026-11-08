@@ -17,9 +17,17 @@
 //! re-attach. It reaches the key manager, MAC, netif, settings and network
 //! through the [`MleEnv`] trait (see the [`env`](mod@env) module for the design) and is driven
 //! by [`Mle::receive`] and [`Mle::poll`] / [`Mle::next_deadline`].
-//! Router links, Advertisements, partitions and the router role are Phase
-//! 6c.
+//!
+//! Phase 6c adds, behind feature `ftd`, the router and leader role: leader
+//! start and the Disabled -> Detached -> Child (REED) -> Router -> Leader
+//! state machine (`router`), router links with Link Request / Accept
+//! (`router_link`), Advertisements on a Trickle timer with route cost
+//! propagation (`advert`) and partitions (comparison, merge, leader loss).
+//! The Address Solicit exchange with the leader is the one thing left to
+//! Phase 7 (TMF): see [`MleEnv::request_router_id`].
 
+#[cfg(feature = "ftd")]
+mod advert;
 pub mod attach;
 pub mod child;
 mod child_rx;
@@ -33,12 +41,20 @@ pub mod neighbor;
 #[cfg(feature = "ftd")]
 pub mod parent;
 pub mod persist;
+#[cfg(feature = "ftd")]
+pub mod router;
+pub mod router_config;
+#[cfg(feature = "ftd")]
+mod router_link;
 pub mod security;
 pub mod tlv;
 
 pub use env::{MleEnv, MleEvent, Role};
 pub use mle::{Mle, MleConfig};
+pub use router_config::{DeviceProperties, PowerSupply, RouterConfig};
 
+#[cfg(all(test, feature = "ftd"))]
+mod advert_tests;
 #[cfg(test)]
 mod attach_tests;
 #[cfg(test)]
@@ -46,8 +62,18 @@ mod child_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
 #[cfg(all(test, feature = "ftd"))]
+mod mesh_tests;
+#[cfg(all(test, feature = "ftd"))]
 mod parent_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod partition_tests;
 #[cfg(test)]
 mod persist_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod router_link_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod router_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod sim;
 #[cfg(test)]
 mod test_support;

@@ -208,6 +208,24 @@ impl Trickle {
         self.begin_interval(now, interval, rng);
     }
 
+    /// Changes `Imax` (OpenThread `TrickleTimer::SetIntervalMax`), e.g. when
+    /// the number of neighbors changes. Values below `Imin` are raised to
+    /// `Imin`. If the running interval is longer than the new `Imax`, a new
+    /// interval of `Imax` starts at `now`; otherwise the running interval
+    /// continues.
+    pub fn set_imax<R: Rng + ?Sized>(&mut self, imax: Duration, now: Instant, rng: &mut R) {
+        let imax = imax.max(self.config.imin);
+        if imax == self.config.imax {
+            return;
+        }
+        self.config.imax = imax;
+        if let Some(s) = self.state
+            && s.interval > imax
+        {
+            self.begin_interval(now, imax, rng);
+        }
+    }
+
     /// Stops the timer.
     pub fn stop(&mut self) {
         self.state = None;
@@ -585,5 +603,27 @@ mod tests {
         let n = run(&mut t, &mut r, at(20_000), &mut out);
         assert!(n >= 20000 / 800);
         assert!(out[..n].windows(2).any(|w| w[1] - w[0] != out[1] - out[0]));
+    }
+    #[test]
+    fn set_imax_shortens_running_interval() {
+        let mut r = rng();
+        let mut t = Trickle::new(cfg(0, TrickleMode::Trickle));
+        t.start(at(0), &mut r);
+        // Grow to Imax.
+        let mut now = at(0);
+        while t.interval() != Some(ms(800)) {
+            let d = t.next_deadline().unwrap();
+            t.poll(d, &mut r);
+            now = d;
+        }
+        t.set_imax(ms(300), now, &mut r);
+        assert_eq!(t.config().imax(), ms(300));
+        assert_eq!(t.interval(), Some(ms(300)));
+        // A larger Imax lets the interval keep running.
+        t.set_imax(ms(2000), now, &mut r);
+        assert_eq!(t.interval(), Some(ms(300)));
+        // Below Imin raises to Imin.
+        t.set_imax(ms(1), now, &mut r);
+        assert_eq!(t.config().imax(), ms(100));
     }
 }

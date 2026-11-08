@@ -24,10 +24,16 @@
 //! Update Request (with a Challenge) instead of attaching from scratch. A
 //! parent that answers puts the child back in the `Child` role with the
 //! old RLOC16 within one round trip; a parent that stays silent (4 retries,
-//! 1 s apart) makes the device detach and attach normally. A saved
-//! *router/leader* only has its identity restored here; the router role
-//! (Phase 6c) is entered by the caller, followed by
-//! [`Mle::restore_children`].
+//! 1 s apart) makes the device detach and attach normally.
+//!
+//! A saved *router/leader* (feature `ftd`) keeps its RLOC16 and starts the
+//! router role restorer: multicast
+//! Link Requests asking for Address16 and Route64; the first Link Accept
+//! puts the device back in the router (or leader) role in its old
+//! partition, [`Mle::restore_children`] having made the saved children
+//! `Restored` (they get a Child Update Request once the role is entered).
+//! Without an answer the device detaches and attaches (or starts a new
+//! partition) as usual.
 
 use opentrust_core::settings::{NetworkInfo, ParentInfo};
 use opentrust_core::time::Instant;
@@ -48,8 +54,9 @@ pub enum Restored {
         /// Our RLOC16.
         rloc16: Rloc16,
     },
-    /// A router or leader: identity and counters were restored; the router
-    /// role must be entered by the caller (Phase 6c).
+    /// A router or leader: identity and counters were restored and the
+    /// router role restorer started (the role is entered once a neighbor
+    /// answers).
     Router {
         /// Saved role.
         role: Role,
@@ -61,7 +68,8 @@ pub enum Restored {
 }
 
 impl<const C: usize> Mle<C> {
-    /// Previous partition ID kept for the router role (Phase 6c fills it).
+    /// Previous partition ID (the partition we were in before the last
+    /// partition change; persisted with `NetworkInfo`).
     pub fn previous_partition_id(&self) -> u32 {
         self.previous_partition_id
     }
@@ -156,6 +164,15 @@ impl<const C: usize> Mle<C> {
         if role.is_router_or_leader() {
             if !self.cfg.mode.full_thread_device() {
                 return Err(Error::InvalidState);
+            }
+            #[cfg(feature = "ftd")]
+            {
+                self.previous_partition_id = info.previous_partition_id;
+                self.set_role(env, Role::Detached);
+                self.set_rloc16(env, info.rloc16);
+                env.keys_mut().start(now);
+                self.attach.counter = 0;
+                self.restore_router(env, now, role, info.rloc16);
             }
             return Ok(Restored::Router {
                 role,

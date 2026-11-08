@@ -22,7 +22,8 @@
 //! "validity" union of OT (`mValid` frame counters vs `mPending` challenge)
 //! is two plain fields; children keep full IPv6 addresses (OT keeps
 //! compressed ones); the router table has no per-id allocation bookkeeping
-//! (that is part of the router-ID assignment logic, Phase 6c).
+//! (router ID mask, sequence and reuse delay live in the router role,
+//! `router`).
 
 use core::net::Ipv6Addr;
 
@@ -747,7 +748,7 @@ impl<const N: usize> ChildTable<N> {
 }
 
 /// Fixed-capacity router table (storage and lookups only; OT `RouterTable`
-/// minus the router-ID allocation logic, which belongs to Phase 6c).
+/// minus the router-ID allocation logic, which lives in the router role).
 #[derive(Debug, Clone)]
 pub struct RouterTable<const N: usize> {
     slots: [Option<Router>; N],

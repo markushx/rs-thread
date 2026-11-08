@@ -219,8 +219,10 @@ fn router_restart_restores_children() {
     let mut net = Net::new(RX_ON);
     attach(&mut net);
     let rloc = net.c.rloc16();
-    // The router restarts from its settings; the child keeps running.
-    // Persist the router identity like the router role (Phase 6c) will.
+    // The router restarts from its settings; the child keeps running. This
+    // fixture router has no neighbors, so the router role restorer (see
+    // `router_link_tests` for the complete flow) is overridden by entering
+    // the role directly.
     net.r.store(&mut net.renv).unwrap();
     let settings = core::mem::replace(
         &mut net.renv.settings,

@@ -27,10 +27,11 @@
 //!   Update handling and child timeouts for a router.
 //! - [`persist`](crate::persist): `NetworkInfo` / `ParentInfo` / `ChildInfo`
 //!   save and restore.
+//! - `router`, `router_link`, `advert` (feature `ftd`): the router and
+//!   leader role, router links, Advertisements, partitions (Phase 6c).
 //!
-//! Not part of Phase 6b (see PLAN.md Phase 6c): Link Request/Accept,
-//! Advertisements, routing, partitions, leader election, router upgrade,
-//! Announce / Discovery, attach modes that need partition comparison.
+//! Not part of Phase 6: Announce / Discovery (Phase 8), the Address Solicit
+//! exchange over TMF (Phase 7, hook: [`MleEnv::request_router_id`]).
 
 use core::net::Ipv6Addr;
 
@@ -47,6 +48,7 @@ use crate::endpoint::{self, LinkRxInfo, MleRx};
 use crate::env::{MleEnv, MleEvent, Role};
 use crate::message::{Command, MleBuilder};
 use crate::neighbor::{ChildTable, Neighbor, NeighborState, Parent};
+use crate::router_config::RouterConfig;
 use crate::security::{self, MleFrameCounter, RxSecurity};
 use crate::tlv::{AddressEntry, DeviceMode, LeaderData, TlvWriter};
 
@@ -68,6 +70,8 @@ pub struct MleConfig {
     /// Seconds without a secure frame from the parent after which a sleepy
     /// child probes it (OT default 190, 0 = disabled).
     pub supervision_check_timeout: u16,
+    /// Router role configuration (eligibility, thresholds, leader weight).
+    pub router: RouterConfig,
 }
 
 impl MleConfig {
@@ -78,6 +82,7 @@ impl MleConfig {
             timeout_secs: crate::consts::END_DEVICE_TIMEOUT_SECS,
             supervision_interval: 129,
             supervision_check_timeout: 190,
+            router: RouterConfig::new(),
         }
     }
 }
@@ -100,6 +105,9 @@ pub(crate) enum NbRef {
     Parent,
     Candidate,
     Child(usize),
+    /// A router link, by router ID.
+    #[cfg(feature = "ftd")]
+    Router(u8),
 }
 
 /// The MLE state machine. `C` is the child table capacity (0 for end
@@ -119,6 +127,8 @@ pub struct Mle<const C: usize> {
     pub(crate) store_pending: bool,
     #[cfg(feature = "ftd")]
     pub(crate) parent_side: crate::parent::ParentSide,
+    #[cfg(feature = "ftd")]
+    pub(crate) rtr: crate::router::RouterCtx,
 }
 
 impl<const C: usize> Mle<C> {
@@ -144,6 +154,8 @@ impl<const C: usize> Mle<C> {
             store_pending: false,
             #[cfg(feature = "ftd")]
             parent_side: crate::parent::ParentSide::new(),
+            #[cfg(feature = "ftd")]
+            rtr: crate::router::RouterCtx::new(),
         }
     }
 
@@ -218,6 +230,12 @@ impl<const C: usize> Mle<C> {
         self.set_rloc16(env, Rloc16::INVALID);
         self.attach.counter = 0;
         env.keys_mut().start(now);
+        #[cfg(feature = "ftd")]
+        {
+            let mut b = [0u8; 1];
+            env.fill_random(&mut b);
+            self.rtr.id_sequence = b[0];
+        }
         self.attach_begin(env, now, crate::attach::AttachMode::AnyPartition);
         Ok(())
     }
@@ -246,7 +264,7 @@ impl<const C: usize> Mle<C> {
             return Ok(());
         }
         if !mode.full_thread_device() && self.cfg.mode.full_thread_device() && C > 0 {
-            // FTD -> MTD while holding children is a Phase 6c transition.
+            // FTD -> MTD while holding children: Phase 7 (see PLAN.md).
             return Err(Error::InvalidState);
         }
         self.cfg.mode = mode;
@@ -290,7 +308,25 @@ impl<const C: usize> Mle<C> {
         env.set_rx_on_when_idle(true);
         self.set_rloc16(env, Rloc16::INVALID);
         #[cfg(feature = "ftd")]
-        self.parent_side_reset(env);
+        {
+            self.parent_side_reset(env);
+            self.router_reset_on_detach(env);
+        }
+    }
+
+    /// Adopt Leader Data; a changed partition ID is a partition change (OT
+    /// `SetLeaderData`): the router table of the old partition is void.
+    pub(crate) fn update_leader_data<E: MleEnv>(&mut self, env: &mut E, ld: LeaderData) {
+        if ld.partition_id != self.leader_data.partition_id {
+            #[cfg(feature = "ftd")]
+            self.handle_partition_change(env);
+            self.leader_data = ld;
+            env.event(MleEvent::PartitionChanged {
+                partition_id: ld.partition_id,
+            });
+        } else {
+            self.leader_data = ld;
+        }
     }
 
     // ------------------------------------------------------------ timers
@@ -306,7 +342,10 @@ impl<const C: usize> Mle<C> {
         .flatten()
         .min();
         #[cfg(feature = "ftd")]
-        let d = [d, self.parent_deadline()].into_iter().flatten().min();
+        let d = [d, self.parent_deadline(), self.router_deadline()]
+            .into_iter()
+            .flatten()
+            .min();
         d
     }
 
@@ -327,7 +366,14 @@ impl<const C: usize> Mle<C> {
             self.handle_supervision_timer(env, now);
         }
         #[cfg(feature = "ftd")]
-        self.poll_parent(env, now);
+        {
+            self.poll_parent(env, now);
+            self.poll_router_link(env, now);
+            self.poll_advert(env, now);
+            if self.rtr.tick.is_some_and(|t| now >= t) {
+                self.router_tick(env, now);
+            }
+        }
         self.store_if_needed(env);
     }
 
@@ -367,12 +413,18 @@ impl<const C: usize> Mle<C> {
         if self.role == Role::Disabled {
             return Err(Error::InvalidState);
         }
+        #[cfg(feature = "ftd")]
+        self.refresh_router_info();
         let ext = rx.meta.sender_ext_address();
         let nb = self.find_neighbor(&ext, rx.command == Command::ChildIdResponse);
         if let Some(r) = nb {
+            let nf = env.noise_floor();
             let n = self.neighbor_mut(r);
             if n.is_valid() {
                 n.mle_replay.check_and_update(&mut n.link_counters, &sec)?;
+            }
+            if let Some(rss) = rx.meta.link.rss {
+                n.link_info.add_rss(nf, rss);
             }
         }
         let class = match rx.command {
@@ -381,6 +433,13 @@ impl<const C: usize> Mle<C> {
             Command::ChildUpdateRequest => self.handle_child_update_request(env, now, rx, nb)?,
             Command::ChildUpdateResponse => self.handle_child_update_response(env, now, rx, nb)?,
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
+            Command::Advertisement => self.handle_advertisement(env, now, rx, nb)?,
+            #[cfg(feature = "ftd")]
+            Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,
+            #[cfg(feature = "ftd")]
+            Command::LinkAccept => self.handle_link_accept(env, now, rx, nb, false)?,
+            #[cfg(feature = "ftd")]
+            Command::LinkAcceptAndRequest => self.handle_link_accept(env, now, rx, nb, true)?,
             #[cfg(feature = "ftd")]
             Command::ParentRequest => self.handle_parent_request(env, now, rx)?,
             #[cfg(feature = "ftd")]
@@ -420,6 +479,14 @@ impl<const C: usize> Mle<C> {
         if parent_only {
             return None;
         }
+        #[cfg(feature = "ftd")]
+        if let Some(r) = self
+            .rtr
+            .table
+            .find_by_ext(ext, crate::neighbor::StateFilter::ValidOrRestoring)
+        {
+            return Some(NbRef::Router(r.router_id));
+        }
         self.children
             .index_by_ext(ext, crate::neighbor::StateFilter::ValidOrRestoring)
             .map(NbRef::Child)
@@ -439,6 +506,8 @@ impl<const C: usize> Mle<C> {
                     .neighbor
             }
             NbRef::Child(i) => &mut self.children.get_mut(i).expect("child").neighbor,
+            #[cfg(feature = "ftd")]
+            NbRef::Router(id) => &mut self.rtr.table.find_by_id_mut(id).expect("router").neighbor,
         }
     }
 
@@ -455,6 +524,12 @@ impl<const C: usize> Mle<C> {
                 .as_ref()
                 .is_some_and(|c| c.parent.router.neighbor.is_valid()),
             Some(NbRef::Child(i)) => self.children.get(i).is_some_and(|c| c.neighbor.is_valid()),
+            #[cfg(feature = "ftd")]
+            Some(NbRef::Router(id)) => self
+                .rtr
+                .table
+                .find_by_id(id)
+                .is_some_and(|r| r.neighbor.is_valid()),
         }
     }
 
@@ -499,11 +574,17 @@ impl<const C: usize> Mle<C> {
             .set_key_sequence(sec.key_sequence, update, now);
     }
 
-    /// OT `ReestablishLinkWithNeighbor`: for the parent, probe with a Child
-    /// Update Request; router links are Phase 6c.
+    /// OT `ReestablishLinkWithNeighbor`: probe the parent with a Child
+    /// Update Request, a router neighbor with a Link Request.
     fn reestablish_link<E: MleEnv>(&mut self, env: &mut E, now: Instant, nb: Option<NbRef>) {
         if nb == Some(NbRef::Parent) && self.role == Role::Child {
             let _ = self.send_child_update_request(env, now);
+        }
+        #[cfg(feature = "ftd")]
+        if let Some(NbRef::Router(id)) = nb {
+            if self.is_full_thread_device() {
+                let _ = self.send_link_request(env, now, Some(id));
+            }
         }
     }
 
