@@ -139,6 +139,21 @@ impl EnergyScanServer {
         else {
             return;
         };
+        self.start(now, req.ctx.peer.addr, mask, count, period, duration);
+        ack_if_confirmable(req, rsp);
+    }
+
+    /// Start (or restart) a scan for `requester`: `count` rounds over the
+    /// channels of `mask`, `period` ms apart, `duration` ms per channel.
+    pub fn start(
+        &mut self,
+        now: Instant,
+        requester: Ipv6Addr,
+        mask: u32,
+        count: u8,
+        period: u16,
+        duration: u16,
+    ) {
         self.active = true;
         self.results.clear();
         self.mask = mask;
@@ -146,9 +161,8 @@ impl EnergyScanServer {
         self.count = count;
         self.period = period;
         self.duration = duration;
-        self.requester = req.ctx.peer.addr;
+        self.requester = requester;
         self.deadline = Some(now.saturating_add(SCAN_DELAY));
-        ack_if_confirmable(req, rsp);
     }
 
     /// Timer expiry: the next action, if due.
@@ -296,11 +310,16 @@ impl PanIdQueryServer {
         let (Ok(mask), Ok(pan_id)) = (t.channel_mask(), t.pan_id()) else {
             return;
         };
+        self.start(now, req.ctx.peer.addr, pan_id, mask);
+        ack_if_confirmable(req, rsp);
+    }
+
+    /// Start a query for `pan_id` on the channels of `mask`.
+    pub fn start(&mut self, now: Instant, requester: Ipv6Addr, pan_id: u16, mask: u32) {
         self.scan_mask = mask;
         self.pan_id = pan_id;
-        self.requester = req.ctx.peer.addr;
+        self.requester = requester;
         self.deadline = Some(now.saturating_add(SCAN_DELAY));
-        ack_if_confirmable(req, rsp);
     }
 
     /// Timer expiry: start the scan.
