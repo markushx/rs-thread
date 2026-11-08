@@ -6,9 +6,11 @@
 //! payload, an Operational Dataset, a Discovery TLV value); [`WriterExt`]
 //! appends typed TLVs to a [`Writer`].
 
+use core::net::Ipv6Addr;
 use opentrust_core::bytes::Writer;
 use opentrust_core::tlv::{self, Tlv, TlvIter};
-use opentrust_core::types::{ExtPanId, NetworkKey, NetworkName, Prefix64, Pskc};
+
+use opentrust_core::types::{ExtPanId, Iid, Kek, NetworkKey, NetworkName, Prefix64, Pskc};
 use opentrust_core::{Error, Result};
 
 use crate::steering::SteeringData;
@@ -104,6 +106,19 @@ pub mod ty {
 
 /// Maximum Commissioner ID length (OT `kMaxCommissionerIdLength`).
 pub const MAX_COMMISSIONER_ID_LEN: usize = 64;
+/// Maximum Provisioning URL length (`ProvisioningUrlTlv::kMaxUrlLength`).
+pub const MAX_PROVISIONING_URL_LEN: usize = 64;
+/// Maximum Vendor Name length.
+pub const MAX_VENDOR_NAME_LEN: usize = 32;
+/// Maximum Vendor Model length.
+pub const MAX_VENDOR_MODEL_LEN: usize = 32;
+/// Maximum Vendor SW Version length.
+pub const MAX_VENDOR_SW_VERSION_LEN: usize = 16;
+/// Maximum Vendor Data length.
+pub const MAX_VENDOR_DATA_LEN: usize = 64;
+/// Vendor Stack Version TLV length (OUI, build, revision, version).
+pub const VENDOR_STACK_VERSION_LEN: usize = 6;
+
 /// Maximum Thread Domain Name length.
 pub const MAX_DOMAIN_NAME_LEN: usize = 16;
 /// Smallest Key Rotation Time in hours (`SecurityPolicy::kMinKeyRotationTime`).
@@ -562,7 +577,65 @@ impl<'a> Tlvs<'a> {
     }
     /// Provisioning URL TLV.
     pub fn provisioning_url(&self) -> Result<&'a str> {
-        self.find(ty::PROVISIONING_URL)?.read_str(64)
+        self.find(ty::PROVISIONING_URL)?
+            .read_str(MAX_PROVISIONING_URL_LEN)
+    }
+    /// Vendor Name TLV.
+    pub fn vendor_name(&self) -> Result<&'a str> {
+        self.find(ty::VENDOR_NAME)?.read_str(MAX_VENDOR_NAME_LEN)
+    }
+    /// Vendor Model TLV.
+    pub fn vendor_model(&self) -> Result<&'a str> {
+        self.find(ty::VENDOR_MODEL)?.read_str(MAX_VENDOR_MODEL_LEN)
+    }
+    /// Vendor SW Version TLV.
+    pub fn vendor_sw_version(&self) -> Result<&'a str> {
+        self.find(ty::VENDOR_SW_VERSION)?
+            .read_str(MAX_VENDOR_SW_VERSION_LEN)
+    }
+    /// Vendor Data TLV.
+    pub fn vendor_data(&self) -> Result<&'a str> {
+        self.find(ty::VENDOR_DATA)?.read_str(MAX_VENDOR_DATA_LEN)
+    }
+    /// Joiner IID TLV.
+    pub fn joiner_iid(&self) -> Result<Iid> {
+        Ok(Iid(self.find(ty::JOINER_IID)?.read_array()?))
+    }
+    /// Joiner Router Locator TLV.
+    pub fn joiner_router_locator(&self) -> Result<u16> {
+        self.find(ty::JOINER_ROUTER_LOCATOR)?.read_u16()
+    }
+    /// Joiner Router KEK TLV.
+    pub fn joiner_router_kek(&self) -> Result<Kek> {
+        let v = self.value(ty::JOINER_ROUTER_KEK)?;
+        if v.len() != 16 {
+            return Err(Error::Parse);
+        }
+        let mut k = Kek([0; 16]);
+        k.0.copy_from_slice(v);
+        Ok(k)
+    }
+    /// Joiner DTLS Encapsulation TLV (the DTLS records).
+    pub fn joiner_dtls_encapsulation(&self) -> Result<&'a [u8]> {
+        self.value(ty::JOINER_DTLS_ENCAPSULATION)
+    }
+    /// UDP Encapsulation TLV: source port, destination port, payload.
+    pub fn udp_encapsulation(&self) -> Result<(u16, u16, &'a [u8])> {
+        let v = self.value(ty::UDP_ENCAPSULATION)?;
+        if v.len() < 4 {
+            return Err(Error::Parse);
+        }
+        Ok((
+            u16::from_be_bytes([v[0], v[1]]),
+            u16::from_be_bytes([v[2], v[3]]),
+            &v[4..],
+        ))
+    }
+    /// IPv6 Address TLV.
+    pub fn ipv6_address(&self) -> Result<Ipv6Addr> {
+        Ok(Ipv6Addr::from(
+            self.find(ty::IPV6_ADDRESS)?.read_array::<16>()?,
+        ))
     }
     /// Discovery Request TLV.
     pub fn discovery_request(&self) -> Result<DiscoveryRequest> {
@@ -639,6 +712,42 @@ pub trait WriterExt {
     fn discovery_request(&mut self, v: &DiscoveryRequest) -> Result<()>;
     /// Discovery Response TLV.
     fn discovery_response(&mut self, v: &DiscoveryResponse) -> Result<()>;
+    /// Provisioning URL TLV.
+    fn provisioning_url(&mut self, v: &str) -> Result<()>;
+    /// Vendor Name TLV.
+    fn vendor_name(&mut self, v: &str) -> Result<()>;
+    /// Vendor Model TLV.
+    fn vendor_model(&mut self, v: &str) -> Result<()>;
+    /// Vendor SW Version TLV.
+    fn vendor_sw_version(&mut self, v: &str) -> Result<()>;
+    /// Vendor Data TLV.
+    fn vendor_data(&mut self, v: &str) -> Result<()>;
+    /// Vendor Stack Version TLV.
+    fn vendor_stack_version(&mut self, v: &[u8; VENDOR_STACK_VERSION_LEN]) -> Result<()>;
+    /// Joiner IID TLV.
+    fn joiner_iid(&mut self, iid: &Iid) -> Result<()>;
+    /// Joiner Router Locator TLV.
+    fn joiner_router_locator(&mut self, rloc16: u16) -> Result<()>;
+    /// Joiner Router KEK TLV.
+    fn joiner_router_kek(&mut self, kek: &Kek) -> Result<()>;
+    /// Joiner DTLS Encapsulation TLV, always in the extended form (as OT
+    /// writes it).
+    fn joiner_dtls_encapsulation(&mut self, records: &[u8]) -> Result<()>;
+    /// UDP Encapsulation TLV (extended form): ports and payload.
+    fn udp_encapsulation(&mut self, src_port: u16, dst_port: u16, payload: &[u8]) -> Result<()>;
+    /// IPv6 Address TLV.
+    fn ipv6_address(&mut self, a: &Ipv6Addr) -> Result<()>;
+}
+
+/// Write an extended TLV header (`ty`, `0xff`, 16-bit length).
+fn extended_header(w: &mut Writer<'_>, ty: u8, len: usize) -> Result<()> {
+    let len = u16::try_from(len).map_err(|_| Error::InvalidArgs)?;
+    if w.remaining() < 4 + usize::from(len) {
+        return Err(Error::NoBufs);
+    }
+    w.write_u8(ty)?;
+    w.write_u8(tlv::EXTENDED_LENGTH)?;
+    w.write_u16(len)
 }
 
 impl WriterExt for Writer<'_> {
@@ -725,5 +834,45 @@ impl WriterExt for Writer<'_> {
     }
     fn discovery_response(&mut self, v: &DiscoveryResponse) -> Result<()> {
         tlv::write(self, ty::DISCOVERY_RESPONSE, &v.to_bytes())
+    }
+    fn provisioning_url(&mut self, v: &str) -> Result<()> {
+        tlv::write_str(self, ty::PROVISIONING_URL, MAX_PROVISIONING_URL_LEN, v)
+    }
+    fn vendor_name(&mut self, v: &str) -> Result<()> {
+        tlv::write_str(self, ty::VENDOR_NAME, MAX_VENDOR_NAME_LEN, v)
+    }
+    fn vendor_model(&mut self, v: &str) -> Result<()> {
+        tlv::write_str(self, ty::VENDOR_MODEL, MAX_VENDOR_MODEL_LEN, v)
+    }
+    fn vendor_sw_version(&mut self, v: &str) -> Result<()> {
+        tlv::write_str(self, ty::VENDOR_SW_VERSION, MAX_VENDOR_SW_VERSION_LEN, v)
+    }
+    fn vendor_data(&mut self, v: &str) -> Result<()> {
+        tlv::write_str(self, ty::VENDOR_DATA, MAX_VENDOR_DATA_LEN, v)
+    }
+    fn vendor_stack_version(&mut self, v: &[u8; VENDOR_STACK_VERSION_LEN]) -> Result<()> {
+        tlv::write(self, ty::VENDOR_STACK_VERSION, v)
+    }
+    fn joiner_iid(&mut self, iid: &Iid) -> Result<()> {
+        tlv::write(self, ty::JOINER_IID, &iid.0)
+    }
+    fn joiner_router_locator(&mut self, rloc16: u16) -> Result<()> {
+        tlv::write_u16(self, ty::JOINER_ROUTER_LOCATOR, rloc16)
+    }
+    fn joiner_router_kek(&mut self, kek: &Kek) -> Result<()> {
+        tlv::write(self, ty::JOINER_ROUTER_KEK, &kek.0)
+    }
+    fn joiner_dtls_encapsulation(&mut self, records: &[u8]) -> Result<()> {
+        extended_header(self, ty::JOINER_DTLS_ENCAPSULATION, records.len())?;
+        self.write_slice(records)
+    }
+    fn udp_encapsulation(&mut self, src_port: u16, dst_port: u16, payload: &[u8]) -> Result<()> {
+        extended_header(self, ty::UDP_ENCAPSULATION, 4 + payload.len())?;
+        self.write_u16(src_port)?;
+        self.write_u16(dst_port)?;
+        self.write_slice(payload)
+    }
+    fn ipv6_address(&mut self, a: &Ipv6Addr) -> Result<()> {
+        tlv::write(self, ty::IPV6_ADDRESS, &a.octets())
     }
 }

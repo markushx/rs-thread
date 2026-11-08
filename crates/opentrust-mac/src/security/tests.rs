@@ -471,22 +471,95 @@ fn unsecured_frames_pass_through() {
 
 #[test]
 fn unsupported_key_id_modes() {
-    for key in [
-        KeyIdentifier::Implicit,
-        KeyIdentifier::Source8 {
-            source: [0xff; 8],
-            index: 1,
-        },
+    // Key ID mode 3 is never used; key ID mode 0 needs a KEK.
+    for (key, tx_err) in [
+        (KeyIdentifier::Implicit, Error::InvalidState),
+        (
+            KeyIdentifier::Source8 {
+                source: [0xff; 8],
+                index: 1,
+            },
+            Error::InvalidArgs,
+        ),
     ] {
         let mut p = frame(SecurityLevel::EncMic32, key, PAYLOAD);
         let mut k = km();
-        assert_eq!(k.secure_tx(&mut p, &EXT_A), Err(Error::InvalidArgs));
+        assert_eq!(k.secure_tx(&mut p, &EXT_A), Err(tx_err));
         assert_eq!(k.frame_counter(), 0, "no counter consumed");
         // A frame sealed with mode 0/3 is not accepted either.
         let cipher = SoftCrypto.aes128(&h16(MAC_KEYS[0]));
         seal_psdu(&cipher, &mut p, &EXT_A).unwrap();
         assert_eq!(k.unsecure_rx(&mut p, &EXT_A), Err(Error::Security));
     }
+}
+
+/// Key ID mode 0 (Thread §7.2.1.1): the KEK secures the Joiner Entrust
+/// exchange; its frame counter starts at 0 and is separate from the MAC
+/// frame counter; only the holder of the same KEK can open the frame.
+#[test]
+fn key_id_mode0_kek() {
+    use opentrust_core::types::Kek;
+    let kek = Kek([0x5a; 16]);
+    let mut tx = km();
+    tx.set_kek(Some(kek.clone()));
+    assert_eq!(tx.kek(), Some(&kek));
+    let mut p = frame(SecurityLevel::EncMic32, KeyIdentifier::Implicit, PAYLOAD);
+    tx.secure_tx(&mut p, &EXT_A).unwrap();
+    let s = *Frame::parse(&p).unwrap().security_header().unwrap();
+    assert_eq!(s.key, KeyIdentifier::Implicit);
+    assert_eq!(s.frame_counter, Some(0));
+    assert_eq!(tx.frame_counter(), 0, "mode 0 does not use the MAC counter");
+
+    // Independent reference: CCM* with the KEK and the sender's address.
+    let (hdr, _, _) = parts(&p);
+    let (ct, mic) = reference_ccm(
+        &kek.0,
+        &nonce(&EXT_A, 0, SecurityLevel::EncMic32),
+        SecurityLevel::EncMic32,
+        &hdr,
+        PAYLOAD,
+    );
+    assert_eq!(p, [hdr.as_slice(), &ct, &mic].concat());
+
+    // Without the KEK, or with another one (any network key), it fails.
+    let mut q = p.clone();
+    assert_eq!(km().unsecure_rx(&mut q, &EXT_A), Err(Error::Security));
+    let mut other = km();
+    other.set_kek(Some(Kek([0x5b; 16])));
+    let mut q = p.clone();
+    assert_eq!(other.unsecure_rx(&mut q, &EXT_A), Err(Error::Security));
+
+    let mut rx = KeyManager::new(SoftCrypto, NetworkKey([0x77; 16]));
+    rx.set_kek(Some(kek.clone()));
+    let info = rx.unsecure_rx(&mut p, &EXT_A).unwrap().unwrap();
+    assert_eq!(info.key_id_mode, KeyIdMode::Implicit);
+    assert_eq!(info.key_sequence, None);
+    assert_eq!(Frame::parse(&p).unwrap().payload(), PAYLOAD);
+
+    // The next frame uses counter 1; a new KEK restarts at 0.
+    let mut p2 = frame(SecurityLevel::EncMic32, KeyIdentifier::Implicit, PAYLOAD);
+    tx.secure_tx(&mut p2, &EXT_A).unwrap();
+    assert_eq!(
+        Frame::parse(&p2)
+            .unwrap()
+            .security_header()
+            .unwrap()
+            .frame_counter,
+        Some(1)
+    );
+    tx.set_kek(Some(Kek([1; 16])));
+    let mut p3 = frame(SecurityLevel::EncMic32, KeyIdentifier::Implicit, PAYLOAD);
+    tx.secure_tx(&mut p3, &EXT_A).unwrap();
+    assert_eq!(
+        Frame::parse(&p3)
+            .unwrap()
+            .security_header()
+            .unwrap()
+            .frame_counter,
+        Some(0)
+    );
+    tx.set_kek(None);
+    assert_eq!(tx.kek(), None);
 }
 
 // ---------------------------------------------------------------- tampering

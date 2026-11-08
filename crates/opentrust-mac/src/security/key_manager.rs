@@ -6,7 +6,7 @@ use opentrust_core::crypto::kdf::{ThreadKeys, key_index, thread_keys};
 use opentrust_core::crypto::nonce::{KEY_ID_MODE2_EXT_ADDRESS, KEY_ID_MODE2_KEY};
 use opentrust_core::crypto::{CryptoBackend, SecurityLevel};
 use opentrust_core::time::{Duration, Instant};
-use opentrust_core::types::{ExtAddress, MacKey, MleKey, NetworkKey};
+use opentrust_core::types::{ExtAddress, Kek, MacKey, MleKey, NetworkKey};
 use opentrust_core::{Error, Result};
 use opentrust_platform::radio::{AckSecurity, MacKeys};
 
@@ -131,6 +131,10 @@ pub struct KeyManager<B: CryptoBackend> {
     /// End of the key switch guard period; `None` = timer is 0.
     guard_until: Option<Instant>,
     rx_level_policy: RxLevelPolicy,
+    /// The single-use pairwise key of key ID mode 0 (Joiner Entrust, Thread
+    /// 1.4.1 section 7.2.1.1) and its frame counter.
+    kek: Option<Kek>,
+    kek_frame_counter: u32,
 }
 
 impl<B: CryptoBackend> KeyManager<B> {
@@ -153,7 +157,23 @@ impl<B: CryptoBackend> KeyManager<B> {
             rotation_start: None,
             guard_until: None,
             rx_level_policy: RxLevelPolicy::EncMic32Only,
+            kek: None,
+            kek_frame_counter: 0,
         }
+    }
+
+    /// Install (or with `None` discard) the KEK used for key ID mode 0
+    /// frames (Joiner Entrust request and response, Thread 1.4.1 section
+    /// 7.2.1.1; OpenThread `KeyManager::SetKek`). The KEK frame counter
+    /// restarts at 0. The previous KEK is wiped.
+    pub fn set_kek(&mut self, kek: Option<Kek>) {
+        self.kek = kek;
+        self.kek_frame_counter = 0;
+    }
+
+    /// The installed KEK, if any.
+    pub const fn kek(&self) -> Option<&Kek> {
+        self.kek.as_ref()
     }
 
     /// The crypto backend.
@@ -612,11 +632,14 @@ impl<B: CryptoBackend> FrameSecurity for KeyManager<B> {
     /// key, nonce from `src_ext`. Key ID mode 2: key source `0xffffffff`,
     /// key index `0xff`, the well-known key and nonce address, and a separate
     /// frame counter (OpenThread `mKeyIdMode2FrameCounter`; mode 2 offers no
-    /// replay protection). The frame counter and key identifier in `psdu` are
+    /// replay protection). Key ID mode 0: the KEK of
+    /// [`set_kek`](KeyManager::set_kek) with its own frame counter (OpenThread
+    /// `mKekFrameCounter`). The frame counter and key identifier in `psdu` are
     /// overwritten.
     ///
-    /// [`Error::InvalidArgs`] for key ID modes 0/3 or a suppressed frame
-    /// counter, [`Error::InvalidState`] if the frame counter is exhausted.
+    /// [`Error::InvalidArgs`] for key ID mode 3 or a suppressed frame
+    /// counter, [`Error::InvalidState`] if the frame counter is exhausted or
+    /// key ID mode 0 is used without a KEK.
     fn secure_tx(&mut self, psdu: &mut [u8], src_ext: &ExtAddress) -> Result<()> {
         let f = Frame::parse(psdu)?;
         let Some(s) = f.security_header() else {
@@ -638,14 +661,26 @@ impl<B: CryptoBackend> FrameSecurity for KeyManager<B> {
                 let cipher = self.backend.aes128(&KEY_ID_MODE2_KEY.0);
                 seal_psdu(&cipher, psdu, &KEY_ID_MODE2_EXT_ADDRESS)
             }
-            KeyIdMode::Implicit | KeyIdMode::Source8 => Err(Error::InvalidArgs),
+            KeyIdMode::Implicit => {
+                // Key ID mode 0: the KEK, nonce from our own address.
+                let kek = self.kek.as_ref().ok_or(Error::InvalidState)?;
+                let fc = self.kek_frame_counter;
+                self.kek_frame_counter = fc.wrapping_add(1);
+                write_aux_header(psdu, fc, &KeyIdentifier::Implicit)?;
+                let cipher = self.backend.aes128(&kek.0);
+                seal_psdu(&cipher, psdu, src_ext)
+            }
+            KeyIdMode::Source8 => Err(Error::InvalidArgs),
         }
     }
 
     /// Key ID mode 1: the key index must match the current, previous or next
     /// key sequence (Thread §7.2.1.2); the reported `key_sequence` is that
     /// sequence. Key ID mode 2: only key source `0xffffffff` / key index
-    /// `0xff` (Thread §7.2.1.3), `key_sequence` is `None`. Any other key
+    /// `0xff` (Thread §7.2.1.3), `key_sequence` is `None`. Key ID mode 0:
+    /// the installed KEK (Thread §7.2.1.1), `key_sequence` is `None`; the
+    /// caller must accept such frames only for the Joiner Entrust exchange.
+    /// Any other key
     /// identifier, a level outside the [`RxLevelPolicy`], a suppressed frame
     /// counter or a bad MIC yield [`Error::Security`].
     fn unsecure_rx(
@@ -667,6 +702,14 @@ impl<B: CryptoBackend> FrameSecurity for KeyManager<B> {
                 let cipher = self.backend.aes128(&key.0);
                 open_psdu(&cipher, psdu, src_ext)?;
                 Some(seq)
+            }
+            KeyIdentifier::Implicit => {
+                // Key ID mode 0: only with an installed KEK; no replay
+                // protection (single-use key, Thread 1.4.1 section 7.2.1.1).
+                let kek = self.kek.as_ref().ok_or(Error::Security)?;
+                let cipher = self.backend.aes128(&kek.0);
+                open_psdu(&cipher, psdu, src_ext)?;
+                None
             }
             k if k == MODE2_KEY_ID => {
                 let cipher = self.backend.aes128(&KEY_ID_MODE2_KEY.0);

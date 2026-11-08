@@ -6,14 +6,15 @@
 //!   key rotation and the key switch guard (sans-IO: time is passed in as
 //!   [`Instant`](opentrust_core::time::Instant)). It implements
 //!   [`FrameSecurity`](crate::frame_security::FrameSecurity) for key ID mode 1
-//!   (network-key derived MAC key) and key ID mode 2 (the well-known
-//!   filtering key), and secures/verifies enhanced ACKs.
+//!   (network-key derived MAC key), key ID mode 2 (the well-known
+//!   filtering key) and key ID mode 0 (the single-use KEK of the Joiner
+//!   Entrust exchange, [`KeyManager::set_kek`]), and secures/verifies
+//!   enhanced ACKs.
 //! - [`LinkFrameCounters`]: per-neighbor replay protection (incoming key
 //!   sequence, link frame counter, enhanced-ACK frame counter) for the
 //!   neighbor table.
 //! - [`seal_psdu`] / [`open_psdu`]: the CCM* step on a whole PSDU for a given
-//!   key and nonce source, as used by [`KeyManager`] (and usable for key ID
-//!   mode 0 / KEK frames by the commissioning code).
+//!   key and nonce source, as used by [`KeyManager`].
 //!
 //! # Data path
 //!

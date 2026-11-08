@@ -14,10 +14,12 @@ readme = "../../README.md"
 
 [features]
 # Leader / router side: dataset leader handlers, commissioner session state.
+# The Joiner (DTLS client, Joiner Entrust) is always built; a joiner-only
+# end device uses `default-features = false`.
 default = ["ftd"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd"]
-defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-coap/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-mesh/defmt"]
-log = ["dep:log", "opentrust-core/log", "opentrust-coap/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-mesh/log"]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-coap/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-mesh/defmt", "opentrust-dtls/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-coap/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-mesh/log", "opentrust-dtls/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
@@ -25,8 +27,11 @@ opentrust-coap = { workspace = true }
 opentrust-mle = { workspace = true }
 opentrust-net = { workspace = true }
 opentrust-mesh = { workspace = true }
+opentrust-dtls = { workspace = true }
 heapless = { workspace = true }
 rand_core = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 

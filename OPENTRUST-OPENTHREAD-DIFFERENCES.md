@@ -60,6 +60,7 @@ Keep this file up to date with every change that deviates from OpenThread.
 | Rx security-level policy | Only ENC-MIC-32 | Default only ENC-MIC-32; optional `Authenticated` policy accepts any level with a MIC, never level 4 (ENC without MIC) | Configurable, still safe | none |
 | Order of replay check | Before decryption | After decryption (contract returns `RxSecurityInfo`; replay state lives in the neighbor table) | Layering; same outcome, only costs a CCM on replayed frames | none |
 | Retransmissions | Re-secure allowed per case | A plain retransmission must resend the already-secured PSDU; calling `secure_tx` again uses a new counter (needed for CSL-IE updates) | Documented contract | none |
+| Key ID mode 0 (KEK) | `Mac::ProcessTransmitSecurity` / `ProcessReceiveSecurity` with `KeyManager::GetKek`, `mKekFrameCounter` | `KeyManager::set_kek` and key ID mode 0 in `secure_tx` / `unsecure_rx` (same nonce source, same counter reset on a new KEK); without a KEK, mode 0 is `InvalidState` on transmit and `Security` on receive | Same behaviour; the caller routes mode-0 frames only to the Joiner Entrust handlers | none |
 
 ## MAC state machine (`opentrust-mac::mac`)
 
@@ -430,3 +431,19 @@ Reference: `meshcop/{meshcop_tlvs,meshcop,dataset,dataset_manager,dataset_manage
 | Link Metrics | `LinkMetrics::Initiator` / `Subject` with callbacks, `SeriesInfo` list per neighbor from a pool, `Radio::ConfigureEnhAckProbing`, `Neighbor::AggregateLinkMetrics` called by the MAC / MLE | `opentrust_mle::link_metrics` (sub-TLV codecs, `Metrics`, `SeriesFlags`, `SeriesInfo`, `SeriesTable`) and `link_metrics_roles` (`Mle::link_metrics_query` / `_forward_series` / `_enh_ack` / `_probe`, Management / Report / Probe handlers); results through `MleEnv::{link_metrics_report, link_metrics_management_response, enh_ack_probing_report}`, Subject radio configuration through `MleEnv::configure_enh_ack_probing` (default: not supported, answered with Status Other Error); one pool of `MAX_SERIES` = 8 series for all neighbors (OT: the child count), removed with the child / on detach; the MAC frames of a series are fed by the caller with `Mle::aggregate_link_metrics` and Enhanced-ACK IE data with `Mle::process_enh_ack_ie_data` (the MAC glue does not call them yet); a Management Request without Forward Probing / Enhanced ACK sub-TLV is answered with Status Other Error (OT answers with an uninitialized status); the single probe's PDU count is 1 (OT: the number of PSDUs of the request); the Link Metrics Report in a Data Response is only accepted from the parent / a neighbor router, like the rest of the Data Response; reserved Type IDs are marked, not logged | Sans-IO callbacks; no radio object | none |
 | Announce Begin | `AnnounceSenderBase` with jitter | `AnnounceBeginServer` with jitter 0 (the server's default) | | none |
 | Commissioner clients | `EnergyScanClient`, `PanIdQueryClient`, `AnnounceBeginClient` hold callbacks and check `Commissioner::IsActive` | `send_energy_scan_query`, `send_pan_id_query`, `send_announce_begin` build and send; the session ID is a parameter; `parse_energy_report` / `parse_pan_id_conflict` decode and acknowledge | The Commissioner (DTLS side) is not implemented | none |
+
+## MeshCoP commissioning (`opentrust-meshcop`: `pskd`, `secure`, `joiner`)
+
+Reference: `meshcop/{joiner,meshcop}.cpp`, `thread/mesh_forwarder.cpp` (`kSubTypeJoinerEntrust`),
+`mac/mac.cpp` (key ID mode 0), Thread 1.4.1 sections 7.2.1.1, 8.2, 8.4.3, 8.4.4.
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| PSKd | `JoinerPskd` (6..32 chars, digits and uppercase except I, O, Q, Z), compared with `memcmp`-like loop, printed by `LogJoinerEntry` | `pskd::JoinerPskd`: same rules; constant-time equality, redacted `Debug` / `defmt`, wiped on drop; never logged | Secret hygiene | none |
+| Joiner I/O | Direct calls into MAC, MLE, `Tmf::SecureAgent`, `Ip6::Filter` | `joiner::JoinerIo` (discovery request, ext address, PAN/channel, unsecure port, unsecured send, KEK install and key ID mode 0 send, dataset save, events); the Joiner owns its DTLS `Session` and two small CoAP endpoints | Sans-IO | none |
+| Joiner Entrust reception | Any TMF `/c/je` that passes the MAC (the KEK is in the key manager); the TMF agent dispatches it | Only datagrams the caller reports as received under key ID mode 0 (`LinkSecurity::Kek`, `Joiner::handle_kek_datagram`); anything else is ignored; the response is sent through `JoinerIo::send_kek` | A Joiner Entrust must be bound to the KEK of the authenticated session; frames under the network key never reach it | none |
+| Joiner Entrust content | Only the Network Key (with the MAC channel / PAN ID) is saved | Same | | none |
+| JOIN_FIN.rsp with State Reject | Goes to `kStateEntrust` and waits for the 4 s timeout | Ends immediately with `Error::Security` | Spec: a rejected Joiner stops | only timing |
+| Joiner KEK lifetime | Stays in the key manager until replaced | `JoinerIo::set_kek(None)` when the Joiner finishes (success, failure or stop) | Thread 7.2.1.1: single-use key, discarded after the response | none |
+| Discovery PAN ID | `Mac::GetPanId()` | `0xffff` (broadcast) | A device without dataset has no PAN ID | none |
+| Vendor strings | UTF-8 checks; `nullptr` vendor name/model/version allowed | `JoinerConfig` borrows `&str` (UTF-8 by construction); over-long strings are `InvalidArgs` | | none |

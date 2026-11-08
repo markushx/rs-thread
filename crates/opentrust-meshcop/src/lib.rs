@@ -5,14 +5,11 @@
 //!
 //! # Scope
 //!
-//! Everything in the Thread network layer that needs no secure session: the
-//! MeshCoP TLVs, Operational Datasets and their distribution, the leader's
-//! commissioner session state, Discovery, Energy Scan, PAN ID Query and
-//! Announce Begin. The DTLS / EC-JPAKE parts (Joiner, Joiner Router relay,
-//! Commissioner, Border Agent) are not here; their hooks are the Steering
-//! Data filter and the Discovery scanner, the Commissioning Data accessors
-//! in [`commissioner`], the request builders in [`mgmt`] and [`scan`], and
-//! `opentrust_core::crypto::pskc` / `opentrust-dtls`.
+//! The MeshCoP TLVs, Operational Datasets and their distribution, the
+//! leader's commissioner session state, Discovery, Energy Scan, PAN ID
+//! Query and Announce Begin, and the commissioning roles that run DTLS
+//! (`opentrust-dtls`, EC-JPAKE): the [`joiner`]. The Joiner Router relay,
+//! the Commissioner and the Border Agent are not implemented yet.
 //!
 //! # Wiring
 //!
@@ -44,6 +41,11 @@
 //!   clients).
 //! - [`steering`]: the Steering Data bloom filter, Joiner ID derivation and
 //!   Joiner Discerner.
+//! - [`pskd`]: the Joiner PSKd (validation, secret handling).
+//! - [`secure`]: link-layer security classes of commissioning traffic and
+//!   the DTLS / CoAP glue.
+//! - [`joiner`]: the Joiner (discovery, DTLS with the PSKd, JOIN_FIN,
+//!   Joiner Entrust under the KEK).
 
 #[cfg(test)]
 extern crate std;
@@ -52,9 +54,12 @@ extern crate std;
 pub mod commissioner;
 pub mod dataset;
 pub mod discovery;
+pub mod joiner;
 pub mod manager;
 pub mod mgmt;
+pub mod pskd;
 pub mod scan;
+pub mod secure;
 pub mod steering;
 pub mod timestamp;
 pub mod tlv;
@@ -65,6 +70,8 @@ pub mod updater;
 mod dataset_tests;
 #[cfg(test)]
 mod dataset_vector_tests;
+#[cfg(test)]
+mod joiner_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod net_sim;
 #[cfg(test)]
@@ -75,5 +82,7 @@ mod sim_scan_tests;
 mod sim_tests;
 #[cfg(test)]
 mod steering_tests;
+#[cfg(test)]
+mod test_rng;
 #[cfg(test)]
 mod tlv_tests;

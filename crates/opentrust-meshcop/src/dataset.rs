@@ -52,6 +52,13 @@ pub struct Dataset {
     len: u8,
 }
 
+/// The buffer holds the Network Key and PSKc: wipe it.
+impl Drop for Dataset {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.buf);
+    }
+}
+
 impl core::fmt::Debug for Dataset {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // Keys are not printed.
@@ -136,6 +143,7 @@ impl Dataset {
 
     /// Remove everything.
     pub fn clear(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.buf);
         self.len = 0;
     }
 
