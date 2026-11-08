@@ -28,6 +28,7 @@
 
 #[cfg(feature = "ftd")]
 mod advert;
+mod announce_sender;
 pub mod attach;
 pub mod child;
 mod child_rx;
@@ -50,7 +51,7 @@ mod router_link;
 pub mod security;
 pub mod tlv;
 
-pub use env::{MleEnv, MleEvent, Role};
+pub use env::{MleEnv, MleEvent, Role, StoredDataset};
 pub use mle::{Mle, MleConfig};
 pub use router_config::{DeviceProperties, PowerSupply, RouterConfig, RoutingPolicy};
 

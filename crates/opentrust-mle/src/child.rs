@@ -84,6 +84,7 @@ impl<const C: usize> Mle<C> {
         self.set_rloc16(env, rloc16);
         self.set_role(env, Role::Child);
         self.attach.state = crate::attach::AttachState::Idle;
+        self.attach.reattach = crate::attach::ReattachState::Stop;
         self.attach.deadline = Some(now.saturating_add(crate::attach::ATTACH_BACKOFF_RESET));
         self.announce_attach_succeeded(env);
         self.child.child_update_attempts = 0;

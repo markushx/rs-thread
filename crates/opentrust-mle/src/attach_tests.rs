@@ -376,3 +376,44 @@ fn sleepy_child_polls_after_attach() {
     assert!(!env.rx_on);
     assert_eq!(env.poll, Some(Duration::from_secs(236)));
 }
+
+#[test]
+fn reattach_tries_stored_active_then_pending_dataset() {
+    use crate::env::StoredDataset;
+    let mut env = TestEnv::new(1);
+    env.stored.active = true;
+    env.stored.pending = true;
+    let mut child = mtd();
+    child.start(&mut env, T0).unwrap();
+    let mut t = T0;
+    // Start: the stored Active Dataset is restored.
+    t = advance(&mut child, &mut env, t);
+    assert_eq!(env.stored.restored, [StoredDataset::Active]);
+    // Run the whole unsuccessful attach: no Orphan Announces while reattaching.
+    let mut announces = 0;
+    for _ in 0..6 {
+        env.take_out().iter().for_each(|o| {
+            announces += usize::from(decode(o, &env, |rx| rx.command) == Command::Announce);
+        });
+        t = advance(&mut child, &mut env, t);
+    }
+    env.take_out();
+    // The Pending Dataset is applied, then a new attach cycle starts shortly.
+    assert_eq!(
+        env.stored.restored,
+        [StoredDataset::Active, StoredDataset::Pending]
+    );
+    assert_eq!(env.stored.pending_applied, 1);
+    assert_eq!(announces, 0);
+    let wait = child.next_deadline().unwrap() - t;
+    assert!(wait <= Duration::from_millis(51), "{wait:?}");
+    // The second cycle also fails: the Active Dataset comes back and the
+    // normal Orphan Announce phase follows.
+    let mut guard = 0;
+    while env.stored.restored.len() < 3 && guard < 40 {
+        t = advance(&mut child, &mut env, t);
+        guard += 1;
+    }
+    assert_eq!(env.stored.restored[2], StoredDataset::Active);
+    assert_eq!(announces, 0);
+}

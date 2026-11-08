@@ -47,6 +47,25 @@ pub trait DatasetBridge {
         active: Option<(Timestamp, Option<&[u8]>)>,
         pending: Option<(Timestamp, Option<&[u8]>)>,
     );
+    /// Restore the stored Active / Pending Dataset; `false` if none.
+    fn restore(&mut self, _now: Instant, _active: bool) -> bool {
+        false
+    }
+    /// Apply the restored Pending Dataset's configuration.
+    fn apply_pending(&mut self, _now: Instant) {}
+    /// Delete the Pending Dataset.
+    fn clear_pending(&mut self, _now: Instant) {}
+}
+
+/// Stored datasets of a [`TestEnv`] without a [`DatasetBridge`], and the
+/// reattach steps taken.
+#[derive(Default)]
+pub struct StoredDatasets {
+    pub active: bool,
+    pub pending: bool,
+    pub restored: std::vec::Vec<crate::env::StoredDataset>,
+    pub pending_applied: u32,
+    pub pending_cleared: u32,
 }
 
 pub struct TestEnv {
@@ -75,6 +94,7 @@ pub struct TestEnv {
     /// `request_router_id` fails (no TMF available).
     pub solicit_fails: bool,
     pub dataset_bridge: Option<std::boxed::Box<dyn DatasetBridge>>,
+    pub stored: StoredDatasets,
     pub active_ts: Option<Timestamp>,
     pub mac_pan_id: u16,
     pub mac_channel: u8,
@@ -120,6 +140,7 @@ impl TestEnv {
             released: Vec::new(),
             solicit_fails: false,
             dataset_bridge: None,
+            stored: StoredDatasets::default(),
             active_ts: None,
             mac_pan_id: 0xface,
             mac_channel: 15,
@@ -328,6 +349,28 @@ impl MleEnv for TestEnv {
             Some(b) => b.dataset(false, now, out),
             None => Ok(0),
         }
+    }
+    fn restore_dataset(&mut self, now: Instant, which: crate::env::StoredDataset) -> bool {
+        if let Some(b) = &mut self.dataset_bridge {
+            return b.restore(now, which == crate::env::StoredDataset::Active);
+        }
+        self.stored.restored.push(which);
+        match which {
+            crate::env::StoredDataset::Active => self.stored.active,
+            crate::env::StoredDataset::Pending => self.stored.pending,
+        }
+    }
+    fn apply_pending_configuration(&mut self, now: Instant) {
+        if let Some(b) = &mut self.dataset_bridge {
+            b.apply_pending(now);
+        }
+        self.stored.pending_applied += 1;
+    }
+    fn clear_pending_dataset(&mut self, now: Instant) {
+        if let Some(b) = &mut self.dataset_bridge {
+            b.clear_pending(now);
+        }
+        self.stored.pending_cleared += 1;
     }
     fn dataset_received(
         &mut self,

@@ -314,6 +314,9 @@ impl<const C: usize> Mle<C> {
             }
             // Tell the sender about our newer network on its channel.
             let _ = self.send_announce(env, channel, false, None);
+            // Also answer the sender directly (OT
+            // `SEND_UNICAST_ANNOUNCE_RESPONSE`).
+            let _ = self.send_announce(env, channel, false, Some(rx.meta.src));
         } else if cmp.is_gt() {
             // Nothing to do for a detached device already on that
             // channel and PAN.
@@ -339,6 +342,10 @@ impl<const C: usize> Mle<C> {
                 pan_id: pan.0,
                 timestamp: ts,
             });
+        } else {
+            // Equal timestamps: a consistent transmission for the
+            // AnnounceSender's Trickle timer.
+            self.announce_sender.consistent();
         }
         Ok(RxClass::Peer)
     }

@@ -183,6 +183,25 @@ impl DatasetBridge for Bridge {
         let s = &mut *self.0.borrow_mut();
         s.ds.dataset_received(&mut s.env, now, active, pending);
     }
+    fn restore(&mut self, now: Instant, active: bool) -> bool {
+        let s = &mut *self.0.borrow_mut();
+        let t = if active {
+            DatasetType::Active
+        } else {
+            DatasetType::Pending
+        };
+        s.ds.restore(&mut s.env, now, t).is_ok()
+    }
+    fn apply_pending(&mut self, now: Instant) {
+        let s = &mut *self.0.borrow_mut();
+        if let Some(d) = s.ds.read(DatasetType::Pending, now) {
+            let _ = s.env.apply(&Configuration::from_dataset(&d));
+        }
+    }
+    fn clear_pending(&mut self, _now: Instant) {
+        let s = &mut *self.0.borrow_mut();
+        s.ds.clear(&mut s.env, DatasetType::Pending);
+    }
 }
 
 /// Scan servers of a node and the radio environment they observe.

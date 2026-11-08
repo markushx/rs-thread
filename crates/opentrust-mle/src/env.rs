@@ -209,6 +209,16 @@ pub struct DiscoveryResponseInfo {
     pub lqi: Option<u8>,
 }
 
+/// Which stored Operational Dataset a reattach step restores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum StoredDataset {
+    /// The Active Operational Dataset.
+    Active,
+    /// The Pending Operational Dataset.
+    Pending,
+}
+
 /// Why a REED asks the leader for a router ID (Thread Status TLV values of
 /// the Address Solicit request, §5.19; OT `ThreadStatusTlv`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -397,6 +407,24 @@ pub trait MleEnv {
     fn pending_dataset(&self, _now: Instant, _out: &mut [u8]) -> Result<usize> {
         Ok(0)
     }
+    /// `true` if the Active Dataset holds at least the network key, channel
+    /// and PAN ID (OT `IsPartiallyComplete`). Defaults to "an Active
+    /// Timestamp is known".
+    fn active_dataset_partially_complete(&self) -> bool {
+        self.active_timestamp().is_some()
+    }
+    /// Reload a stored Operational Dataset from non-volatile memory (OT
+    /// `DatasetManager::Restore`; for the Active Dataset this applies its
+    /// configuration: channel, PAN ID, network key). Returns `false` if none
+    /// is stored.
+    fn restore_dataset(&mut self, _now: Instant, _which: StoredDataset) -> bool {
+        false
+    }
+    /// Apply the configuration of the (restored) Pending Dataset: channel,
+    /// PAN ID, network key (OT `PendingDatasetManager::ApplyConfiguration`).
+    fn apply_pending_configuration(&mut self, _now: Instant) {}
+    /// Delete the Pending Dataset (OT `PendingDatasetManager::Clear`).
+    fn clear_pending_dataset(&mut self, _now: Instant) {}
     /// Datasets received in a Child ID Response / Data Response.
     fn dataset_received(
         &mut self,

@@ -123,6 +123,7 @@ pub struct Mle<const C: usize> {
     pub(crate) parent: Option<Parent>,
     pub(crate) attach: AttachCtx,
     pub(crate) announce: crate::discovery::AnnounceCtx,
+    pub(crate) announce_sender: crate::announce_sender::AnnounceSender,
     pub(crate) child: ChildCtx,
     pub(crate) children: ChildTable<C>,
     pub(crate) previous_partition_id: u32,
@@ -153,6 +154,7 @@ impl<const C: usize> Mle<C> {
             parent: None,
             attach: AttachCtx::new(),
             announce: crate::discovery::AnnounceCtx::new(),
+            announce_sender: crate::announce_sender::AnnounceSender::new(),
             child: ChildCtx::new(),
             children: ChildTable::new(),
             previous_partition_id: 0,
@@ -242,6 +244,7 @@ impl<const C: usize> Mle<C> {
         self.set_role(env, Role::Detached);
         self.set_rloc16(env, Rloc16::INVALID);
         self.attach.counter = 0;
+        self.attach.reattach = crate::attach::ReattachState::Start;
         env.keys_mut().start(now);
         #[cfg(feature = "ftd")]
         {
@@ -261,6 +264,8 @@ impl<const C: usize> Mle<C> {
         }
         self.reset_to_detached(env);
         self.announce = crate::discovery::AnnounceCtx::new();
+        self.announce_sender = crate::announce_sender::AnnounceSender::new();
+        self.attach.reattach = crate::attach::ReattachState::Stop;
         env.keys_mut().stop();
         self.children.clear();
         self.set_role(env, Role::Disabled);
@@ -350,6 +355,7 @@ impl<const C: usize> Mle<C> {
         let d = [
             self.attach.deadline,
             self.announce.deadline,
+            self.announce_sender.deadline(),
             self.child.tx_deadline,
             self.child.supervision_deadline,
         ]
@@ -379,6 +385,7 @@ impl<const C: usize> Mle<C> {
             self.handle_attach_timer(env, now);
         }
         self.poll_announce(env, now);
+        self.poll_announce_sender(env, now);
         if self.child.tx_deadline.is_some_and(|d| now >= d) {
             self.child.tx_deadline = None;
             self.handle_message_tx_timer(env, now);
@@ -474,6 +481,7 @@ impl<const C: usize> Mle<C> {
             _ => return Err(Error::Drop),
         };
         self.process_key_sequence(env, now, class, sec, nb);
+        self.update_announce_sender(env, now);
         self.store_if_needed(env);
         Ok(rx.command)
     }

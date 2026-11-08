@@ -32,11 +32,15 @@
 //! original channel and PAN ID) is in [`crate::discovery`]; its failure is
 //! handled in `reattach`.
 //!
-//! Deviations from OT: no "reattach with stored Active/Pending dataset"
-//! sequence, so the Announce phase condition is "not a child and (an Active
-//! Timestamp is known or the device is an MTD)". A Parent Response is only
-//! accepted while Parent Requests are being sent or Orphan Announces are
-//! going out.
+//! After a normal [`Mle::start`] the first attach restores the stored Active
+//! Dataset ([`MleEnv::restore_dataset`]); when the attach fails the stored
+//! Pending Dataset is applied and tried, then the Active Dataset again
+//! (`ReattachState`), and only then the Announce phase and the
+//! detached back-off follow. A device that attached with the stored Pending
+//! Dataset deletes it.
+//!
+//! Deviation from OT: a Parent Response is only accepted while Parent
+//! Requests are being sent or Orphan Announces are going out.
 
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{Rloc16, ipv6};
@@ -45,7 +49,7 @@ use opentrust_mac::security::LinkFrameCounters;
 
 use crate::consts::{PARENT_REQ_SCANMASK_R_TIMEOUT, PARENT_REQ_SCANMASK_RE_TIMEOUT};
 use crate::endpoint::MleRx;
-use crate::env::{MleEnv, MleEvent, Role};
+use crate::env::{MleEnv, MleEvent, Role, StoredDataset};
 use crate::link_quality::{INVALID_RSSI, LinkQuality, compute_link_margin};
 use crate::message::Command;
 use crate::mle::{Mle, NbRef, RxClass};
@@ -154,6 +158,20 @@ impl Candidate {
     }
 }
 
+/// Progress of the reattach with stored datasets (OT `ReattachState`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum ReattachState {
+    /// Reattach is finished or not wanted.
+    Stop,
+    /// A normal start: the stored Active Dataset is tried first.
+    Start,
+    /// Attaching with the stored Active Dataset.
+    Active,
+    /// Attaching with the stored Pending Dataset.
+    Pending,
+}
+
 /// Attach bookkeeping inside [`Mle`].
 #[derive(Debug)]
 pub(crate) struct AttachCtx {
@@ -169,6 +187,8 @@ pub(crate) struct AttachCtx {
     pub announce_channel: u8,
     /// Time between Orphan Announces.
     pub announce_delay: Duration,
+    /// Reattach with the stored datasets (OT `mReattachState`).
+    pub reattach: ReattachState,
 }
 
 impl AttachCtx {
@@ -184,6 +204,7 @@ impl AttachCtx {
             candidate: None,
             announce_channel: 0,
             announce_delay: Duration::ZERO,
+            reattach: ReattachState::Stop,
         }
     }
 
@@ -220,6 +241,13 @@ impl<const C: usize> Mle<C> {
         }
         if self.role != Role::Detached {
             self.attach.counter = 0;
+        }
+        if self.attach.reattach == ReattachState::Start {
+            self.attach.reattach = if env.restore_dataset(now, StoredDataset::Active) {
+                ReattachState::Active
+            } else {
+                ReattachState::Stop
+            };
         }
         self.attach.candidate = None;
         self.attach.state = AttachState::Start;
@@ -361,7 +389,7 @@ impl<const C: usize> Mle<C> {
                 } else {
                     self.attach.state = AttachState::Idle;
                     self.attach.candidate = None;
-                    self.reattach(env, now);
+                    delay = self.reattach(env, now);
                 }
             }
             AttachState::Announce => {
@@ -372,13 +400,13 @@ impl<const C: usize> Mle<C> {
                 } else {
                     self.attach.state = AttachState::Idle;
                     self.attach.candidate = None;
-                    self.reattach(env, now);
+                    delay = self.reattach(env, now);
                 }
             }
             AttachState::ChildIdRequest => {
                 self.attach.state = AttachState::Idle;
                 self.attach.candidate = None;
-                self.reattach(env, now);
+                delay = self.reattach(env, now);
             }
         }
         if !delay.is_zero() {
@@ -389,7 +417,8 @@ impl<const C: usize> Mle<C> {
     /// OT `PrepareAnnounceState`.
     fn prepare_announce_state<E: MleEnv>(&mut self, env: &E) -> bool {
         if self.role == Role::Child
-            || (env.active_timestamp().is_none() && self.is_full_thread_device())
+            || self.attach.reattach != ReattachState::Stop
+            || (!env.active_dataset_partially_complete() && self.is_full_thread_device())
         {
             return false;
         }
@@ -406,8 +435,32 @@ impl<const C: usize> Mle<C> {
         (self.attach.announce_channel.saturating_add(1)..=26).find(|c| mask >> c & 1 == 1)
     }
 
-    /// OT `Reattach` after the dataset-reattach steps (not implemented).
-    fn reattach<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
+    /// OT `Reattach`: after the stored Active Dataset failed try the stored
+    /// Pending Dataset (its channel / PAN ID may already be in use), then
+    /// the Active Dataset again; afterwards give up according to the attach
+    /// mode. Returns the delay of the next attach step (zero: none).
+    fn reattach<E: MleEnv>(&mut self, env: &mut E, now: Instant) -> Duration {
+        match self.attach.reattach {
+            ReattachState::Active => {
+                if env.restore_dataset(now, StoredDataset::Pending) {
+                    env.apply_pending_configuration(now);
+                    self.attach.reattach = ReattachState::Pending;
+                    self.attach.state = AttachState::Start;
+                    return Duration::from_millis(
+                        1 + u64::from(Self::rand_range(env, 0, ATTACH_START_JITTER_MS)),
+                    );
+                }
+                self.attach.reattach = ReattachState::Stop;
+            }
+            ReattachState::Pending => {
+                self.attach.reattach = ReattachState::Stop;
+                let _ = env.restore_dataset(now, StoredDataset::Active);
+            }
+            ReattachState::Stop | ReattachState::Start => {}
+        }
+        if self.attach.reattach != ReattachState::Stop {
+            return Duration::ZERO;
+        }
         match self.attach.mode {
             AttachMode::AnyPartition | AttachMode::BetterParent | AttachMode::SelectedParent => {
                 if self.role != Role::Child {
@@ -415,12 +468,12 @@ impl<const C: usize> Mle<C> {
                     // channel and PAN ID.
                     if self.announce_attach_failed(env) {
                         self.become_detached(env, now);
-                        return;
+                        return Duration::ZERO;
                     }
                     // No partition found: an FTD starts its own.
                     #[cfg(feature = "ftd")]
                     if self.is_full_thread_device() && self.become_leader(env, now, false).is_ok() {
-                        return;
+                        return Duration::ZERO;
                     }
                     self.become_detached(env, now);
                 } else if !self.is_rx_on_when_idle() {
@@ -433,6 +486,7 @@ impl<const C: usize> Mle<C> {
             }
             AttachMode::BetterPartition => {}
         }
+        Duration::ZERO
     }
 
     /// OT `BecomeDetached`: drop the parent and start over with backoff.
@@ -442,6 +496,10 @@ impl<const C: usize> Mle<C> {
         }
         if self.role == Role::Detached && self.attach.state == AttachState::Start {
             return;
+        }
+        if self.attach.reattach == ReattachState::Stop {
+            // Bring the stored Pending Dataset (and its delay timer) back.
+            let _ = env.restore_dataset(now, StoredDataset::Pending);
         }
         let had_parent = self.parent.is_some();
         self.reset_to_detached(env);
@@ -753,6 +811,11 @@ impl<const C: usize> Mle<C> {
             Err(Error::NotFound) => None,
             Err(e) => return Err(e),
         };
+        if self.attach.reattach == ReattachState::Pending {
+            // Attached with the stored Pending Dataset: it has been applied
+            // by the network already.
+            env.clear_pending_dataset(now);
+        }
         env.dataset_received(now, active, pending);
 
         let cand = self.attach.candidate.take().ok_or(Error::InvalidState)?;
