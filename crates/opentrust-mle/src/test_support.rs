@@ -28,6 +28,10 @@ pub struct Out {
     pub src: Ipv6Addr,
     pub dst: Ipv6Addr,
     pub data: Vec<u8, 1100>,
+    /// MAC PAN ID / channel the message was sent with (Discovery, Announce).
+    pub pan_id: Option<u16>,
+    pub channel: Option<u8>,
+    pub link_security: bool,
 }
 
 /// Dataset behavior plugged into [`TestEnv`] by crates that own the dataset
@@ -71,6 +75,14 @@ pub struct TestEnv {
     /// `request_router_id` fails (no TMF available).
     pub solicit_fails: bool,
     pub dataset_bridge: Option<std::boxed::Box<dyn DatasetBridge>>,
+    pub active_ts: Option<Timestamp>,
+    pub mac_pan_id: u16,
+    pub mac_channel: u8,
+    pub mac_ext_pan_id: Option<opentrust_core::types::ExtPanId>,
+    pub discovery_accept: bool,
+    pub discovery_tlvs: std::vec::Vec<u8>,
+    pub discovery_requests: std::vec::Vec<crate::env::DiscoveryRequestInfo>,
+    pub discovery_responses: std::vec::Vec<(crate::env::DiscoveryResponseInfo, std::vec::Vec<u8>)>,
 }
 
 pub const MLP: Prefix64 = Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 1]);
@@ -108,6 +120,14 @@ impl TestEnv {
             released: Vec::new(),
             solicit_fails: false,
             dataset_bridge: None,
+            active_ts: None,
+            mac_pan_id: 0xface,
+            mac_channel: 15,
+            mac_ext_pan_id: None,
+            discovery_accept: true,
+            discovery_tlvs: std::vec::Vec::new(),
+            discovery_requests: std::vec::Vec::new(),
+            discovery_responses: std::vec::Vec::new(),
         }
     }
 
@@ -145,6 +165,8 @@ impl TestEnv {
         let link = LinkRxInfo {
             rss: Some(rss),
             lqi: Some(200),
+            pan_id: out.pan_id,
+            channel: out.channel,
         };
         mle.receive(env, now, &meta, link, &out.data, &mut scratch)
     }
@@ -185,13 +207,56 @@ impl MleEnv for TestEnv {
         }
     }
     fn send(&mut self, src: Ipv6Addr, dst: Ipv6Addr, payload: &[u8]) -> Result<()> {
+        self.send_with(&crate::env::TxOptions::default(), src, dst, payload)
+    }
+    fn send_with(
+        &mut self,
+        opts: &crate::env::TxOptions,
+        src: Ipv6Addr,
+        dst: Ipv6Addr,
+        payload: &[u8],
+    ) -> Result<()> {
         self.out
             .push(Out {
                 src,
                 dst,
                 data: Vec::from_slice(payload).map_err(|_| Error::NoBufs)?,
+                pan_id: opts.pan_id,
+                channel: opts.channel,
+                link_security: opts.link_security,
             })
             .map_err(|_| Error::NoBufs)
+    }
+    fn pan_id(&self) -> u16 {
+        self.mac_pan_id
+    }
+    fn pan_channel(&self) -> u8 {
+        self.mac_channel
+    }
+    fn ext_pan_id(&self) -> Option<opentrust_core::types::ExtPanId> {
+        self.mac_ext_pan_id
+    }
+    fn accept_discovery_request(&mut self, info: &crate::env::DiscoveryRequestInfo) -> bool {
+        self.discovery_requests.push(*info);
+        // Joiners are only answered while joining is allowed.
+        !info.joiner || self.discovery_accept
+    }
+    fn discovery_response(&mut self, out: &mut [u8]) -> Result<usize> {
+        if self.discovery_tlvs.is_empty() {
+            return Err(Error::NotImplemented);
+        }
+        let r = out
+            .get_mut(..self.discovery_tlvs.len())
+            .ok_or(Error::NoBufs)?;
+        r.copy_from_slice(&self.discovery_tlvs);
+        Ok(self.discovery_tlvs.len())
+    }
+    fn discovery_response_received(
+        &mut self,
+        info: &crate::env::DiscoveryResponseInfo,
+        tlvs: &[u8],
+    ) {
+        self.discovery_responses.push((*info, tlvs.to_vec()));
     }
     fn set_short_address(&mut self, rloc16: Rloc16) {
         self.short = rloc16;
@@ -240,7 +305,10 @@ impl MleEnv for TestEnv {
         self.nd = Vec::from_slice(data).unwrap();
     }
     fn active_timestamp(&self) -> Option<Timestamp> {
-        self.dataset_bridge.as_ref()?.active_timestamp()
+        match &self.dataset_bridge {
+            Some(b) => b.active_timestamp(),
+            None => self.active_ts,
+        }
     }
     fn pending_timestamp(&self) -> Option<Timestamp> {
         self.dataset_bridge.as_ref()?.pending_timestamp()

@@ -90,6 +90,12 @@ pub struct LinkRxInfo {
     pub rss: Option<i8>,
     /// LQI of the frame.
     pub lqi: Option<u8>,
+    /// Source PAN ID of the frame (Discovery messages are answered with
+    /// the PAN ID of the request).
+    pub pan_id: Option<u16>,
+    /// Channel the frame was received on (Discovery Responses report the
+    /// channel of the network).
+    pub channel: Option<u8>,
 }
 
 /// Metadata of a received MLE message.

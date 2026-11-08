@@ -17,7 +17,7 @@ use crate::steering::SteeringData;
 use crate::timestamp::Timestamp;
 use crate::tlv::{PAGE0_CHANNELS, SecurityPolicy, State, Tlvs, WriterExt, ty};
 
-fn secs(s: u64) -> Duration {
+pub(crate) fn secs(s: u64) -> Duration {
     Duration::from_secs(s)
 }
 
@@ -31,7 +31,7 @@ fn ts(s: u64) -> Timestamp {
 
 /// A complete Active Dataset for the simulator network (mesh-local prefix
 /// and network key of the MLE test environment).
-fn dataset(seconds: u64, channel: u8, pan: u16, key: u8, name: &str) -> Dataset {
+pub(crate) fn dataset(seconds: u64, channel: u8, pan: u16, key: u8, name: &str) -> Dataset {
     let mut d = Dataset::new();
     d.set_timestamp(DatasetType::Active, &ts(seconds)).unwrap();
     d.set_channel(channel).unwrap();
@@ -50,7 +50,7 @@ fn dataset(seconds: u64, channel: u8, pan: u16, key: u8, name: &str) -> Dataset 
 
 /// Leader (node 0), a router (node 1) and a child (node 2) in one
 /// partition, all hearing each other.
-fn form(initial: &Dataset) -> Net {
+pub(crate) fn form(initial: &Dataset) -> Net {
     let mut net = Net::ftds(3);
     for (a, b) in [(0, 1), (0, 2), (1, 2)] {
         net.connect(a, b);
@@ -71,14 +71,14 @@ fn read(net: &Net, i: usize, t: DatasetType) -> Option<Dataset> {
     net.shared(i).ds.read(t, now)
 }
 
-fn payload(f: impl FnOnce(&mut Writer<'_>)) -> std::vec::Vec<u8> {
+pub(crate) fn payload(f: impl FnOnce(&mut Writer<'_>)) -> std::vec::Vec<u8> {
     let mut b = [0u8; 300];
     let mut w = Writer::new(&mut b);
     f(&mut w);
     w.written().to_vec()
 }
 
-fn leader_aloc() -> core::net::Ipv6Addr {
+pub(crate) fn leader_aloc() -> core::net::Ipv6Addr {
     MLP.aloc(0xfc00).unwrap()
 }
 
@@ -139,7 +139,7 @@ fn mgmt_active_get_filters_tlvs_and_hides_key() {
     assert!(t.contains(ty::PSKC));
 }
 
-fn state_of(net: &mut Net, node: usize) -> State {
+pub(crate) fn state_of(net: &mut Net, node: usize) -> State {
     let (_, body) = net.nodes[node].responses.pop().expect("no response");
     Tlvs(&body).state().unwrap()
 }
@@ -292,12 +292,12 @@ fn active_set_affecting_connectivity_becomes_pending() {
     }
 }
 
-fn petition(net: &mut Net, from: usize, id: &str) {
+pub(crate) fn petition(net: &mut Net, from: usize, id: &str) {
     let p = payload(|w| w.commissioner_id(id).unwrap());
     net.post(from, leader_aloc(), Uri::LeaderPetition, &p);
 }
 
-fn keep(net: &mut Net, from: usize, session: u16) {
+pub(crate) fn keep(net: &mut Net, from: usize, session: u16) {
     let ka = payload(|w| {
         w.state(State::Accept).unwrap();
         w.commissioner_session_id(session).unwrap();

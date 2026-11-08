@@ -12,29 +12,16 @@ pub use opentrust_mle::tlv::Timestamp;
 /// decide. `None` stands for OT's "invalid" timestamp (all ones /
 /// not present).
 pub fn compare(a: Option<&Timestamp>, b: Option<&Timestamp>) -> Ordering {
-    match (a, b) {
-        (None, None) => Ordering::Equal,
-        (Some(_), None) => Ordering::Greater,
-        (None, Some(_)) => Ordering::Less,
-        (Some(a), Some(b)) => a
-            .seconds
-            .cmp(&b.seconds)
-            .then(a.ticks.cmp(&b.ticks))
-            .then(a.authoritative.cmp(&b.authoritative)),
-    }
+    Timestamp::compare(a, b)
 }
 
 /// The timestamp of an MLE Orphan Announce (`SetToOrphanAnnounce`):
 /// seconds and ticks zero, authoritative flag set.
-pub const ORPHAN_ANNOUNCE: Timestamp = Timestamp {
-    seconds: 0,
-    ticks: 0,
-    authoritative: true,
-};
+pub const ORPHAN_ANNOUNCE: Timestamp = Timestamp::ORPHAN_ANNOUNCE;
 
 /// OT `IsOrphanAnnounce`.
 pub fn is_orphan_announce(t: &Timestamp) -> bool {
-    *t == ORPHAN_ANNOUNCE
+    t.is_orphan_announce()
 }
 
 /// Largest tick value (15 bits).

@@ -32,6 +32,7 @@ pub mod attach;
 pub mod child;
 mod child_rx;
 pub mod consts;
+pub mod discovery;
 pub mod endpoint;
 pub mod env;
 pub mod link_quality;
@@ -59,6 +60,8 @@ mod advert_tests;
 mod attach_tests;
 #[cfg(test)]
 mod child_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod discovery_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
 #[cfg(all(test, feature = "ftd"))]

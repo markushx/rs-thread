@@ -28,6 +28,10 @@ use opentrust_net::udp::UdpMeta;
 use crate::dataset::{Dataset, DatasetType};
 use crate::manager::{Configuration, CurrentConfig, DatasetEnv, DatasetEvent, Datasets};
 use crate::mgmt::{self, MgmtCommand};
+use crate::scan::{
+    self, AnnounceBeginServer, EnergyAction, EnergyScanServer, PanIdAction, PanIdConflict,
+    PanIdQueryServer,
+};
 
 pub type TmfAgent = Agent<4, 16, 4, 512>;
 
@@ -181,7 +185,22 @@ impl DatasetBridge for Bridge {
     }
 }
 
+/// Scan servers of a node and the radio environment they observe.
+pub struct Servers {
+    pub energy: EnergyScanServer,
+    pub panq: PanIdQueryServer,
+    pub ab: AnnounceBeginServer,
+    /// Max RSSI per channel (index = channel).
+    pub rf_energy: [i8; 27],
+    /// Beacons heard by an active scan: (PAN ID, channel).
+    pub rf_beacons: std::vec::Vec<(u16, u8)>,
+    /// Energy reports received: (channel mask, energy list).
+    pub energy_reports: std::vec::Vec<(u32, std::vec::Vec<u8>)>,
+    pub conflicts: std::vec::Vec<PanIdConflict>,
+}
+
 pub struct Node {
+    pub srv: Servers,
     pub shared: Rc<RefCell<Shared>>,
     pub agent: TmfAgent,
     pub sink: Sink,
@@ -222,6 +241,7 @@ struct H<'a> {
     shared: &'a mut Shared,
     nd: &'a mut Leader<512>,
     ls: &'a mut crate::commissioner::LeaderState,
+    srv: &'a mut Servers,
     rx: &'a mut std::collections::BTreeMap<u16, u32>,
     now: Instant,
     outcomes: std::vec::Vec<mgmt::SetOutcome>,
@@ -288,6 +308,21 @@ impl Handler for H<'_> {
                     rsp,
                 );
             }
+            Uri::EnergyScan => self.srv.energy.handle_request(now, req, rsp),
+            Uri::PanIdQuery => self.srv.panq.handle_request(now, req, rsp),
+            Uri::AnnounceBegin => self.srv.ab.handle_request(now, req, rsp),
+            Uri::EnergyReport => {
+                if let Some(r) = scan::parse_energy_report(req, rsp) {
+                    self.srv
+                        .energy_reports
+                        .push((r.channel_mask, r.energy_list.to_vec()));
+                }
+            }
+            Uri::PanIdConflict => {
+                if let Some(c) = scan::parse_pan_id_conflict(req, rsp) {
+                    self.srv.conflicts.push(c);
+                }
+            }
             _ => {}
         }
     }
@@ -325,11 +360,25 @@ impl Net {
                 Uri::LeaderKeepAlive,
                 Uri::CommissionerSet,
                 Uri::CommissionerGet,
+                Uri::EnergyScan,
+                Uri::EnergyReport,
+                Uri::PanIdQuery,
+                Uri::PanIdConflict,
+                Uri::AnnounceBegin,
             ] {
                 agent.register(u).unwrap();
             }
             nodes.push(Node {
                 shared,
+                srv: Servers {
+                    energy: EnergyScanServer::new(),
+                    panq: PanIdQueryServer::new(),
+                    ab: AnnounceBeginServer::new(),
+                    rf_energy: [-100; 27],
+                    rf_beacons: std::vec::Vec::new(),
+                    energy_reports: std::vec::Vec::new(),
+                    conflicts: std::vec::Vec::new(),
+                },
                 agent,
                 sink: Sink::default(),
                 rng: XRng(0x1357_9bdf ^ (i as u64 + 1)),
@@ -414,6 +463,30 @@ impl Net {
             node.leader_state = crate::commissioner::LeaderState::new(0x1234 + i as u16);
         }
         node.was_leader = is_leader;
+
+        // What this node would answer to a Discovery Request.
+        let cd: Option<std::vec::Vec<u8>> = if is_leader {
+            node.nd.commissioning_data().map(<[u8]>::to_vec)
+        } else {
+            opentrust_mesh::netdata::NetworkDataView(&n.env.nd)
+                .commissioning_data()
+                .map(<[u8]>::to_vec)
+        };
+        n.env.discovery_accept = crate::discovery::joining_allowed(cd.as_deref());
+        let ds = node.shared.borrow().ds.read(DatasetType::Active, now);
+        n.env.discovery_tlvs.clear();
+        if let Some(ds) = ds {
+            let mut b = [0u8; 200];
+            if let Ok(len) =
+                crate::discovery::build_response_from_dataset(&ds, cd.as_deref(), &mut b)
+            {
+                n.env.discovery_tlvs.extend_from_slice(&b[..len]);
+            }
+            n.env.mac_ext_pan_id = ds.tlvs().ext_pan_id().ok();
+        }
+        let cur = node.shared.borrow().env.cur.clone();
+        n.env.mac_pan_id = cur.pan_id;
+        n.env.mac_channel = cur.channel;
     }
 
     fn publish_nd(&mut self, i: usize) {
@@ -473,6 +546,7 @@ impl Net {
             shared: &mut shared,
             nd: &mut node.nd,
             ls: &mut node.leader_state,
+            srv: &mut node.srv,
             rx: &mut node.rx,
             now,
             outcomes: std::vec::Vec::new(),
@@ -584,6 +658,7 @@ impl Net {
                         moved = true;
                     }
                 }
+                moved |= self.run_scan_servers(i);
                 let bumps = core::mem::take(&mut self.nodes[i].shared.borrow_mut().env.bumps);
                 if self.sim.nodes[i].mle.role() == Role::Leader && bumps > 0 {
                     self.nodes[i].nd.increment_version_and_stable();
@@ -609,6 +684,69 @@ impl Net {
         panic!("TMF storm");
     }
 
+    /// Drive the scan servers of node `i` against its radio environment.
+    fn run_scan_servers(&mut self, i: usize) -> bool {
+        let now = self.sim.now;
+        let rloc = self.sim.nodes[i].mle.rloc16();
+        let node = &mut self.nodes[i];
+        let mut moved = false;
+        let mut buf = [0u8; 300];
+        while let Some(a) = node.srv.energy.poll(now) {
+            moved = true;
+            match a {
+                EnergyAction::Scan { channel, .. } => {
+                    let r = node.srv.rf_energy[usize::from(channel)];
+                    node.srv.energy.scan_result(now, Some(r));
+                    node.srv.energy.scan_result(now, None);
+                }
+                EnergyAction::Report => {
+                    if let Ok((dst, n)) = node.srv.energy.report(&mut buf) {
+                        scan::send_energy_report(
+                            &mut node.agent,
+                            now,
+                            &mut node.rng,
+                            &mut node.sink,
+                            &MLP,
+                            rloc,
+                            dst,
+                            &buf[..n],
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+        }
+        if let Some(PanIdAction::ActiveScan { channel_mask }) = node.srv.panq.poll(now) {
+            moved = true;
+            let beacons = node.srv.rf_beacons.clone();
+            for (pan, ch) in beacons {
+                if channel_mask & (1 << ch) != 0 {
+                    node.srv.panq.scan_result(Some((pan, ch)));
+                }
+            }
+            if node.srv.panq.scan_result(None) {
+                let (dst, n) = node.srv.panq.conflict(&mut buf).unwrap();
+                scan::send_pan_id_conflict(
+                    &mut node.agent,
+                    now,
+                    &mut node.rng,
+                    &mut node.sink,
+                    &MLP,
+                    rloc,
+                    dst,
+                    &buf[..n],
+                )
+                .unwrap();
+            }
+        }
+        if let Some(ch) = node.srv.ab.poll(now) {
+            moved = true;
+            let n = &mut self.sim.nodes[i];
+            let _ = n.mle.send_announce(&mut n.env, ch, false, None);
+        }
+        moved
+    }
+
     fn next_tmf_deadline(&self) -> Option<Instant> {
         self.nodes
             .iter()
@@ -617,6 +755,9 @@ impl Net {
                     n.agent.next_deadline(),
                     n.shared.borrow().ds.next_deadline(),
                     n.leader_state.next_deadline(),
+                    n.srv.energy.next_deadline(),
+                    n.srv.panq.next_deadline(),
+                    n.srv.ab.next_deadline(),
                 ]
             })
             .flatten()
