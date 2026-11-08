@@ -10,6 +10,11 @@
 //! - [`message`], [`security`]: commands, message building, MLE security.
 //! - [`neighbor`], [`link_quality`]: neighbor/child/router data model, tables.
 //! - [`endpoint`]: UDP glue (port 19788, rx validation/decryption, dispatch, tx).
+//! - [`link_metrics`]: Link Metrics sub-TLV codecs and Forward Tracking Series
+//!   (Initiator and Subject on [`Mle`]).
+//! - [`discovery`]: Discovery and Announce; the periodic Announce sender of
+//!   routers, reattach with the stored datasets ([`attach`]) and graceful
+//!   detach ([`Mle::detach_gracefully`]) are part of the state machine.
 //!
 //! The sans-IO state machine [`Mle`] covers child-side
 //! [`attach`], child role operation ([`child`]), parent-side child handling
