@@ -8,8 +8,9 @@
 //! The MeshCoP TLVs, Operational Datasets and their distribution, the
 //! leader's commissioner session state, Discovery, Energy Scan, PAN ID
 //! Query and Announce Begin, and the commissioning roles that run DTLS
-//! (`opentrust-dtls`, EC-JPAKE): the [`joiner`]. The Joiner Router relay,
-//! the Commissioner and the Border Agent are not implemented yet.
+//! (`opentrust-dtls`, EC-JPAKE): the [`joiner`] and the Joiner Router
+//! relay (`joiner_router`, feature `ftd`). The Commissioner and the Border
+//! Agent are not implemented yet.
 //!
 //! # Wiring
 //!
@@ -46,6 +47,8 @@
 //!   the DTLS / CoAP glue.
 //! - [`joiner`]: the Joiner (discovery, DTLS with the PSKd, JOIN_FIN,
 //!   Joiner Entrust under the KEK).
+//! - `joiner_router` (feature `ftd`): the Joiner UDP port, Relay Receive /
+//!   Transmit and the delayed Joiner Entrust.
 
 #[cfg(test)]
 extern crate std;
@@ -55,6 +58,8 @@ pub mod commissioner;
 pub mod dataset;
 pub mod discovery;
 pub mod joiner;
+#[cfg(feature = "ftd")]
+pub mod joiner_router;
 pub mod manager;
 pub mod mgmt;
 pub mod pskd;
@@ -70,6 +75,8 @@ pub mod updater;
 mod dataset_tests;
 #[cfg(test)]
 mod dataset_vector_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod joiner_router_tests;
 #[cfg(test)]
 mod joiner_tests;
 #[cfg(all(test, feature = "ftd"))]

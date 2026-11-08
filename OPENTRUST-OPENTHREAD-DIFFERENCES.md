@@ -432,9 +432,9 @@ Reference: `meshcop/{meshcop_tlvs,meshcop,dataset,dataset_manager,dataset_manage
 | Announce Begin | `AnnounceSenderBase` with jitter | `AnnounceBeginServer` with jitter 0 (the server's default) | | none |
 | Commissioner clients | `EnergyScanClient`, `PanIdQueryClient`, `AnnounceBeginClient` hold callbacks and check `Commissioner::IsActive` | `send_energy_scan_query`, `send_pan_id_query`, `send_announce_begin` build and send; the session ID is a parameter; `parse_energy_report` / `parse_pan_id_conflict` decode and acknowledge | The Commissioner (DTLS side) is not implemented | none |
 
-## MeshCoP commissioning (`opentrust-meshcop`: `pskd`, `secure`, `joiner`)
+## MeshCoP commissioning (`opentrust-meshcop`: `pskd`, `secure`, `joiner`, `joiner_router`)
 
-Reference: `meshcop/{joiner,meshcop}.cpp`, `thread/mesh_forwarder.cpp` (`kSubTypeJoinerEntrust`),
+Reference: `meshcop/{joiner,joiner_router,meshcop}.cpp`, `thread/mesh_forwarder.cpp` (`kSubTypeJoinerEntrust`),
 `mac/mac.cpp` (key ID mode 0), Thread 1.4.1 sections 7.2.1.1, 8.2, 8.4.3, 8.4.4.
 
 | Area | OpenThread | OpenTrust | Reason | Interop |
@@ -447,3 +447,9 @@ Reference: `meshcop/{joiner,meshcop}.cpp`, `thread/mesh_forwarder.cpp` (`kSubTyp
 | Joiner KEK lifetime | Stays in the key manager until replaced | `JoinerIo::set_kek(None)` when the Joiner finishes (success, failure or stop) | Thread 7.2.1.1: single-use key, discarded after the response | none |
 | Discovery PAN ID | `Mac::GetPanId()` | `0xffff` (broadcast) | A device without dataset has no PAN ID | none |
 | Vendor strings | UTF-8 checks; `nullptr` vendor name/model/version allowed | `JoinerConfig` borrows `&str` (UTF-8 by construction); over-long strings are `InvalidArgs` | | none |
+| Joiner port | `JoinerRouter::Start` binds once and does not rebind on a port change | `JoinerRouter::update` re-opens the port when the configured / Commissioning Data port changes; the caller calls it on every Network Data change | Follow the Commissioning Data | none |
+| Relay Receive source | Any datagram on the joiner socket is relayed | Only datagrams from a link-local source with a non-empty payload | The Joiner is always a link neighbor; avoids relaying routed traffic | stricter |
+| Relay Receive size | Message pool | The TMF agent's `MSG` bounds the `/c/rx` (a DTLS flight of up to 768 bytes plus 4 TLVs needs `MSG` of about 820 bytes) | Fixed buffers | none if `MSG` is large enough |
+| Delayed Joiner Entrust | Queue in the message pool; the next due entry is sent (aborting an unanswered one) when the timer fires | At most `MAX_DELAYED_ENTRUST` (2) waiting; strictly one Joiner Entrust in flight, the next one after the answer or the CoAP timeout; the KEK is installed for the send and discarded (`JoinerRouterIo::set_kek(None)`) after the answer / timeout | The MAC holds one KEK: swapping it while a Joiner Entrust waits for its KEK-secured answer would lose that answer; Thread 7.2.1.1 single-use key | none |
+| Joiner Entrust transport | Main TMF agent with message sub-type `kSubTypeJoinerEntrust` | A dedicated CoAP endpoint in `JoinerRouter` whose transport sends through `JoinerRouterIo::send_kek` (key ID mode 0), so retransmissions are also KEK-secured; the answer is fed to `JoinerRouter::handle_kek_datagram` by the caller (mode-0 frames never reach the regular TMF agent) | No sub-type on datagrams in the sans-IO API | none |
+| Joiner Entrust without Active Dataset TLVs | `kErrorInvalidState`, entry dropped | Same (`build_entrust`), the KEK is not installed | | none |
