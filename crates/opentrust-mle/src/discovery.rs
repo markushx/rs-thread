@@ -18,12 +18,20 @@
 //! - [`Mle::send_announce`] and the Announce handling of OT
 //!   `Mle::HandleAnnounce`: an Announce from an older network (or an
 //!   orphan) is answered with our own Announce on the sender's channel; one
-//!   from a network with a newer Active Timestamp raises
-//!   [`MleEvent::AnnounceFromNewerNetwork`].
+//!   from a network with a newer Active Timestamp starts the Announce
+//!   attach: [`MleEvent::AnnounceFromNewerNetwork`] is raised, and after
+//!   `ANNOUNCE_PROCESS_TIMEOUT` (250 ms) the device leaves its attachment,
+//!   switches to the announced channel and PAN ID
+//!   ([`MleEnv::set_pan_channel_and_id`]) and attaches to any partition
+//!   there. Success informs the previous channel with an Announce; failure
+//!   restores the previous channel and PAN ID and detaches. A newer
+//!   Announce received meanwhile replaces a pending one only if its Active
+//!   Timestamp (seconds) is larger.
+//! - Orphan Announces sent by a detached device after its Parent Requests
+//!   went unanswered are part of the attach procedure ([`crate::attach`]).
 
 use core::net::Ipv6Addr;
 
-#[cfg(feature = "ftd")]
 use opentrust_core::time::Duration;
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Channel, PanId};
@@ -54,6 +62,45 @@ const MC_EXT_PAN_ID: u8 = 2;
 const ALL_ROUTERS: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 2);
 /// `ff02::1`.
 const ALL_NODES: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1);
+
+/// Delay between receiving a newer Announce and acting on it (OT
+/// `kAnnounceProcessTimeout`).
+pub const ANNOUNCE_PROCESS_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// Announce attach progress (OT `AnnounceHandler::State`; the "inform
+/// previous channel" step is immediate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnnounceState {
+    Idle,
+    /// A newer network was announced; waiting for the process timeout.
+    ToAttach,
+    /// Attaching on the announced channel / PAN ID.
+    Attaching,
+}
+
+/// Announce attach bookkeeping (OT `mAlternateChannel`, `mAlternatePanId`,
+/// `mAlternateTimestamp`): the announced network while `ToAttach`, the
+/// network to fall back to while `Attaching`.
+#[derive(Debug)]
+pub(crate) struct AnnounceCtx {
+    pub state: AnnounceState,
+    pub channel: u8,
+    pub pan_id: u16,
+    pub timestamp_secs: u64,
+    pub deadline: Option<Instant>,
+}
+
+impl AnnounceCtx {
+    pub const fn new() -> Self {
+        Self {
+            state: AnnounceState::Idle,
+            channel: 0,
+            pan_id: 0,
+            timestamp_secs: 0,
+            deadline: None,
+        }
+    }
+}
 
 /// A Discovery Response waiting for its jitter.
 #[cfg(feature = "ftd")]
@@ -244,10 +291,11 @@ impl<const C: usize> Mle<C> {
         }
     }
 
-    /// OT `HandleAnnounce`.
+    /// OT `AnnounceHandler::HandleAnnounce`.
     pub(crate) fn handle_announce<E: MleEnv>(
         &mut self,
         env: &mut E,
+        now: Instant,
         rx: &MleRx<'_>,
     ) -> Result<RxClass> {
         let channel = rx.tlvs.channel()?;
@@ -272,9 +320,20 @@ impl<const C: usize> Mle<C> {
             if self.role == Role::Detached && same_network {
                 return Ok(RxClass::Peer);
             }
-            if env.pending_dataset_applies_soon(&ts) {
+            if env.pending_dataset_applies_soon(&ts) || self.role == Role::Disabled {
                 return Ok(RxClass::Peer);
             }
+            // A pending Announce attach is only replaced by a newer one.
+            if self.announce.state == AnnounceState::ToAttach
+                && self.announce.timestamp_secs >= ts.seconds
+            {
+                return Ok(RxClass::Peer);
+            }
+            self.announce.timestamp_secs = ts.seconds;
+            self.announce.channel = channel;
+            self.announce.pan_id = pan.0;
+            self.announce.state = AnnounceState::ToAttach;
+            self.announce.deadline = Some(now.saturating_add(ANNOUNCE_PROCESS_TIMEOUT));
             env.event(MleEvent::AnnounceFromNewerNetwork {
                 channel,
                 pan_id: pan.0,
@@ -282,5 +341,54 @@ impl<const C: usize> Mle<C> {
             });
         }
         Ok(RxClass::Peer)
+    }
+
+    /// The Announce process timer (OT `AnnounceHandler::HandleTimer` /
+    /// `StartAnnounceAttach`): leave the current attachment, move to the
+    /// announced channel and PAN ID, remembering the old ones, and attach
+    /// to any partition there.
+    pub(crate) fn poll_announce<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
+        if self.announce.deadline.is_none_or(|d| now < d) {
+            return;
+        }
+        self.announce.deadline = None;
+        if self.announce.state != AnnounceState::ToAttach {
+            return;
+        }
+        let (channel, pan_id) = (self.announce.channel, self.announce.pan_id);
+        self.announce.channel = env.pan_channel();
+        self.announce.pan_id = env.pan_id();
+        self.announce.timestamp_secs = 0;
+        self.announce.state = AnnounceState::Attaching;
+        env.set_pan_channel_and_id(channel, pan_id);
+        let had_parent = self.parent.is_some();
+        self.reset_to_detached(env);
+        if had_parent {
+            env.event(MleEvent::ParentLost);
+        }
+        self.attach.counter = 0;
+        self.attach_begin(env, now, crate::attach::AttachMode::AnyPartition);
+    }
+
+    /// Attached on the announced network (OT
+    /// `HandleAnnounceAttachSuccess`): tell the old channel about it.
+    pub(crate) fn announce_attach_succeeded<E: MleEnv>(&mut self, env: &mut E) {
+        if self.announce.state != AnnounceState::Attaching {
+            return;
+        }
+        self.announce.state = AnnounceState::Idle;
+        let _ = self.send_announce(env, self.announce.channel, false, None);
+    }
+
+    /// Attaching on the announced network failed (OT
+    /// `HandleAnnounceAttachFailure`): back to the previous channel and PAN
+    /// ID. Returns whether an Announce attach was running.
+    pub(crate) fn announce_attach_failed<E: MleEnv>(&mut self, env: &mut E) -> bool {
+        if self.announce.state != AnnounceState::Attaching {
+            return false;
+        }
+        self.announce.state = AnnounceState::Idle;
+        env.set_pan_channel_and_id(self.announce.channel, self.announce.pan_id);
+        true
     }
 }

@@ -149,10 +149,9 @@ pub enum MleEvent {
         /// Router's RLOC16.
         rloc16: Rloc16,
     },
-    /// An Announce from a network with a newer Active Dataset arrived
-    /// (OT: the device would re-attach there after
-    /// `ANNOUNCE_PROCESS_TIMEOUT`; the Announce attach state is not
-    /// implemented, the caller decides).
+    /// An Announce from a network with a newer Active Dataset arrived. After
+    /// `ANNOUNCE_PROCESS_TIMEOUT` the device switches to that channel and
+    /// PAN ID and attaches there (informational; no action required).
     AnnounceFromNewerNetwork {
         /// Channel of the announcing network.
         channel: u8,
@@ -308,6 +307,16 @@ pub trait MleEnv {
     /// Current PAN channel (for Announce).
     fn pan_channel(&self) -> u8 {
         11
+    }
+    /// Switch the MAC to `channel` and `pan_id` (Announce attach: moving to
+    /// the announced network and, if attaching there fails, back; OT
+    /// `Mac::SetPanChannel` / `SetPanId`). Default: no-op.
+    fn set_pan_channel_and_id(&mut self, _channel: u8, _pan_id: u16) {}
+    /// Channels (bit `n` = channel `n`) an Orphan Announce is sent on while
+    /// attaching: the channel mask of the Active Dataset, else the supported
+    /// channels. Default: channels 11 to 26.
+    fn announce_channel_mask(&self) -> u32 {
+        0x07ff_f800
     }
     /// Extended PAN ID of the Active Operational Dataset, if any.
     fn ext_pan_id(&self) -> Option<ExtPanId> {

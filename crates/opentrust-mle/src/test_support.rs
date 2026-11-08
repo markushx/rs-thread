@@ -227,6 +227,10 @@ impl MleEnv for TestEnv {
             })
             .map_err(|_| Error::NoBufs)
     }
+    fn set_pan_channel_and_id(&mut self, channel: u8, pan_id: u16) {
+        self.mac_channel = channel;
+        self.mac_pan_id = pan_id;
+    }
     fn pan_id(&self) -> u16 {
         self.mac_pan_id
     }

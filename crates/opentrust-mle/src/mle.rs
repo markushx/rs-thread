@@ -122,6 +122,7 @@ pub struct Mle<const C: usize> {
     pub(crate) leader_data: LeaderData,
     pub(crate) parent: Option<Parent>,
     pub(crate) attach: AttachCtx,
+    pub(crate) announce: crate::discovery::AnnounceCtx,
     pub(crate) child: ChildCtx,
     pub(crate) children: ChildTable<C>,
     pub(crate) previous_partition_id: u32,
@@ -151,6 +152,7 @@ impl<const C: usize> Mle<C> {
             },
             parent: None,
             attach: AttachCtx::new(),
+            announce: crate::discovery::AnnounceCtx::new(),
             child: ChildCtx::new(),
             children: ChildTable::new(),
             previous_partition_id: 0,
@@ -258,6 +260,7 @@ impl<const C: usize> Mle<C> {
             return;
         }
         self.reset_to_detached(env);
+        self.announce = crate::discovery::AnnounceCtx::new();
         env.keys_mut().stop();
         self.children.clear();
         self.set_role(env, Role::Disabled);
@@ -346,6 +349,7 @@ impl<const C: usize> Mle<C> {
     pub fn next_deadline(&self) -> Option<Instant> {
         let d = [
             self.attach.deadline,
+            self.announce.deadline,
             self.child.tx_deadline,
             self.child.supervision_deadline,
         ]
@@ -374,6 +378,7 @@ impl<const C: usize> Mle<C> {
             self.attach.deadline = None;
             self.handle_attach_timer(env, now);
         }
+        self.poll_announce(env, now);
         if self.child.tx_deadline.is_some_and(|d| now >= d) {
             self.child.tx_deadline = None;
             self.handle_message_tx_timer(env, now);
@@ -453,7 +458,7 @@ impl<const C: usize> Mle<C> {
             Command::ChildUpdateResponse => self.handle_child_update_response(env, now, rx, nb)?,
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
             Command::Advertisement => self.handle_advertisement(env, now, rx, nb)?,
-            Command::Announce => self.handle_announce(env, rx)?,
+            Command::Announce => self.handle_announce(env, now, rx)?,
             #[cfg(feature = "ftd")]
             Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,
             #[cfg(feature = "ftd")]

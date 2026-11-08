@@ -23,10 +23,20 @@
 //! several candidates, and starts a partition of its own (becomes leader)
 //! when an attach to any partition finds none.
 //!
-//! Deviations from OT: no Announce attach state (an Announce from a newer
-//! network only raises an event, see [`crate::discovery`]), no
-//! "reattach with stored Active/Pending dataset" sequence. A
-//! Parent Response is only accepted while Parent Requests are being sent.
+//! When all Parent Requests went unanswered, a detached device (or any
+//! device without a stored dataset only if it is an MTD) enters the
+//! `Announce` phase: one more Parent Request to routers and REEDs, then an
+//! Orphan Announce on each channel of [`MleEnv::announce_channel_mask`],
+//! `1400 ms / (channels + 1)` (at least 80 ms) apart, before giving up.
+//! Announce attach (switching to an announced network, with fallback to the
+//! original channel and PAN ID) is in [`crate::discovery`]; its failure is
+//! handled in `reattach`.
+//!
+//! Deviations from OT: no "reattach with stored Active/Pending dataset"
+//! sequence, so the Announce phase condition is "not a child and (an Active
+//! Timestamp is known or the device is an MTD)". A Parent Response is only
+//! accepted while Parent Requests are being sent or Orphan Announces are
+//! going out.
 
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{Rloc16, ipv6};
@@ -59,6 +69,13 @@ pub const ATTACH_BACKOFF_JITTER_MS: u32 = 2000;
 /// `kAttachBackoffDelayToResetCounter`).
 pub const ATTACH_BACKOFF_RESET: Duration = Duration::from_secs(20);
 
+/// Total time to send Orphan Announces over (OT `kAnnounceTimeout`) and the
+/// minimum gap between them (OT `kMinAnnounceDelay`), in milliseconds.
+const ANNOUNCE_TIMEOUT_MS: u32 = 1400;
+const MIN_ANNOUNCE_DELAY_MS: u32 = 80;
+/// Channels 11 to 26 as a mask.
+const ANNOUNCE_CHANNELS: u32 = 0x07ff_f800;
+
 /// Parent Requests in the first attach cycle / of those to routers only.
 const FIRST_CYCLE_TOTAL: u8 = 6;
 const FIRST_CYCLE_ROUTERS: u8 = 2;
@@ -90,7 +107,7 @@ pub enum AttachMode {
     SelectedParent,
 }
 
-/// Phase of the attach procedure (OT `AttachState`, without Announce).
+/// Phase of the attach procedure (OT `AttachState`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AttachState {
@@ -100,6 +117,9 @@ pub enum AttachState {
     Start,
     /// Sending Parent Requests and collecting Parent Responses.
     ParentRequest,
+    /// Sending Orphan Announces on all channels, still collecting Parent
+    /// Responses.
+    Announce,
     /// Child ID Request sent, waiting for the Child ID Response.
     ChildIdRequest,
 }
@@ -145,6 +165,10 @@ pub(crate) struct AttachCtx {
     pub received_response_from_parent: bool,
     pub deadline: Option<Instant>,
     pub candidate: Option<Candidate>,
+    /// Channel of the last Orphan Announce (0: none yet).
+    pub announce_channel: u8,
+    /// Time between Orphan Announces.
+    pub announce_delay: Duration,
 }
 
 impl AttachCtx {
@@ -158,6 +182,8 @@ impl AttachCtx {
             received_response_from_parent: false,
             deadline: None,
             candidate: None,
+            announce_channel: 0,
+            announce_delay: Duration::ZERO,
         }
     }
 
@@ -263,7 +289,7 @@ impl<const C: usize> Mle<C> {
     }
 
     /// OT `HasAcceptableParentCandidate`.
-    fn has_acceptable_parent_candidate(&self) -> bool {
+    fn has_acceptable_parent_candidate<E: MleEnv>(&self, env: &E) -> bool {
         let Some(c) = &self.attach.candidate else {
             return false;
         };
@@ -275,6 +301,11 @@ impl<const C: usize> Mle<C> {
                 if self.determine_parent_request_type() == Some(ParentRequestType::ToRouters)
                     && c.two_way_quality() != LinkQuality::Q3
                 {
+                    return false;
+                }
+            }
+            AttachState::Announce => {
+                if self.next_announce_channel(env).is_some() {
                     return false;
                 }
             }
@@ -296,7 +327,7 @@ impl<const C: usize> Mle<C> {
     /// The attach timer fired (OT `HandleAttachTimer`).
     pub(crate) fn handle_attach_timer<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
         let mut delay = Duration::ZERO;
-        if self.has_acceptable_parent_candidate() && self.send_child_id_request(env).is_ok() {
+        if self.has_acceptable_parent_candidate(env) && self.send_child_id_request(env).is_ok() {
             self.attach.state = AttachState::ChildIdRequest;
             self.attach.deadline = Some(now.saturating_add(CHILD_ID_RESPONSE_TIMEOUT));
             return;
@@ -320,8 +351,25 @@ impl<const C: usize> Mle<C> {
                         ParentRequestType::ToRouters => PARENT_REQ_SCANMASK_R_TIMEOUT,
                         ParentRequestType::ToRoutersAndReeds => PARENT_REQ_SCANMASK_RE_TIMEOUT,
                     };
+                } else if self.prepare_announce_state(env) {
+                    // One more chance to find a parent while Orphan
+                    // Announces go out on all channels.
+                    self.attach.state = AttachState::Announce;
+                    let _ = self.send_parent_request(env, ParentRequestType::ToRoutersAndReeds);
+                    self.attach.announce_channel = 0;
+                    delay = self.attach.announce_delay;
                 } else {
-                    // No Announce attach state: the attempt is over.
+                    self.attach.state = AttachState::Idle;
+                    self.attach.candidate = None;
+                    self.reattach(env, now);
+                }
+            }
+            AttachState::Announce => {
+                if let Some(ch) = self.next_announce_channel(env) {
+                    self.attach.announce_channel = ch;
+                    let _ = self.send_announce(env, ch, true, None);
+                    delay = self.attach.announce_delay;
+                } else {
                     self.attach.state = AttachState::Idle;
                     self.attach.candidate = None;
                     self.reattach(env, now);
@@ -338,11 +386,37 @@ impl<const C: usize> Mle<C> {
         }
     }
 
+    /// OT `PrepareAnnounceState`.
+    fn prepare_announce_state<E: MleEnv>(&mut self, env: &E) -> bool {
+        if self.role == Role::Child
+            || (env.active_timestamp().is_none() && self.is_full_thread_device())
+        {
+            return false;
+        }
+        let channels = (env.announce_channel_mask() & ANNOUNCE_CHANNELS).count_ones();
+        let ms = (ANNOUNCE_TIMEOUT_MS / (channels + 1)).max(MIN_ANNOUNCE_DELAY_MS);
+        self.attach.announce_delay = Duration::from_millis(u64::from(ms));
+        true
+    }
+
+    /// OT `GetNextAnnounceChannel`: the next channel of the announce mask
+    /// after the last one used.
+    fn next_announce_channel<E: MleEnv>(&self, env: &E) -> Option<u8> {
+        let mask = env.announce_channel_mask() & ANNOUNCE_CHANNELS;
+        (self.attach.announce_channel.saturating_add(1)..=26).find(|c| mask >> c & 1 == 1)
+    }
+
     /// OT `Reattach` after the dataset-reattach steps (not implemented).
     fn reattach<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
         match self.attach.mode {
             AttachMode::AnyPartition | AttachMode::BetterParent | AttachMode::SelectedParent => {
                 if self.role != Role::Child {
+                    // Announce attach failed: back to the previous
+                    // channel and PAN ID.
+                    if self.announce_attach_failed(env) {
+                        self.become_detached(env, now);
+                        return;
+                    }
                     // No partition found: an FTD starts its own.
                     #[cfg(feature = "ftd")]
                     if self.is_full_thread_device() && self.become_leader(env, now, false).is_ok() {
@@ -460,7 +534,10 @@ impl<const C: usize> Mle<C> {
         rx: &MleRx<'_>,
         _nb: Option<NbRef>,
     ) -> Result<RxClass> {
-        if self.attach.state != AttachState::ParentRequest {
+        if !matches!(
+            self.attach.state,
+            AttachState::ParentRequest | AttachState::Announce
+        ) {
             return Err(Error::Drop);
         }
         let t = &rx.tlvs;

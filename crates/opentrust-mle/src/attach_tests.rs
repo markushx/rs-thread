@@ -195,6 +195,26 @@ fn parent_request_phases_and_backoff() {
     }
     assert_eq!(&masks[..], &[0x80, 0x80, 0xc0, 0xc0, 0xc0, 0xc0]);
     assert_eq!(&gaps[..], &[750, 750, 1250, 1250, 1250]);
+    // An MTD then tries Orphan Announces: one more Parent Request, then an
+    // Announce per channel 11..=26, 1400/17 = 82 ms apart.
+    t = advance(&mut child, &mut env, t);
+    let out = env.take_out();
+    assert_eq!(out.len(), 1);
+    assert_eq!(
+        decode(&out[0], &env, |rx| rx.command),
+        Command::ParentRequest
+    );
+    for ch in 11..=26u8 {
+        let before = t;
+        t = advance(&mut child, &mut env, t);
+        assert_eq!((t - before).as_millis(), 82);
+        let out = env.take_out();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].channel, Some(ch));
+        assert!(
+            decode(&out[0], &env, |rx| rx.tlvs.active_timestamp().unwrap()).is_orphan_announce()
+        );
+    }
     // Attempt over: detached, backoff of 251 ms (+<50 ms jitter) before the next.
     t = advance(&mut child, &mut env, t);
     assert!(env.out.is_empty());
@@ -209,6 +229,11 @@ fn parent_request_phases_and_backoff() {
     assert_eq!(env.take_out().len(), 1);
     t = advance(&mut child, &mut env, t);
     assert_eq!(env.take_out().len(), 1);
+    // Announce phase again: a Parent Request and 16 Orphan Announces.
+    for _ in 0..17 {
+        t = advance(&mut child, &mut env, t);
+        assert_eq!(env.take_out().len(), 1);
+    }
     t = advance(&mut child, &mut env, t);
     let wait = child.next_deadline().unwrap() - t;
     assert!(

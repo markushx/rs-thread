@@ -41,6 +41,9 @@ pub struct Sim {
     pub nodes: Vec<Node, MAX_NODES>,
     pub now: Instant,
     link: [[Option<i8>; MAX_NODES]; MAX_NODES],
+    /// Deliver only between nodes on the same channel (a message's channel
+    /// is its `TxOptions` channel, else the sender's).
+    pub channel_filter: bool,
 }
 
 impl Sim {
@@ -64,6 +67,7 @@ impl Sim {
             nodes,
             now: T0,
             link: [[None; MAX_NODES]; MAX_NODES],
+            channel_filter: false,
         }
     }
 
@@ -103,6 +107,7 @@ impl Sim {
         for _ in 0..200 {
             let mut moved = false;
             for src in 0..self.nodes.len() {
+                let src_channel = self.nodes[src].env.mac_channel;
                 let outs = self.nodes[src].env.take_out();
                 for o in outs {
                     moved = true;
@@ -111,6 +116,11 @@ impl Sim {
                             continue;
                         };
                         if dst == src {
+                            continue;
+                        }
+                        if self.channel_filter
+                            && o.channel.unwrap_or(src_channel) != self.nodes[dst].env.mac_channel
+                        {
                             continue;
                         }
                         let now = self.now;
