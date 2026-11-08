@@ -44,6 +44,8 @@ mod forwarder_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod indirect_tests;
 #[cfg(all(test, feature = "ftd"))]
+mod netdata_sim_tests;
+#[cfg(all(test, feature = "ftd"))]
 mod router_id_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod sim;

@@ -102,7 +102,9 @@ pub fn handle_server_data<E: MleEnv, const C: usize, const N: usize>(
         Err(_) => return None,
     }
     if req.msg.ty() == Type::Con {
-        rsp.ack_empty().ok()?;
+        // OT `SendEmptyAck`: an ACK with code 2.04 and no payload (the
+        // requester completes its transaction with it).
+        rsp.respond(Code::CHANGED, &[]).ok()?;
     }
     Some(total)
 }

@@ -38,9 +38,12 @@ pub struct TestEnv {
     pub poll: Option<Duration>,
     pub parent: Option<(ExtAddress, Rloc16)>,
     pub events: Vec<MleEvent, 256>,
-    pub nd: Vec<u8, 64>,
+    pub nd: Vec<u8, 512>,
     pub nd_leader: Option<LeaderData>,
-    pub provided_nd: Vec<u8, 64>,
+    pub provided_nd: Vec<u8, 512>,
+    /// Stable subset served when `stable_only` is requested (`None`: the
+    /// full `provided_nd`).
+    pub provided_nd_stable: Option<Vec<u8, 512>>,
     pub indirect: Vec<(ExtAddress, Rloc16), 8>,
     pub supervised: Vec<(ExtAddress, Rloc16), 8>,
     pub extra_addrs: Vec<Ipv6Addr, 4>,
@@ -77,6 +80,7 @@ impl TestEnv {
             nd: Vec::new(),
             nd_leader: None,
             provided_nd: Vec::new(),
+            provided_nd_stable: None,
             indirect: Vec::new(),
             supervised: Vec::new(),
             extra_addrs: Vec::new(),
@@ -202,11 +206,15 @@ impl MleEnv for TestEnv {
     fn send_child_supervision(&mut self, ext: &ExtAddress, rloc16: Rloc16) {
         let _ = self.supervised.push((*ext, rloc16));
     }
-    fn network_data(&self, _stable_only: bool, out: &mut [u8]) -> Result<usize> {
-        out.get_mut(..self.provided_nd.len())
+    fn network_data(&self, stable_only: bool, out: &mut [u8]) -> Result<usize> {
+        let nd = match (&self.provided_nd_stable, stable_only) {
+            (Some(s), true) => s,
+            _ => &self.provided_nd,
+        };
+        out.get_mut(..nd.len())
             .ok_or(Error::NoBufs)?
-            .copy_from_slice(&self.provided_nd);
-        Ok(self.provided_nd.len())
+            .copy_from_slice(nd);
+        Ok(nd.len())
     }
     fn set_network_data(&mut self, leader: &LeaderData, data: &[u8]) {
         self.nd_leader = Some(*leader);

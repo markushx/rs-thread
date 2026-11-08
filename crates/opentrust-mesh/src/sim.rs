@@ -28,9 +28,19 @@ use opentrust_net::netif::Netif;
 use opentrust_net::resolver::{AddressResolver, Resolution, ResolverEnv, ResolverEvent};
 use opentrust_net::udp::UdpMeta;
 
-use opentrust_lowpan::iphc::NoContexts;
 use opentrust_mac::frame::Address;
 use opentrust_net::ip6::Ip6;
+use opentrust_net::slaac::{IidParams, Slaac};
+
+use crate::netdata::aloc::{AlocSet, desired_alocs};
+use crate::netdata::anycast;
+use crate::netdata::consumers::{NetDataContexts, slaac_prefixes};
+use crate::netdata::leader::{Changed, Leader};
+use crate::netdata::local::LocalData;
+use crate::netdata::lookup::Lookup;
+use crate::netdata::notifier::{Notifier, NotifierEvent, SyncInput, find_stale_child};
+use crate::netdata::server_data::{self, USER_SERVER_DATA};
+use crate::netdata::{NetworkData as NetData, NetworkDataView};
 
 use crate::address::{self, AddressAction};
 use crate::forwarder::{
@@ -139,6 +149,72 @@ pub struct TmfNode {
     pub forwarded: u32,
     /// Indirect list of the MLE environment at the last look.
     pub indirect_seen: std::vec::Vec<Rloc16>,
+    /// Network Data as this node has it (the leader's own store on the
+    /// leader, the copy received through MLE elsewhere).
+    pub netdata: NetData<512>,
+    /// Leader store, in use while this node is the leader.
+    pub leader: Leader<512>,
+    /// Network Data this node serves.
+    pub local: LocalData,
+    pub notifier: Notifier,
+    pub alocs: AlocSet,
+    pub slaac: Slaac<4>,
+    pub commissioner_aloc: Option<u16>,
+    was_leader: bool,
+    nd_role: Role,
+    nd_seen: std::vec::Vec<u8>,
+    /// `/a/sd` requests sent.
+    pub server_data_sent: u32,
+    /// Datagrams this node, as the border router chosen by Network Data
+    /// route lookup, would hand to its external interface.
+    pub egress: std::vec::Vec<std::vec::Vec<u8>>,
+    /// Located devices (`/a/yl` answers).
+    pub located: std::vec::Vec<anycast::Located>,
+}
+
+/// The simulator-wide on-mesh prefix plus the node's Network Data.
+pub struct NdAdapter<'a> {
+    sim: &'a SimNd,
+    lookup: Lookup<'a, Mle<4>>,
+}
+
+impl NetworkData for NdAdapter<'_> {
+    fn route_lookup(&self, src: &Ipv6Addr, dst: &Ipv6Addr) -> Option<Rloc16> {
+        self.lookup.route_lookup(src, dst)
+    }
+    fn is_on_mesh(&self, addr: &Ipv6Addr) -> bool {
+        self.sim.is_on_mesh(addr) || self.lookup.is_on_mesh(addr)
+    }
+    fn anycast_lookup(&self, aloc16: u16) -> Option<Rloc16> {
+        self.lookup.anycast_lookup(aloc16)
+    }
+}
+
+fn with_routing<R>(
+    mle: &Mle<4>,
+    ext: opentrust_core::types::ExtAddress,
+    ip6: &Ip6,
+    netdata: &NetData<512>,
+    simnd: &SimNd,
+    f: impl FnOnce(&Routing<'_, 4, 8, 8, NetDataContexts<'_>, NdAdapter<'_>>) -> R,
+) -> R {
+    let view = NetworkDataView(netdata.as_bytes());
+    let contexts = NetDataContexts {
+        view,
+        mesh_local_prefix: *ip6.netif.mesh_local_prefix(),
+    };
+    let nd = NdAdapter {
+        sim: simnd,
+        lookup: Lookup::new(view, mle),
+    };
+    let routing = Routing {
+        mle,
+        netif: &ip6.netif,
+        contexts: &contexts,
+        nd: &nd,
+        ext,
+    };
+    f(&routing)
 }
 
 /// Network Data of the simulator: one optional on-mesh prefix.
@@ -179,6 +255,16 @@ impl FrameSink for FwdSink {
     }
 }
 
+/// Make the MLE environment serve `data` (full, and its stable subset for
+/// sleepy children).
+fn refresh_provided(env: &mut opentrust_mle::test_support::TestEnv, data: &NetData<512>) {
+    env.provided_nd.clear();
+    let _ = env.provided_nd.extend_from_slice(data.as_bytes());
+    let mut b = [0u8; 512];
+    let n = data.copy_stable(&mut b).unwrap_or(0);
+    env.provided_nd_stable = Vec::from_slice(&b[..n]).ok();
+}
+
 pub struct MeshSim {
     pub sim: Sim,
     pub tmf: std::vec::Vec<TmfNode>,
@@ -201,6 +287,8 @@ struct NodeHandler<'a> {
     actions: std::vec::Vec<AddressAction>,
     events: std::vec::Vec<ResolverEvent>,
     errors_seen: &'a mut u32,
+    leader: &'a mut Leader<512>,
+    sd_changed: Changed,
 }
 
 impl Handler for NodeHandler<'_> {
@@ -239,6 +327,22 @@ impl Handler for NodeHandler<'_> {
                     address::AddressErrorOutcome::ChildAddressRemoved(a) => self.actions.push(a),
                 }
             }
+            Uri::ServerData => {
+                if let Some(c) = server_data::handle_server_data(
+                    self.leader,
+                    self.mle,
+                    self.env,
+                    self.now,
+                    req,
+                    rsp,
+                ) {
+                    self.sd_changed.any |= c.any;
+                    self.sd_changed.stable |= c.stable;
+                }
+            }
+            Uri::AnycastLocate => {
+                anycast::handle_anycast_locate(iid, self.mle.rloc16(), req, rsp);
+            }
             _ => {}
         }
     }
@@ -260,6 +364,8 @@ impl MeshSim {
                     Uri::AddressQuery,
                     Uri::AddressNotify,
                     Uri::AddressError,
+                    Uri::ServerData,
+                    Uri::AnycastLocate,
                 ] {
                     agent.register(u).unwrap();
                 }
@@ -279,6 +385,19 @@ impl MeshSim {
                     rx: Default::default(),
                     resolved: std::vec::Vec::new(),
                     errors_seen: 0,
+                    netdata: NetData::new(),
+                    leader: Leader::new(),
+                    local: LocalData::new(),
+                    notifier: Notifier::new(),
+                    alocs: AlocSet::new(),
+                    slaac: Slaac::new(),
+                    commissioner_aloc: None,
+                    was_leader: false,
+                    nd_role: Role::Disabled,
+                    nd_seen: std::vec::Vec::new(),
+                    server_data_sent: 0,
+                    egress: std::vec::Vec::new(),
+                    located: std::vec::Vec::new(),
                 }
             })
             .collect();
@@ -321,10 +440,152 @@ impl MeshSim {
     }
 
     fn owner_of(&self, dst: &Ipv6Addr) -> Option<usize> {
-        (0..self.sim.nodes.len()).find(|&i| {
-            let n = &self.sim.nodes[i];
-            n.mle.rloc16() != Rloc16::INVALID && self.rloc(i) == *dst
-        })
+        (0..self.sim.nodes.len())
+            .find(|&i| {
+                let n = &self.sim.nodes[i];
+                n.mle.rloc16() != Rloc16::INVALID && self.rloc(i) == *dst
+            })
+            // An anycast locator: a node that answers to it.
+            .or_else(|| {
+                opentrust_net::addr::is_anycast_locator(dst, &MLP)
+                    .then(|| {
+                        (0..self.sim.nodes.len()).find(|&i| self.tmf[i].ip6.netif.has_unicast(dst))
+                    })
+                    .flatten()
+            })
+    }
+
+    /// Replace the Network Data node `i` serves itself and let its
+    /// notifier register it.
+    pub fn set_local(&mut self, i: usize, f: impl FnOnce(&mut LocalData)) {
+        f(&mut self.tmf[i].local);
+        self.tmf[i].notifier.event(NotifierEvent::LocalChanged);
+        self.pump();
+    }
+
+    /// Send an anycast locate request from node `from` (source: `src`).
+    pub fn locate(&mut self, from: usize, src: Ipv6Addr, anycast: Ipv6Addr) {
+        let now = self.sim.now;
+        let t = &mut self.tmf[from];
+        anycast::send_anycast_locate(&mut t.agent, now, &mut t.rng, &mut t.sink, src, anycast)
+            .unwrap();
+        self.pump();
+    }
+
+    /// Node `i`'s Network Data.
+    pub fn netdata(&self, i: usize) -> NetworkDataView<'_> {
+        self.tmf[i].netdata.view()
+    }
+
+    /// One round of the Network Data glue of node `i`: the glue a real
+    /// device does on the MLE events (the simulator polls the state: the
+    /// event buffer of the test environment is small).
+    fn netdata_step(&mut self, i: usize) -> bool {
+        self.sync_netif(i);
+        let now = self.sim.now;
+        let mut moved = false;
+        let n = &mut self.sim.nodes[i];
+        let t = &mut self.tmf[i];
+        let role = n.mle.role();
+        if role != t.nd_role {
+            t.nd_role = role;
+            t.notifier.event(NotifierEvent::RoleChanged);
+        }
+        if role == Role::Leader {
+            if !t.was_leader {
+                let ld = *n.mle.leader_data();
+                t.leader.start(ld.data_version, ld.stable_data_version);
+                moved = true;
+            }
+            let mask = n.mle.router_id_mask();
+            let mut ch = t
+                .leader
+                .remove_stale_router_ids(|id| mask.contains(id), now);
+            let c2 = t.leader.handle_timer(now);
+            ch.any |= c2.any;
+            ch.stable |= c2.stable;
+            if ch.any {
+                refresh_provided(&mut n.env, t.leader.data());
+                t.leader.publish(&mut n.mle, &mut n.env, now);
+                moved = true;
+            }
+            if t.netdata != *t.leader.data() {
+                t.netdata = t.leader.data().clone();
+                t.notifier.event(NotifierEvent::NetworkDataChanged);
+                moved = true;
+            }
+        } else if n.env.nd_leader.is_some() && t.nd_seen[..] != n.env.nd[..] {
+            t.nd_seen = n.env.nd.to_vec();
+            if t.netdata.set(&n.env.nd).is_ok() {
+                refresh_provided(&mut n.env, &t.netdata);
+                n.mle.network_data_updated(&mut n.env, now);
+                t.notifier.event(NotifierEvent::NetworkDataChanged);
+                moved = true;
+            }
+        }
+        t.was_leader = role == Role::Leader;
+        refresh_provided(&mut n.env, &t.netdata);
+
+        let attached = role.is_attached();
+        let rloc = n.mle.rloc16();
+        let view = t.netdata.view();
+        // SLAAC and ALOCs follow Network Data and role.
+        t.slaac.set_enabled(true, &mut t.ip6.netif);
+        let prefixes = if attached {
+            slaac_prefixes::<4>(&view)
+        } else {
+            heapless::Vec::new()
+        };
+        let secret = [i as u8 + 1; 32];
+        let params = IidParams {
+            backend: &opentrust_core::crypto::soft::SoftCrypto,
+            secret: &secret,
+            network_id: None,
+        };
+        t.slaac
+            .update(&params, &mut t.ip6.netif, &prefixes, None, now);
+        let want = desired_alocs(
+            role == Role::Leader,
+            &view,
+            attached.then_some(rloc.0),
+            t.commissioner_aloc,
+        );
+        let _ = t.alocs.update(&mut t.ip6.netif, &want);
+
+        // Server Data notifications.
+        if attached {
+            let mut local_buf = [0u8; 256];
+            let ln = t.local.encode(rloc.0, &mut local_buf).unwrap_or(0);
+            let input = SyncInput {
+                attached,
+                router_or_leader: role.is_router_or_leader(),
+                expected_to_become_router: false,
+                rloc16: rloc,
+                local: NetworkDataView(&local_buf[..ln]),
+                leader: view,
+                stale_child: find_stale_child(&view, &n.mle),
+            };
+            if let Some(req) = t.notifier.poll(now, &input) {
+                let mut payload = [0u8; 300];
+                let data = req.include_local.then_some(&local_buf[..ln]);
+                let k =
+                    server_data::build_server_data(req.old_rloc16, data, &mut payload).unwrap_or(0);
+                match server_data::send_server_data(
+                    &mut t.agent,
+                    now,
+                    &mut t.rng,
+                    &mut t.sink,
+                    &n.mle,
+                    &n.env,
+                    &payload[..k],
+                ) {
+                    Ok(()) => t.server_data_sent += 1,
+                    Err(_) => t.notifier.response(now, true),
+                }
+                moved = true;
+            }
+        }
+        moved
     }
 
     /// Start resolving `eid` at node `i` (queries allowed).
@@ -376,23 +637,25 @@ impl MeshSim {
         let mut events = std::vec::Vec::new();
         {
             let n = &self.sim.nodes[i];
-            let t = &mut self.tmf[i];
-            let routing = Routing {
-                mle: &n.mle,
-                netif: &t.ip6.netif,
-                contexts: &NoContexts,
-                nd: &self.nd,
-                ext: n.env.ext,
-            };
-            t.fwd.handle_resolved(
-                now,
-                &eid,
-                ok,
-                &routing,
-                &mut t.resolver,
-                &mut |e| events.push(e),
-                &mut t.fsink,
-            );
+            let TmfNode {
+                fwd,
+                resolver,
+                fsink,
+                ip6,
+                netdata,
+                ..
+            } = &mut self.tmf[i];
+            with_routing(&n.mle, n.env.ext, ip6, netdata, &self.nd, |routing| {
+                fwd.handle_resolved(
+                    now,
+                    &eid,
+                    ok,
+                    routing,
+                    resolver,
+                    &mut |e| events.push(e),
+                    fsink,
+                );
+            });
         }
         self.handle_events(i, events);
     }
@@ -427,23 +690,25 @@ impl MeshSim {
         let mut events = std::vec::Vec::new();
         let r = {
             let n = &self.sim.nodes[i];
-            let t = &mut self.tmf[i];
-            let routing = Routing {
-                mle: &n.mle,
-                netif: &t.ip6.netif,
-                contexts: &NoContexts,
-                nd: &self.nd,
-                ext: n.env.ext,
-            };
-            t.fwd.send_datagram(
-                now,
-                datagram,
-                true,
-                &routing,
-                &mut t.resolver,
-                &mut |e| events.push(e),
-                &mut t.fsink,
-            )
+            let TmfNode {
+                fwd,
+                resolver,
+                fsink,
+                ip6,
+                netdata,
+                ..
+            } = &mut self.tmf[i];
+            with_routing(&n.mle, n.env.ext, ip6, netdata, &self.nd, |routing| {
+                fwd.send_datagram(
+                    now,
+                    datagram,
+                    true,
+                    routing,
+                    resolver,
+                    &mut |e| events.push(e),
+                    fsink,
+                )
+            })
         };
         if let SendResult::Dropped(d) = r {
             self.tmf[i].dropped.push(d);
@@ -455,8 +720,19 @@ impl MeshSim {
 
     /// A UDP datagram from node `from` (source: its ML-EID) to `dst`.
     pub fn send_udp(&mut self, from: usize, dst: Ipv6Addr, payload: &[u8]) -> SendResult {
-        use opentrust_lowpan::ip6::{Ipv6Header, UdpHeader};
         let src = self.ml_eid(from);
+        self.send_udp_from(from, src, dst, payload)
+    }
+
+    /// Like [`MeshSim::send_udp`] with an explicit source address.
+    pub fn send_udp_from(
+        &mut self,
+        from: usize,
+        src: Ipv6Addr,
+        dst: Ipv6Addr,
+        payload: &[u8],
+    ) -> SendResult {
+        use opentrust_lowpan::ip6::{Ipv6Header, UdpHeader};
         let mut buf = [0u8; 256];
         let mut h = Ipv6Header::new(17, 64, src, dst);
         h.payload_len = (UdpHeader::LEN + payload.len()) as u16;
@@ -524,19 +800,17 @@ impl MeshSim {
         self.sync_netif(p);
         let (pending, outcome) = {
             let n = &self.sim.nodes[p];
-            let t = &mut self.tmf[p];
-            let routing = Routing {
-                mle: &n.mle,
-                netif: &t.ip6.netif,
-                contexts: &NoContexts,
-                nd: &self.nd,
-                ext: n.env.ext,
-            };
-            let pending = t.fwd.data_poll_frame_pending(&child_rloc, &routing);
-            (
-                pending,
-                t.fwd.handle_data_poll(&child_rloc, &routing, &mut t.fsink),
-            )
+            let TmfNode {
+                fwd,
+                fsink,
+                ip6,
+                netdata,
+                ..
+            } = &mut self.tmf[p];
+            with_routing(&n.mle, n.env.ext, ip6, netdata, &self.nd, |routing| {
+                let pending = fwd.data_poll_frame_pending(&child_rloc, routing);
+                (pending, fwd.handle_data_poll(&child_rloc, routing, fsink))
+            })
         };
         if outcome.is_ok() {
             let c = self.sim.nodes[child].mle.rloc16();
@@ -591,39 +865,49 @@ impl MeshSim {
                 delivered,
                 dropped,
                 forwarded,
+                netdata,
+                egress,
                 ..
             } = &mut self.tmf[to];
-            let routing = Routing {
-                mle: &n.mle,
-                netif: &ip6.netif,
-                contexts: &NoContexts,
-                nd: &self.nd,
-                ext: n.env.ext,
-            };
-            match fwd.receive_frame(
-                now,
-                payload,
-                src,
-                mac_dst,
-                link_security,
-                &routing,
-                resolver,
-                &mut |e| events.push(e),
-                fsink,
-            ) {
-                Rx::Datagram(d) => {
-                    let dst = opentrust_lowpan::ip6::Ipv6Header::parse(d).map(|h| h.dst);
-                    match dst {
-                        Ok(a) if !a.is_multicast() && !ip6.netif.has_unicast(&a) => {
-                            forward = Some(d.to_vec());
+            with_routing(
+                &n.mle,
+                n.env.ext,
+                ip6,
+                netdata,
+                &self.nd,
+                |routing| match fwd.receive_frame(
+                    now,
+                    payload,
+                    src,
+                    mac_dst,
+                    link_security,
+                    routing,
+                    resolver,
+                    &mut |e| events.push(e),
+                    fsink,
+                ) {
+                    Rx::Datagram(d) => {
+                        let hdr = opentrust_lowpan::ip6::Ipv6Header::parse(d);
+                        match hdr {
+                            Ok(h)
+                                if !h.dst.is_multicast() && !routing.netif.has_unicast(&h.dst) =>
+                            {
+                                if routing.nd.route_lookup(&h.src, &h.dst)
+                                    == Some(routing.mle.rloc16())
+                                {
+                                    egress.push(d.to_vec());
+                                } else {
+                                    forward = Some(d.to_vec());
+                                }
+                            }
+                            _ => delivered.push(d.to_vec()),
                         }
-                        _ => delivered.push(d.to_vec()),
                     }
-                }
-                Rx::Dropped(r) => dropped.push(r),
-                Rx::Forwarded => *forwarded += 1,
-                Rx::Consumed => {}
-            }
+                    Rx::Dropped(r) => dropped.push(r),
+                    Rx::Forwarded => *forwarded += 1,
+                    Rx::Consumed => {}
+                },
+            );
         }
         self.handle_events(to, events);
         if let Some(f) = forward {
@@ -638,6 +922,7 @@ impl MeshSim {
             let mut moved = false;
             let now = self.sim.now;
             for i in 0..self.tmf.len() {
+                moved |= self.netdata_step(i);
                 let n = &mut self.sim.nodes[i];
                 while let Some(r) = n.env.solicits.pop() {
                     moved = true;
@@ -678,6 +963,8 @@ impl MeshSim {
                 {
                     if let Some(r) = router_id::client_failure(user) {
                         n.mle.address_solicit_reply(&mut n.env, now, r);
+                    } else if user == USER_SERVER_DATA {
+                        t.notifier.response(now, false);
                     }
                 }
                 // Address cache timers.
@@ -744,21 +1031,38 @@ impl MeshSim {
             actions: std::vec::Vec::new(),
             events: std::vec::Vec::new(),
             errors_seen: &mut t.errors_seen,
+            leader: &mut t.leader,
+            sd_changed: Changed::default(),
         };
         let r = t
             .agent
             .handle_dispatch(now, &mut t.sink, &env, &meta, &d.payload, &mut h);
         let actions = core::mem::take(&mut h.actions);
         let events = core::mem::take(&mut h.events);
+        let sd_changed = h.sd_changed;
+        if sd_changed.any {
+            // The leader's data changed: make the MLE core serve it and
+            // advertise the new versions.
+            refresh_provided(&mut n.env, t.leader.data());
+            t.leader.publish(&mut n.mle, &mut n.env, now);
+        }
         match r {
             TmfRx::Response { user, msg, .. } => {
                 if let Some(rep) = router_id::client_response(user, &msg) {
                     n.mle.address_solicit_reply(&mut n.env, now, rep);
+                } else if user == USER_SERVER_DATA {
+                    t.notifier.response(now, true);
+                } else if user == anycast::USER_ANYCAST_LOCATE
+                    && let Ok(l) = anycast::parse_response(&msg, n.env.mesh_local_prefix())
+                {
+                    t.located.push(l);
                 }
             }
             TmfRx::Failed { user, .. } => {
                 if let Some(rep) = router_id::client_failure(user) {
                     n.mle.address_solicit_reply(&mut n.env, now, rep);
+                } else if user == USER_SERVER_DATA {
+                    t.notifier.response(now, false);
                 }
             }
             _ => {}
