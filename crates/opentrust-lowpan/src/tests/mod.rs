@@ -1,7 +1,6 @@
 //! Tests for the 6LoWPAN crate.
 
-extern crate std;
-
+mod frag_tests;
 mod ot_vectors;
 
 use core::net::Ipv6Addr;
