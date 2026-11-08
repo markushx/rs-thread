@@ -81,3 +81,90 @@ pub const MAX_ROUTE_COST: u8 = 16;
 pub const CHILD_MAX_ADDRESSES: usize = 5;
 /// TLV types remembered from a child's request (OT `Child::kMaxRequestTlvs`).
 pub const CHILD_MAX_REQUEST_TLVS: usize = 6;
+
+// ---------------------------------------------------------------------------
+// Router / leader (Thread 1.4.1 Table 5-10 and OpenThread defaults)
+
+/// `MAX_ROUTERS`: routers that may be active in one partition.
+pub const MAX_ROUTERS: usize = 32;
+/// Highest router ID (`MAX_ROUTER_ID`).
+pub const MAX_ROUTER_ID: u8 = 62;
+/// "No router ID" marker (OT `kInvalidRouterId`).
+pub const INVALID_ROUTER_ID: u8 = 63;
+/// `ROUTER_UPGRADE_THRESHOLD`: a REED upgrades while fewer routers are active.
+pub const ROUTER_UPGRADE_THRESHOLD: u8 = 16;
+/// `ROUTER_DOWNGRADE_THRESHOLD`: a router may downgrade above this many routers.
+pub const ROUTER_DOWNGRADE_THRESHOLD: u8 = 23;
+/// `ROUTER_SELECTION_JITTER` (seconds).
+pub const ROUTER_SELECTION_JITTER_SECS: u8 = 120;
+/// `NETWORK_ID_TIMEOUT` (seconds without a new ID sequence number).
+pub const NETWORK_ID_TIMEOUT_SECS: u8 = 120;
+/// `ID_REUSE_DELAY` (seconds a released router ID stays reserved).
+pub const ID_REUSE_DELAY_SECS: u8 = 100;
+/// `ID_SEQUENCE_PERIOD`: the leader bumps the ID sequence at least this often.
+pub const ID_SEQUENCE_PERIOD: Duration = Duration::from_secs(10);
+/// `MIN_DOWNGRADE_NEIGHBORS`.
+pub const MIN_DOWNGRADE_NEIGHBORS: u8 = 7;
+/// Default leader weight (OT `kDefaultLeaderWeight`, `kBaseWeight`).
+pub const DEFAULT_LEADER_WEIGHT: u8 = 64;
+/// `ADVERTISEMENT_I_MIN`.
+pub const ADVERTISEMENT_I_MIN: Duration = Duration::from_secs(1);
+/// `ADVERTISEMENT_I_MAX`.
+pub const ADVERTISEMENT_I_MAX: Duration = Duration::from_secs(32);
+/// `ADVERTISEMENT_I_MAX_LOW`.
+pub const ADVERTISEMENT_I_MAX_LOW: Duration = Duration::from_secs(12);
+/// Imax per router neighbor (OT `kAdvIntervalNeighborMultiplier`, 4 s).
+pub const ADVERTISEMENT_I_MAX_PER_NEIGHBOR: Duration = Duration::from_secs(4);
+/// REED advertisement interval (OT `kReedAdvIntervalMin` / `Max`).
+pub const REED_ADVERTISEMENT_MIN: Duration = Duration::from_secs(570);
+/// See [`REED_ADVERTISEMENT_MIN`].
+pub const REED_ADVERTISEMENT_MAX: Duration = Duration::from_secs(630);
+/// `MAX_NEIGHBOR_AGE` of a router neighbor.
+pub const MAX_NEIGHBOR_AGE: Duration = Duration::from_secs(100);
+/// `MAX_EXT_NEIGHBOR_AGE`: neighbor age on an FTD child with many router links.
+pub const MAX_NEIGHBOR_AGE_ON_CHILD: Duration = Duration::from_secs(150);
+/// Routers that get no route and no Advertisement for this long lose their
+/// ID at the leader (OT `kMaxLeaderToRouterTimeout`).
+pub const MAX_LEADER_TO_ROUTER_TIMEOUT: Duration = Duration::from_secs(90);
+/// Max delay of a Link Request sent after an Advertisement on a router.
+pub const MAX_LINK_REQUEST_DELAY_ON_ROUTER: Duration = Duration::from_millis(1000);
+/// Link Request delay window on an FTD child (OT `kMin/MaxLinkRequestDelayOnChild`).
+pub const MIN_LINK_REQUEST_DELAY_ON_CHILD: Duration = Duration::from_millis(1500);
+/// See [`MIN_LINK_REQUEST_DELAY_ON_CHILD`].
+pub const MAX_LINK_REQUEST_DELAY_ON_CHILD: Duration = Duration::from_millis(3000);
+/// Max delay of a Link Accept answering a multicast Link Request.
+pub const MAX_LINK_ACCEPT_DELAY: Duration = Duration::from_millis(1000);
+/// Max delay of a unicast Advertisement (OT `kMaxUnicastAdvertisementDelay`).
+pub const MAX_UNICAST_ADVERTISEMENT_DELAY: Duration = Duration::from_millis(1000);
+/// Max delay of a Data Request after an Advertisement (`MLE_MAX_RESPONSE_DELAY`).
+pub const MAX_DATA_REQUEST_DELAY: Duration = MAX_RESPONSE_DELAY;
+/// Seconds to wait for a Link Accept (OT `kLinkAcceptTimeout`).
+pub const LINK_ACCEPT_TIMEOUT_SECS: u8 = 3;
+/// Link Request attempts to a silent neighbor (OT `kMaxLinkRequestAttempts`).
+pub const MAX_LINK_REQUEST_ATTEMPTS: u8 = 3;
+/// Time to wait for the Link Accept of the final restore Link Request.
+pub const LINK_REQUEST_TIMEOUT: Duration = Duration::from_millis(2000);
+/// Router role restore: children that make the attempt critical (OT
+/// `kMinCriticalChildrenCount`).
+pub const MIN_CRITICAL_CHILDREN_COUNT: usize = 6;
+/// Minimum link margin (dB) to send a Link Request on an Advertisement.
+pub const LINK_REQUEST_MIN_MARGIN: u8 = 10;
+/// Minimum link margin (dB) to react to an Advertisement of another partition.
+pub const PARTITION_MERGE_MIN_MARGIN: u8 = 10;
+/// Quick router links of an FTD child (OT `OPENTHREAD_CONFIG_MLE_CHILD_ROUTER_LINKS`).
+pub const CHILD_ROUTER_LINKS: u8 = 3;
+/// Additional, slowly established router links of an FTD child.
+pub const EXTRA_CHILD_ROUTER_LINKS: u8 = 32;
+/// An FTD child establishes the extra links only after being attached this long.
+pub const GRADUAL_LINK_WAIT_AFTER_ATTACH: Duration = Duration::from_secs(300);
+/// Gradual link establishment: delay window and probability (percent).
+pub const GRADUAL_LINK_MIN_DELAY: Duration = Duration::from_millis(1500);
+/// See [`GRADUAL_LINK_MIN_DELAY`].
+pub const GRADUAL_LINK_MAX_DELAY: Duration = Duration::from_millis(10_000);
+/// See [`GRADUAL_LINK_MIN_DELAY`].
+pub const GRADUAL_LINK_PROBABILITY_PERCENT: u8 = 5;
+/// Routers kept in the Route64 TLV of a Link Accept for a router neighbor
+/// (OT `kMaxRoutersInRouteTlvForLinkAccept`).
+pub const MAX_ROUTERS_IN_LINK_ACCEPT_ROUTE: usize = 20;
+/// Sequence rollback applied to a truncated Route64 of a Link Accept.
+pub const LINK_ACCEPT_SEQUENCE_ROLLBACK: u8 = 64;

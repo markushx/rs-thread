@@ -97,6 +97,8 @@ impl<const C: usize> Mle<C> {
         self.recalculate_poll_period(env);
         self.schedule_message_tx_timer(now);
         self.restart_supervision(now);
+        #[cfg(feature = "ftd")]
+        self.handle_child_start(env, now);
     }
 
     /// Receiver on / off and attach-mode polling according to the device

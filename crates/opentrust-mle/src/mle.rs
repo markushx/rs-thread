@@ -47,6 +47,7 @@ use crate::endpoint::{self, LinkRxInfo, MleRx};
 use crate::env::{MleEnv, MleEvent, Role};
 use crate::message::{Command, MleBuilder};
 use crate::neighbor::{ChildTable, Neighbor, NeighborState, Parent};
+use crate::router_config::RouterConfig;
 use crate::security::{self, MleFrameCounter, RxSecurity};
 use crate::tlv::{AddressEntry, DeviceMode, LeaderData, TlvWriter};
 
@@ -68,6 +69,8 @@ pub struct MleConfig {
     /// Seconds without a secure frame from the parent after which a sleepy
     /// child probes it (OT default 190, 0 = disabled).
     pub supervision_check_timeout: u16,
+    /// Router role configuration (eligibility, thresholds, leader weight).
+    pub router: RouterConfig,
 }
 
 impl MleConfig {
@@ -78,6 +81,7 @@ impl MleConfig {
             timeout_secs: crate::consts::END_DEVICE_TIMEOUT_SECS,
             supervision_interval: 129,
             supervision_check_timeout: 190,
+            router: RouterConfig::new(),
         }
     }
 }
@@ -119,6 +123,8 @@ pub struct Mle<const C: usize> {
     pub(crate) store_pending: bool,
     #[cfg(feature = "ftd")]
     pub(crate) parent_side: crate::parent::ParentSide,
+    #[cfg(feature = "ftd")]
+    pub(crate) rtr: crate::router::RouterCtx,
 }
 
 impl<const C: usize> Mle<C> {
@@ -144,6 +150,8 @@ impl<const C: usize> Mle<C> {
             store_pending: false,
             #[cfg(feature = "ftd")]
             parent_side: crate::parent::ParentSide::new(),
+            #[cfg(feature = "ftd")]
+            rtr: crate::router::RouterCtx::new(),
         }
     }
 
@@ -218,6 +226,12 @@ impl<const C: usize> Mle<C> {
         self.set_rloc16(env, Rloc16::INVALID);
         self.attach.counter = 0;
         env.keys_mut().start(now);
+        #[cfg(feature = "ftd")]
+        {
+            let mut b = [0u8; 1];
+            env.fill_random(&mut b);
+            self.rtr.id_sequence = b[0];
+        }
         self.attach_begin(env, now, crate::attach::AttachMode::AnyPartition);
         Ok(())
     }
@@ -290,7 +304,25 @@ impl<const C: usize> Mle<C> {
         env.set_rx_on_when_idle(true);
         self.set_rloc16(env, Rloc16::INVALID);
         #[cfg(feature = "ftd")]
-        self.parent_side_reset(env);
+        {
+            self.parent_side_reset(env);
+            self.router_reset_on_detach(env);
+        }
+    }
+
+    /// Adopt Leader Data; a changed partition ID is a partition change (OT
+    /// `SetLeaderData`): the router table of the old partition is void.
+    pub(crate) fn update_leader_data<E: MleEnv>(&mut self, env: &mut E, ld: LeaderData) {
+        if ld.partition_id != self.leader_data.partition_id {
+            #[cfg(feature = "ftd")]
+            self.handle_partition_change(env);
+            self.leader_data = ld;
+            env.event(MleEvent::PartitionChanged {
+                partition_id: ld.partition_id,
+            });
+        } else {
+            self.leader_data = ld;
+        }
     }
 
     // ------------------------------------------------------------ timers
@@ -306,7 +338,10 @@ impl<const C: usize> Mle<C> {
         .flatten()
         .min();
         #[cfg(feature = "ftd")]
-        let d = [d, self.parent_deadline()].into_iter().flatten().min();
+        let d = [d, self.parent_deadline(), self.router_deadline()]
+            .into_iter()
+            .flatten()
+            .min();
         d
     }
 
@@ -327,7 +362,12 @@ impl<const C: usize> Mle<C> {
             self.handle_supervision_timer(env, now);
         }
         #[cfg(feature = "ftd")]
-        self.poll_parent(env, now);
+        {
+            self.poll_parent(env, now);
+            if self.rtr.tick.is_some_and(|t| now >= t) {
+                self.router_tick(env, now);
+            }
+        }
         self.store_if_needed(env);
     }
 
@@ -367,6 +407,8 @@ impl<const C: usize> Mle<C> {
         if self.role == Role::Disabled {
             return Err(Error::InvalidState);
         }
+        #[cfg(feature = "ftd")]
+        self.refresh_router_info();
         let ext = rx.meta.sender_ext_address();
         let nb = self.find_neighbor(&ext, rx.command == Command::ChildIdResponse);
         if let Some(r) = nb {

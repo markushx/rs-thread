@@ -337,7 +337,11 @@ impl<const C: usize> Mle<C> {
         match self.attach.mode {
             AttachMode::AnyPartition | AttachMode::BetterParent | AttachMode::SelectedParent => {
                 if self.role != Role::Child {
-                    // Phase 6c: an FTD may become leader here instead.
+                    // No partition found: an FTD starts its own.
+                    #[cfg(feature = "ftd")]
+                    if self.is_full_thread_device() && self.become_leader(env, now, false).is_ok() {
+                        return;
+                    }
                     self.become_detached(env, now);
                 } else if !self.is_rx_on_when_idle() {
                     env.set_poll_attach_mode(false);
@@ -629,7 +633,20 @@ impl<const C: usize> Mle<C> {
         // OT SetStateDetached(): leaves the old attachment.
         self.attach.reset();
         self.child.reset();
-        self.leader_data = leader;
+        #[cfg(feature = "ftd")]
+        if self.role.is_router_or_leader() {
+            self.router_left_router_role(env);
+        }
+        self.update_leader_data(env, leader);
+        #[cfg(feature = "ftd")]
+        if self.is_full_thread_device() {
+            if let Err(e) =
+                self.read_and_process_route_on_ftd_child(env, now, &rx.tlvs, source.router_id())
+            {
+                self.become_detached(env, now);
+                return Err(e);
+            }
+        }
         let mut parent = cand.parent;
         parent.router.neighbor.rloc16 = source;
         parent.router.neighbor.state = NeighborState::Valid;

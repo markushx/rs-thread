@@ -6,10 +6,12 @@
 //! `ChildSupervisor`).
 //!
 //! The router role itself (becoming router/leader, router IDs, routing,
-//! Advertisements) is Phase 6c. This module works once the core is told it
-//! *is* a router with leader data: [`Mle::enter_router_role`] sets role,
-//! RLOC16, Leader Data and the [`RouterInfo`] used in Parent Responses
-//! (Connectivity TLV, Route64 value for Child ID Responses).
+//! Advertisements) lives in [`router`](crate::router) and friends. This
+//! module only needs the [`RouterInfo`] (Connectivity TLV, Route64 value
+//! for Child ID Responses), which the router state machine recomputes
+//! from the live router table. [`Mle::enter_router_role`] bypasses that
+//! state machine and supplies a static [`RouterInfo`]: used by unit tests
+//! of this module.
 //!
 //! ```text
 //! Parent Request --(1..500/1000 ms jitter)--> Parent Response (challenge echo,
@@ -23,8 +25,7 @@
 //! Deviations from OT: a child in `Restored`/`ChildUpdateRequest` state may
 //! itself start the exchange with a Child Update Request (fast re-attach
 //! after the *child* restarts; OT drops it until its own Child Update
-//! Request restored the child); REED behaviour (parent requests while
-//! role = child) is not implemented.
+//! Request restored the child).
 
 use core::net::Ipv6Addr;
 
@@ -40,7 +41,7 @@ use crate::consts::{
     THREAD_VERSION_1_3,
 };
 use crate::endpoint::MleRx;
-use crate::env::{MleEnv, MleEvent, Role};
+use crate::env::{MleEnv, MleEvent, Role, RouterRequestReason};
 use crate::message::Command;
 use crate::mle::{Mle, NbRef, RxClass};
 use crate::neighbor::{Child, MleReplay, NeighborState, StateFilter};
@@ -89,9 +90,9 @@ struct PendingParentResponse {
 pub(crate) struct ParentSide {
     pending: Vec<PendingParentResponse, PENDING_RESPONSES>,
     next_child_id: u16,
-    info: RouterInfo,
+    pub(crate) info: RouterInfo,
     /// Next per-second tick (child supervision).
-    tick: Option<Instant>,
+    pub(crate) tick: Option<Instant>,
     /// Restored children still need their Child Update Request.
     restored_update_due: Option<Instant>,
 }
@@ -154,6 +155,7 @@ impl<const C: usize> Mle<C> {
         self.set_rloc16(env, rloc16);
         self.leader_data = leader;
         self.parent_side.info = info;
+        self.rtr.managed = false;
         self.parent_side.tick = Some(now.saturating_add(Duration::from_secs(1)));
         self.set_role(env, role);
         Ok(())
@@ -200,7 +202,8 @@ impl<const C: usize> Mle<C> {
     }
 
     pub(crate) fn poll_parent<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
-        if !self.role.is_router_or_leader() {
+        // A REED answers Parent Requests and times out its candidates too.
+        if !(self.role.is_router_or_leader() || (self.rtr.managed && self.role == Role::Child)) {
             return;
         }
         // Delayed Parent Responses.
@@ -320,8 +323,23 @@ impl<const C: usize> Mle<C> {
         now: Instant,
         rx: &MleRx<'_>,
     ) -> Result<RxClass> {
-        if !self.role.is_router_or_leader() || !self.parent_side.info.accepting_children {
+        let reed = self.rtr.managed && self.role == Role::Child;
+        if !(self.role.is_router_or_leader() || reed) || !self.parent_side.info.accepting_children {
             return Err(Error::InvalidState);
+        }
+        if self.rtr.managed {
+            // A router / REED MUST NOT answer while detached or attaching
+            // elsewhere, or when disconnected from its partition (§4.5.1).
+            if !self.is_router_eligible() {
+                return Err(Error::InvalidState);
+            }
+            if self.attach.is_attaching() {
+                return Err(Error::Drop);
+            }
+            let timeout = Duration::from_secs(u64::from(self.cfg.router.network_id_timeout_secs));
+            if self.leader_age(now).is_none_or(|a| a >= timeout) {
+                return Err(Error::Drop);
+            }
         }
         if self.parent_side.info.connectivity.leader_cost >= MAX_ROUTE_COST {
             return Err(Error::Drop);
@@ -330,9 +348,16 @@ impl<const C: usize> Mle<C> {
         let ext = rx.meta.sender_ext_address();
         let version = t.version()?;
         let scan = t.scan_mask()?;
-        if scan & SCAN_MASK_ROUTER == 0 {
-            // A router answers requests to routers only (REEDs answer the
-            // other kind).
+        if reed {
+            // A REED answers requests to routers and REEDs only while the
+            // leader would still grant a router ID.
+            if scan & SCAN_MASK_END_DEVICE == 0
+                || usize::from(self.active_router_count()) >= crate::consts::MAX_ROUTERS
+            {
+                return Err(Error::Drop);
+            }
+        } else if scan & SCAN_MASK_ROUTER == 0 {
+            // A router answers requests to routers only.
             return Err(Error::Drop);
         }
         let challenge = t.challenge()?;
@@ -497,7 +522,8 @@ impl<const C: usize> Mle<C> {
         rx: &MleRx<'_>,
         _nb: Option<NbRef>,
     ) -> Result<RxClass> {
-        if !self.role.is_router_or_leader() {
+        let reed = self.rtr.managed && self.role == Role::Child && self.is_router_eligible();
+        if !(self.role.is_router_or_leader() || reed) {
             return Err(Error::InvalidState);
         }
         let t = &rx.tlvs;
@@ -577,6 +603,17 @@ impl<const C: usize> Mle<C> {
         c.supervision_interval = supervision;
         c.network_data_version = nd_version;
         c.set_request_tlvs(&list);
+        if reed {
+            // The child needs a router parent: ask for a router ID first;
+            // the Child ID Response follows once it is granted.
+            if self
+                .become_router(env, now, RouterRequestReason::HaveChildIdRequest)
+                .is_err()
+            {
+                self.remove_child(env, idx);
+            }
+            return Ok(RxClass::Authoritative);
+        }
         self.send_child_id_response(env, now, idx)?;
         Ok(RxClass::Authoritative)
     }
@@ -602,7 +639,7 @@ impl<const C: usize> Mle<C> {
     }
 
     /// OT `SendChildIdResponse`.
-    fn send_child_id_response<E: MleEnv>(
+    pub(crate) fn send_child_id_response<E: MleEnv>(
         &mut self,
         env: &mut E,
         now: Instant,

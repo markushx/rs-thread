@@ -121,6 +121,78 @@ pub enum MleEvent {
         /// Child's RLOC16.
         rloc16: Rloc16,
     },
+    /// This device started a new partition as its leader (`BecomeLeader`);
+    /// the Network Data of the new partition is empty.
+    LeaderStarted {
+        /// The new partition ID.
+        partition_id: u32,
+    },
+    /// The partition ID changed (attach to another partition, merge,
+    /// leader start). Router table, address cache and pending Address
+    /// Solicit state of the old partition are void.
+    PartitionChanged {
+        /// The new partition ID.
+        partition_id: u32,
+    },
+    /// A router link became valid (Link Accept processed).
+    RouterAdded {
+        /// Router's extended address.
+        ext: ExtAddress,
+        /// Router's RLOC16.
+        rloc16: Rloc16,
+    },
+    /// A router link was removed (age, Link Accept timeout, router ID
+    /// released).
+    RouterRemoved {
+        /// Router's extended address.
+        ext: ExtAddress,
+        /// Router's RLOC16.
+        rloc16: Rloc16,
+    },
+    /// The router table changed (route costs, next hops, ID set): the
+    /// routing layer (Phase 7) should refresh what it derives from it.
+    RouterTableChanged,
+}
+
+/// Why a REED asks the leader for a router ID (Thread Status TLV values of
+/// the Address Solicit request, §5.19; OT `ThreadStatusTlv`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(u8)]
+pub enum RouterRequestReason {
+    /// Fewer routers than `ROUTER_UPGRADE_THRESHOLD`.
+    TooFewRouters = 2,
+    /// A child sent a Child ID Request and needs a router parent.
+    HaveChildIdRequest = 3,
+    /// The partition changed while the device has children.
+    ParentPartitionChange = 4,
+    /// A Border Router asks for the router role.
+    BorderRouterRequest = 5,
+}
+
+impl RouterRequestReason {
+    /// Decode a Status TLV value.
+    pub const fn from_u8(v: u8) -> Option<Self> {
+        Some(match v {
+            2 => Self::TooFewRouters,
+            3 => Self::HaveChildIdRequest,
+            4 => Self::ParentPartitionChange,
+            5 => Self::BorderRouterRequest,
+            _ => return None,
+        })
+    }
+}
+
+/// The Address Solicit request the core wants sent to the leader (TMF
+/// `/a/as`, Phase 7). The environment sends it to the leader's RLOC and
+/// later calls [`Mle::address_solicit_reply`](crate::Mle::address_solicit_reply)
+/// with the outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RouterIdRequest {
+    /// Previously held router ID (its RLOC16 goes into the request).
+    pub previous_router_id: Option<u8>,
+    /// Reason / Status TLV.
+    pub reason: RouterRequestReason,
 }
 
 /// Maximum number of non-ML-EID addresses reported by
@@ -280,6 +352,21 @@ pub trait MleEnv {
     fn load_child_info(&self, _index: usize) -> Option<ChildInfo> {
         None
     }
+
+    // ------------------------------------------------------------ router ID assignment (Phase 7 TMF)
+
+    /// Send an Address Solicit (`/a/as`, confirmable POST to the leader's
+    /// RLOC) with the ML-EUI64 (the extended address), the previous RLOC16
+    /// if any and the Status TLV. The answer is delivered with
+    /// `Mle::address_solicit_reply`. Return an error if the request cannot
+    /// be sent (the core then clears its pending state). Default: not
+    /// implemented, so a device never upgrades without Phase 7.
+    fn request_router_id(&mut self, _request: &RouterIdRequest) -> Result<()> {
+        Err(opentrust_core::Error::NotImplemented)
+    }
+    /// Send an Address Release (`/a/ar`) for `rloc16` to the leader (router
+    /// downgrade). Default: nothing is sent.
+    fn release_router_id(&mut self, _rloc16: Rloc16) {}
 
     // ------------------------------------------------------------ notifications
 

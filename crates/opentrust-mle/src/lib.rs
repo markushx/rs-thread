@@ -20,6 +20,8 @@
 //! Router links, Advertisements, partitions and the router role are Phase
 //! 6c.
 
+#[cfg(feature = "ftd")]
+mod advert;
 pub mod attach;
 pub mod child;
 mod child_rx;
@@ -33,11 +35,17 @@ pub mod neighbor;
 #[cfg(feature = "ftd")]
 pub mod parent;
 pub mod persist;
+#[cfg(feature = "ftd")]
+pub mod router;
+pub mod router_config;
+#[cfg(feature = "ftd")]
+mod router_link;
 pub mod security;
 pub mod tlv;
 
 pub use env::{MleEnv, MleEvent, Role};
 pub use mle::{Mle, MleConfig};
+pub use router_config::{DeviceProperties, PowerSupply, RouterConfig};
 
 #[cfg(test)]
 mod attach_tests;
@@ -49,5 +57,9 @@ mod e2e_tests;
 mod parent_tests;
 #[cfg(test)]
 mod persist_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod router_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod sim;
 #[cfg(test)]
 mod test_support;

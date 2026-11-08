@@ -53,7 +53,7 @@ impl<const C: usize> Mle<C> {
             || leader.leader_router_id != cur.leader_router_id
         {
             if self.role == Role::Child {
-                self.leader_data = leader;
+                self.update_leader_data(env, leader);
                 self.child.retrieve_new_network_data = true;
             } else {
                 return Err(Error::Drop);
@@ -363,6 +363,14 @@ impl<const C: usize> Mle<C> {
     ) -> Result<RxClass> {
         if nb != Some(NbRef::Parent) || !self.neighbor_is_valid(nb) || self.role != Role::Child {
             return Err(Error::Drop);
+        }
+        #[cfg(feature = "ftd")]
+        if let Some(pid) = self
+            .parent
+            .as_ref()
+            .map(|p| p.router.neighbor.rloc16.router_id())
+        {
+            self.read_and_process_route_on_ftd_child(env, now, &rx.tlvs, pid)?;
         }
         let r = self.handle_leader_data(env, now, rx);
         if self.child.waiting_data_response {

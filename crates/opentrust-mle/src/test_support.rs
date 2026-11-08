@@ -35,7 +35,7 @@ pub(crate) struct TestEnv {
     pub rx_on: bool,
     pub poll: Option<Duration>,
     pub parent: Option<(ExtAddress, Rloc16)>,
-    pub events: Vec<MleEvent, 64>,
+    pub events: Vec<MleEvent, 256>,
     pub nd: Vec<u8, 64>,
     pub nd_leader: Option<LeaderData>,
     pub provided_nd: Vec<u8, 64>,
@@ -44,6 +44,10 @@ pub(crate) struct TestEnv {
     pub extra_addrs: Vec<Ipv6Addr, 4>,
     pub settings: RamSettings<1024>,
     pub ml_iid: Option<Iid>,
+    pub solicits: Vec<crate::env::RouterIdRequest, 4>,
+    pub released: Vec<Rloc16, 4>,
+    /// `request_router_id` fails (no TMF available).
+    pub solicit_fails: bool,
 }
 
 pub(crate) const MLP: Prefix64 = Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 1]);
@@ -76,6 +80,9 @@ impl TestEnv {
             extra_addrs: Vec::new(),
             settings: RamSettings::new(),
             ml_iid: None,
+            solicits: Vec::new(),
+            released: Vec::new(),
+            solicit_fails: false,
         }
     }
 
@@ -271,5 +278,15 @@ impl MleEnv for TestEnv {
     }
     fn event(&mut self, event: MleEvent) {
         let _ = self.events.push(event);
+    }
+    fn request_router_id(&mut self, request: &crate::env::RouterIdRequest) -> Result<()> {
+        if self.solicit_fails {
+            return Err(Error::NoBufs);
+        }
+        let _ = self.solicits.push(*request);
+        Ok(())
+    }
+    fn release_router_id(&mut self, rloc16: Rloc16) {
+        let _ = self.released.push(rloc16);
     }
 }
