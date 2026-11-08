@@ -57,6 +57,8 @@ pub(crate) enum DelayedKind {
     LinkAccept(LinkAcceptInfo),
     Advertisement(core::net::Ipv6Addr),
     DataRequest(core::net::Ipv6Addr),
+    /// Unsolicited Data Response to the link-local all-nodes address.
+    MulticastDataResponse,
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +176,9 @@ impl<const C: usize> Mle<C> {
             }
             DelayedKind::DataRequest(dst) => {
                 let _ = self.send_data_request_to(env, dst);
+            }
+            DelayedKind::MulticastDataResponse => {
+                let _ = self.send_multicast_data_response(env, now);
             }
         }
     }

@@ -411,6 +411,7 @@ impl<const C: usize> Mle<C> {
             self.announce_sender.deadline(),
             self.child.tx_deadline,
             self.child.supervision_deadline,
+            self.child.update_deadline,
         ]
         .into_iter()
         .flatten()
@@ -446,6 +447,7 @@ impl<const C: usize> Mle<C> {
         if self.child.supervision_deadline.is_some_and(|d| now >= d) {
             self.handle_supervision_timer(env, now);
         }
+        self.poll_child_update_request(env, now);
         #[cfg(feature = "ftd")]
         {
             self.poll_parent(env, now);

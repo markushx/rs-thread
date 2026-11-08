@@ -242,3 +242,32 @@ fn device_mode_change_between_ftd_and_mtd_reattaches() {
         0
     );
 }
+
+#[test]
+fn network_data_update_sends_a_multicast_data_response() {
+    use crate::attach_tests::decode;
+    use opentrust_core::types::ipv6;
+    let mut sim = Sim::new(2);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    sim.upgrade(0, 1);
+    let is_data_response = |n: &crate::sim::Node, o: &crate::test_support::Out| {
+        o.dst == ipv6::LINK_LOCAL_ALL_NODES
+            && decode(o, &n.env, |rx| rx.command) == Command::DataResponse
+    };
+    // The leader answers at once, a router after 1..=500 ms.
+    let now = sim.now;
+    let n = &mut sim.nodes[0];
+    n.env.out.clear();
+    n.mle.network_data_updated(&mut n.env, now);
+    assert!(n.env.out.iter().any(|o| is_data_response(n, o)));
+    let n = &mut sim.nodes[1];
+    n.env.out.clear();
+    n.mle.network_data_updated(&mut n.env, now);
+    assert!(n.env.out.iter().all(|o| !is_data_response(n, o)));
+    n.mle.poll(&mut n.env, now + Duration::from_millis(501));
+    assert!(n.env.out.iter().any(|o| is_data_response(n, o)));
+}

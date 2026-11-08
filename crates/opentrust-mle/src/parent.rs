@@ -188,6 +188,19 @@ impl<const C: usize> Mle<C> {
         }
         if self.role == Role::Leader {
             self.reset_advertise_interval(env, now);
+            let _ = self.send_multicast_data_response(env, now);
+        } else if !self.rtr.delayed.iter().any(|d| {
+            matches!(
+                d.kind,
+                crate::router_link::DelayedKind::MulticastDataResponse
+            )
+        }) {
+            let jitter =
+                Self::rand_range(env, 0, crate::consts::UNSOLICITED_DATA_RESPONSE_JITTER_MS);
+            self.schedule_delayed(
+                now.saturating_add(Duration::from_millis(1 + u64::from(jitter))),
+                crate::router_link::DelayedKind::MulticastDataResponse,
+            );
         }
         let mut behind: heapless::Vec<usize, C> = heapless::Vec::new();
         for (idx, c) in self.children.iter_indexed(StateFilter::Valid) {
@@ -1176,6 +1189,40 @@ impl<const C: usize> Mle<C> {
     }
 
     // ------------------------------------------------------------ Data Request / Response
+
+    /// OT `SendMulticastDataResponse`: the Network Data (full) with the
+    /// Leader Data to the link-local all-nodes address, when it changed.
+    pub(crate) fn send_multicast_data_response<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        _now: Instant,
+    ) -> Result<()> {
+        if !self.role.is_attached() {
+            return Err(Error::InvalidState);
+        }
+        let rloc = self.rloc16;
+        let leader = self.leader_data;
+        let (active_ts, pending_ts) = (env.active_timestamp(), env.pending_timestamp());
+        let mut nd = [0u8; 400];
+        let n = env.network_data(false, &mut nd)?;
+        self.send(
+            env,
+            ipv6::LINK_LOCAL_ALL_NODES,
+            Command::DataResponse,
+            |w| {
+                w.source_address(rloc)?;
+                w.leader_data(&leader)?;
+                // The timestamps let receivers notice a newer dataset.
+                if let Some(t) = &active_ts {
+                    w.active_timestamp(t)?;
+                }
+                if let Some(t) = &pending_ts {
+                    w.pending_timestamp(t)?;
+                }
+                w.network_data(&nd[..n])
+            },
+        )
+    }
 
     /// OT `HandleDataRequest` + `SendDataResponse` (unicast to a child).
     pub(crate) fn handle_data_request<E: MleEnv>(

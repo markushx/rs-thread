@@ -309,3 +309,22 @@ fn graceful_detach_without_answer_stops_after_one_second() {
     child.detach_gracefully(&mut env, t).unwrap();
     assert!(env.has_event(MleEvent::DetachedGracefully));
 }
+
+#[test]
+fn mtd_child_aggregates_changes_into_one_delayed_child_update_request() {
+    let (mut child, mut env, _p, t) = attached(SLEEPY);
+    env.take_out();
+    child.schedule_child_update_request(&mut env, t);
+    child.schedule_child_update_request(&mut env, t + Duration::from_millis(50));
+    child.poll(&mut env, t + Duration::from_millis(99));
+    assert!(env.out.is_empty());
+    child.poll(&mut env, t + Duration::from_millis(100));
+    let out = env.take_out();
+    assert_eq!(out.len(), 1);
+    decode(&out[0], &env, |rx| {
+        assert_eq!(rx.command, Command::ChildUpdateRequest)
+    });
+    // Nothing more is pending.
+    child.poll(&mut env, t + Duration::from_millis(500));
+    assert!(env.out.is_empty());
+}
