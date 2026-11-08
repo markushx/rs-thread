@@ -7,6 +7,7 @@
 //! - [`checksum`]: Internet checksum and IPv6 pseudo-header.
 //! - [`addr`]: scopes, prefix matching, Thread multicast groups.
 //! - [`netif`]: unicast/multicast address tables and source selection.
+//! - [`resolver`]: EID-to-RLOC address resolution cache (no CoAP).
 //! - [`slaac`]: RFC 7217 SLAAC address generation and management.
 //! - [`ip6`]: the sans-IO IPv6 receive/send core ([`ip6::Ip6`]).
 //! - [`mpl`]: MPL (RFC 7731) as in OpenThread.
@@ -26,5 +27,6 @@ pub mod icmp6;
 pub mod ip6;
 pub mod mpl;
 pub mod netif;
+pub mod resolver;
 pub mod slaac;
 pub mod udp;
