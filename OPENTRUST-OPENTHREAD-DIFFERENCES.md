@@ -213,3 +213,41 @@ both roles, cookies, fragmented flights, identical KEK, wrong password.
 | KEK export | `HandleMbedtlsExportKeys`: `SHA-256(key_block)[0..16]` | Same value, computed from the key block at key derivation and exposed once connected (`Session::kek`); never exposed for an aborted handshake | | none |
 | Sessions / connection attempts | One `SecureSession` per transport, `mMaxConnectionAttempts`, guard times | One `Session` (or `Coaps`) per peer, created by the caller; attempt limits and guard times belong to MeshCoP (Phase 8) | Sans-IO | API |
 | Application records per datagram (CoAPS) | `mbedtls_ssl_read` loop delivers all | `Session::handle_datagram` delivers all (via `Received::consumed`); `Coaps::decrypt` (one plaintext per `SecureTransport::decrypt`) delivers the first, processes the remaining handshake/alert records and drops further application records of the same datagram | Seam signature; OT/mbedTLS send one per datagram | none |
+
+## MLE (`opentrust-mle`: TLVs, message security, neighbor model, UDP glue)
+
+Reference: `src/core/thread/mle_tlvs.{hpp,cpp}`, `mle_types.hpp`, `mle.cpp`
+(`ProcessMessageSecurity`, `HandleUdpReceive`, `TxMessage::SendTo`),
+`neighbor.hpp`, `child.hpp`, `router.hpp`, `link_quality.{hpp,cpp}`,
+`tests/unit/test_link_quality.cpp`. The protocol logic (attach, link
+establishment, partitions, roles) is not part of this section yet (Phase
+6b/6c).
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| TLV access | Packed C++ classes appended to / read from a `Message`; per-TLV `IsValid()` | `Tlvs` view over a byte slice with typed getters and `TlvWriter`; unknown TLVs are skipped; the first TLV of a type wins (as `Tlv::FindTlv`) | no_std, no message pool in the codec | none |
+| TLV set | Includes time-sync TLVs (252-254) under a build flag, wake-up channel (74) | Same TLVs are always available (`TimeParameter`, `XtalAccuracy`, `WAKEUP_CHANNEL`); Link Quality (6) and Network Parameter (7) are type constants only ("not used in Thread") | Complete table; no build flags | none |
+| Link Metrics TLVs | Nested sub-TLV classes in `link_metrics_tlvs.hpp` | Query / Management / Report are exposed as nested `Tlvs` plus sub-TLV type, metric-type-id and status constants; the sub-TLV content codecs and series state come with the Link Metrics logic | Phase 6 scope | none |
+| Route64 | `OT_CONFIG_MLE_LONG_ROUTES` selects 1.5-byte entries | Always the 1-byte entry (`LQ_out | LQ_in | cost`, cost 0..15), one entry per set mask bit required | Long routes is a non-standard OT option | stricter |
+| Connectivity TLV | `IsValid` accepts exactly 7 bytes or at least 10 | 7..9 bytes accepted as the base form (partial SED tail ignored); reserved parent priority 2 is a parse error | Lenient parse, strict value | none |
+| Challenge / Response | Size checked by the users | 4..=8 bytes enforced in getter and writer | Spec limits | stricter |
+| Mode TLV | `Set()` keeps the reserved bit on tx | Same (`DeviceMode::to_bits`), reserved and unknown bits dropped on rx | | none |
+| Address Registration | Compressed entries expanded with Network Data contexts at parse time | `AddressRegistration` iterator yields `Compressed { context_id, iid }` / `Uncompressed`; context resolution is the caller's job (needs Network Data) | Network Data is Phase 7 | none |
+| Security header | `SecurityHeader` packed struct | `AuxHeader` (control `0x15`, frame counter LE, key source = key sequence BE, key index `(seq & 0x7f) + 1`); key index byte not checked on rx (as OT) | | none |
+| Key for rx | Current MLE key, else `GetTemporaryMleKey(seq)` (derived per message) | `KeyManager::cached_keys` (previous / current / next) else a derived key; the receiver's key sequence is never changed by `unsecure`, the caller applies `on_rx_key_sequence` after its replay check | Sans-IO: policy outside the codec | none |
+| In-place crypto | Decrypts inside the `Message`, removes the tag | In place on a caller buffer (a scratch copy of the UDP payload, since receivers get `&[u8]`); on MIC failure the payload is zeroed | Zeroize unauthenticated plaintext | none |
+| MLE frame counter | Part of `KeyManager`, stored every `kStoreFrameCounterAhead` | `MleFrameCounter` (separate type): store-ahead, `needs_store()` / `to_store()` / `stored()` / `restore()`, `0xffffffff` never used (`take()` fails with `InvalidState`) | Own persistence API in the style of `KeyManager` | none |
+| Counter on failed send | Incremented after `ProcessMessageSecurity` succeeded | Consumed only after all argument checks, before encryption | | none |
+| Rx replay check | Inline in `HandleUdpReceive`, `kErrorDuplicated` | `MleReplay::check_and_update` working with the neighbor's `LinkFrameCounters`; `Error::Drop` for old key sequence or counter; the next-expected counter is `u64` (`0xffffffff` does not wrap) | Reusable, testable; no wrap bug | stricter (`0xffffffff` frames) |
+| Unsecured messages | Suite 255: only Discovery Request / Response are dispatched, others ignored | `Error::Drop` for other commands and unknown commands | Explicit result | none |
+| Rx addressing | Only hop limit 255 and `kOriginThreadNetif` checked | Hop limit 255 (`Error::Parse`), source must be link-local unicast, destination link-local unicast / link-local or realm-local multicast, port 19788 (`Error::Drop`) | Spec §4.3; the sender is identified by the source IID | stricter |
+| Tx addressing | Always link-local destinations | Enforced (`InvalidArgs` for anything but link-local unicast / multicast), source must be link-local | Fail early | none |
+| Link security of MLE datagrams | Off, except Announce | `TxInfo::link_security` chosen by the caller (off by default); DSCP 0, the Net priority of OT messages is not modelled | No message priorities in the sink API | none |
+| Dispatch | `switch` in `HandleUdpReceive` calling `Handle*` | `MleHandler` trait, one default no-op method per command, or override `handle`; `MleRx::parse` and dispatch are separate so the caller can run neighbor lookup, `MleReplay` and key sequence adoption in between | Borrowing (`KeyManager` vs handler) and sans-IO | API |
+| Neighbor model | Intrusive classes, bit fields, union of valid/pending data, `Neighbor` is a base class | `Neighbor` struct embedded in `Child` / `Router` / `Parent` (composition), plain fields, `challenge` and frame counters both always present | Rust idiom, no unions | none |
+| Neighbor states | `Invalid`, `Restored`, `ParentRequest`, `ParentResponse`, `ChildIdRequest`, `LinkRequest`, `ChildUpdateRequest`, `Valid` | Same, with `StateFilter` for all eight OT filters | | none |
+| Child addresses | Compressed IPv6 entries relative to Network Data, MLR states | Full `Ipv6Addr`s (max 5 plus the ML-EID), no MLR state yet (Phase 9) | Needs no Network Data to compare; MLR is out of scope | none |
+| Tables | Pool-allocated arrays with intrusive iteration | `ChildTable<N>` (stable slot indices, `Option<Child>`), `RouterTable<N>` keyed by router ID; no router-ID allocation / reuse delay bookkeeping yet | Allocation belongs to the routing logic (Phase 6c / 7) | none |
+| Link quality | `LinkQualityInfo::Get<SubMac>().GetNoiseFloor()` implicit | Noise floor passed to `add_rss`; `LinkQuality::from_margin` is `const` and takes `Option<LinkQuality>` for the hysteresis | No global instance | API |
+| RSS averager | `-static_cast<int8_t>(avg >> 3)` (wraps at -128 to -128) | Computed in `i16` and clamped to `i8::MIN` | No overflow panics; same values | none |
+| `ChildInfo` settings | `Settings::ChildInfo` packed struct | `opentrust_core::settings::ChildInfo`, same 17-byte layout (ext, timeout u32 LE, rloc16 LE, mode, version LE) | | none |

@@ -1,6 +1,6 @@
 //! Link quality: RSS averaging, link margin to link quality mapping with
-//! hysteresis, link cost, error-rate trackers (Thread 1.4.1 §4.? / §5.7
-//! link quality and cost; OpenThread `thread/link_quality.{hpp,cpp}`).
+//! hysteresis, link cost, error-rate trackers (Thread 1.4.1 link quality and
+//! link cost, §4.7 / §5.9; OpenThread `thread/link_quality.{hpp,cpp}`).
 //!
 //! Everything is integer arithmetic identical to OpenThread so that
 //! neighbors derive the same link qualities from the same RSS samples.

@@ -128,7 +128,14 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 6 – MLE (§4)
 
-- [ ] MLE message codec + all TLVs, MLE security (AES-CCM with key derivation)
+- [x] MLE message codec + all TLVs, MLE security (AES-CCM with key derivation) (Phase 6a, `opentrust-mle`: `tlv` typed parse/build of every Thread 1.4.1 MLE TLV, `message` commands + builder, `security` secure/unsecure + MLE frame counter store-ahead, vectors from the Phase 1 crypto reference, tamper/truncation tests)
+- [x] Neighbor / child / router data model (`neighbor`: states, filters, `Child`/`Router`/`Parent`, `ChildTable<N>`, `RouterTable<N>`, `MleReplay`, `ChildInfo` settings), link quality (`link_quality`: RSS averager, margin to quality with hysteresis, costs; `test_link_quality.cpp` ported)
+- [x] MLE UDP glue (`endpoint`: port 19788 receiver, hop limit 255 + addressing rules, `MleRx::parse`, `MleHandler` dispatch by command, `send` through the TMF `UdpSink`)
+  - [ ] Phase 6b: attach (Parent Request/Response, Child ID Request/Response, parent selection), Child Update, keep-alive, supervision, data poll interplay, persisted restore, using `MleHandler` + `MleReplay` + `KeyManager::on_rx_key_sequence`
+  - [ ] Phase 6c: router links (Link Request/Accept), Advertisement trickle, partitions, leader data, role state machine; uses `RouterTable`, Route64 helpers, `LinkQualityInfo`
+  - [ ] Link Metrics Management / Report sub-TLV content codecs and series state (the TLV containers and constants exist)
+  - [ ] MLE message retransmission / delay queue (Table 4-3 constants exist in `consts`)
+  - [ ] Address Registration context resolution and MLR state in `Child` (needs Network Data, Phase 7 / 9)
 - [ ] Attach: Parent Request/Response, Child ID Request/Response, parent selection (link quality, connectivity)
 - [ ] Child Update Request/Response, keep-alive, SED/MED/SSED modes, supervision
 - [ ] Link Request/Accept (router link establishment), Advertisement, link margin/quality
