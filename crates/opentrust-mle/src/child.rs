@@ -301,10 +301,27 @@ impl<const C: usize> Mle<C> {
         }
         let parent = self.parent.as_ref().ok_or(Error::InvalidState)?;
         let dst = ipv6::link_local(&parent.router.neighbor.ext_address);
+        let r = self.send_data_request_to(env, dst);
+        if self.role == Role::Child && !self.is_rx_on_when_idle() {
+            self.child.waiting_data_response = true;
+            if !self.child.waiting_child_update_response {
+                self.schedule_message_tx_timer(now);
+            }
+        }
+        r
+    }
+
+    /// Send a Data Request for Network Data (and Route64 if wanted) to
+    /// `dst`, a neighbor router or the parent.
+    pub(crate) fn send_data_request_to<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        dst: core::net::Ipv6Addr,
+    ) -> Result<()> {
         let route = self.child.request_route_tlv;
         let active_ts = env.active_timestamp();
         let pending_ts = env.pending_timestamp();
-        let r = self.send(env, dst, Command::DataRequest, |w| {
+        self.send(env, dst, Command::DataRequest, |w| {
             if route {
                 w.tlv_request(&[ty::NETWORK_DATA, ty::ROUTE64])?;
             } else {
@@ -317,13 +334,6 @@ impl<const C: usize> Mle<C> {
                 w.pending_timestamp(t)?;
             }
             Ok(())
-        });
-        if self.role == Role::Child && !self.is_rx_on_when_idle() {
-            self.child.waiting_data_response = true;
-            if !self.child.waiting_child_update_response {
-                self.schedule_message_tx_timer(now);
-            }
-        }
-        r
+        })
     }
 }

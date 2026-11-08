@@ -187,6 +187,9 @@ impl<const C: usize> Mle<C> {
     // ------------------------------------------------------------ timers
 
     pub(crate) fn parent_deadline(&self) -> Option<Instant> {
+        if !(self.role.is_router_or_leader() || (self.rtr.managed && self.role == Role::Child)) {
+            return None;
+        }
         let ps = &self.parent_side;
         let mut d = ps.tick;
         d = min_opt(d, ps.restored_update_due);

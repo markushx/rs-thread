@@ -104,6 +104,9 @@ pub(crate) enum NbRef {
     Parent,
     Candidate,
     Child(usize),
+    /// A router link, by router ID.
+    #[cfg(feature = "ftd")]
+    Router(u8),
 }
 
 /// The MLE state machine. `C` is the child table capacity (0 for end
@@ -364,6 +367,7 @@ impl<const C: usize> Mle<C> {
         #[cfg(feature = "ftd")]
         {
             self.poll_parent(env, now);
+            self.poll_router_link(env, now);
             if self.rtr.tick.is_some_and(|t| now >= t) {
                 self.router_tick(env, now);
             }
@@ -412,9 +416,13 @@ impl<const C: usize> Mle<C> {
         let ext = rx.meta.sender_ext_address();
         let nb = self.find_neighbor(&ext, rx.command == Command::ChildIdResponse);
         if let Some(r) = nb {
+            let nf = env.noise_floor();
             let n = self.neighbor_mut(r);
             if n.is_valid() {
                 n.mle_replay.check_and_update(&mut n.link_counters, &sec)?;
+            }
+            if let Some(rss) = rx.meta.link.rss {
+                n.link_info.add_rss(nf, rss);
             }
         }
         let class = match rx.command {
@@ -423,6 +431,12 @@ impl<const C: usize> Mle<C> {
             Command::ChildUpdateRequest => self.handle_child_update_request(env, now, rx, nb)?,
             Command::ChildUpdateResponse => self.handle_child_update_response(env, now, rx, nb)?,
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
+            #[cfg(feature = "ftd")]
+            Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,
+            #[cfg(feature = "ftd")]
+            Command::LinkAccept => self.handle_link_accept(env, now, rx, nb, false)?,
+            #[cfg(feature = "ftd")]
+            Command::LinkAcceptAndRequest => self.handle_link_accept(env, now, rx, nb, true)?,
             #[cfg(feature = "ftd")]
             Command::ParentRequest => self.handle_parent_request(env, now, rx)?,
             #[cfg(feature = "ftd")]
@@ -462,6 +476,14 @@ impl<const C: usize> Mle<C> {
         if parent_only {
             return None;
         }
+        #[cfg(feature = "ftd")]
+        if let Some(r) = self
+            .rtr
+            .table
+            .find_by_ext(ext, crate::neighbor::StateFilter::ValidOrRestoring)
+        {
+            return Some(NbRef::Router(r.router_id));
+        }
         self.children
             .index_by_ext(ext, crate::neighbor::StateFilter::ValidOrRestoring)
             .map(NbRef::Child)
@@ -481,6 +503,8 @@ impl<const C: usize> Mle<C> {
                     .neighbor
             }
             NbRef::Child(i) => &mut self.children.get_mut(i).expect("child").neighbor,
+            #[cfg(feature = "ftd")]
+            NbRef::Router(id) => &mut self.rtr.table.find_by_id_mut(id).expect("router").neighbor,
         }
     }
 
@@ -497,6 +521,12 @@ impl<const C: usize> Mle<C> {
                 .as_ref()
                 .is_some_and(|c| c.parent.router.neighbor.is_valid()),
             Some(NbRef::Child(i)) => self.children.get(i).is_some_and(|c| c.neighbor.is_valid()),
+            #[cfg(feature = "ftd")]
+            Some(NbRef::Router(id)) => self
+                .rtr
+                .table
+                .find_by_id(id)
+                .is_some_and(|r| r.neighbor.is_valid()),
         }
     }
 
@@ -541,11 +571,17 @@ impl<const C: usize> Mle<C> {
             .set_key_sequence(sec.key_sequence, update, now);
     }
 
-    /// OT `ReestablishLinkWithNeighbor`: for the parent, probe with a Child
-    /// Update Request; router links are Phase 6c.
+    /// OT `ReestablishLinkWithNeighbor`: probe the parent with a Child
+    /// Update Request, a router neighbor with a Link Request.
     fn reestablish_link<E: MleEnv>(&mut self, env: &mut E, now: Instant, nb: Option<NbRef>) {
         if nb == Some(NbRef::Parent) && self.role == Role::Child {
             let _ = self.send_child_update_request(env, now);
+        }
+        #[cfg(feature = "ftd")]
+        if let Some(NbRef::Router(id)) = nb {
+            if self.is_full_thread_device() {
+                let _ = self.send_link_request(env, now, Some(id));
+            }
         }
     }
 

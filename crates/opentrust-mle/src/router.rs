@@ -129,6 +129,8 @@ pub(crate) struct RouterCtx {
     pub partition_id_router: u32,
     pub previous_partition_timeout: u8,
     pub previous_partition_id_sequence: u8,
+    pub delayed: Vec<crate::router_link::Delayed, { crate::router_link::DELAYED_CAPACITY }>,
+    pub restorer: crate::router_link::Restorer,
 }
 
 impl RouterCtx {
@@ -148,6 +150,8 @@ impl RouterCtx {
             partition_id_router: 0,
             previous_partition_timeout: 0,
             previous_partition_id_sequence: 0,
+            delayed: Vec::new(),
+            restorer: crate::router_link::Restorer::new(),
         }
     }
 }
@@ -442,7 +446,6 @@ impl<const C: usize> Mle<C> {
     // ------------------------------------------------------------ link / route cost
 
     /// Link cost to router `id` (OT `RouterTable::GetLinkCost`).
-    #[allow(dead_code)] // used by the router link code
     pub(crate) fn link_cost(&self, id: u8) -> u8 {
         match self.rtr.table.find_by_id(id) {
             Some(r) => self.link_cost_of(r),
@@ -1081,13 +1084,17 @@ impl<const C: usize> Mle<C> {
         self.rtr.transition = 0;
         self.rtr.solicit_pending = false;
         self.rtr.managed = false;
+        self.rtr.delayed.clear();
         self.stop_advertising();
     }
 
     // ------------------------------------------------------------ per-second tick
 
     pub(crate) fn router_deadline(&self) -> Option<Instant> {
-        self.rtr.tick
+        [self.rtr.tick, self.router_link_deadline()]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// OT `HandleTimeTick` for the router / REED parts (child timeouts live
@@ -1196,7 +1203,6 @@ impl<const C: usize> Mle<C> {
             .is_some_and(|r| set_next_hop_and_cost(r, next, cost))
     }
 
-    #[allow(dead_code)] // used by the router link code
     pub(crate) fn invalidate_route(&mut self, id: u8) -> bool {
         self.rtr
             .table

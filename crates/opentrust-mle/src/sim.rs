@@ -4,6 +4,8 @@
 
 #![allow(dead_code)] // a test toolbox: not every helper is used by every test
 
+extern crate std;
+
 use heapless::Vec;
 use opentrust_core::time::{Duration, Instant};
 
@@ -103,9 +105,16 @@ impl Sim {
                         }
                         let now = self.now;
                         let n = &mut self.nodes[dst];
-                        if let Ok(cmd) = TestEnv::deliver(&o, &mut n.mle, &mut n.env, now, rss) {
-                            n.rx[cmd.as_u8() as usize] += 1;
-                            self.nodes[src].tx[cmd.as_u8() as usize] += 1;
+                        match TestEnv::deliver(&o, &mut n.mle, &mut n.env, now, rss) {
+                            Ok(cmd) => {
+                                n.rx[cmd.as_u8() as usize] += 1;
+                                self.nodes[src].tx[cmd.as_u8() as usize] += 1;
+                            }
+                            Err(e) => {
+                                if std::env::var_os("MLE_SIM_TRACE").is_some() {
+                                    std::eprintln!("{src}->{dst} dropped: {e:?}");
+                                }
+                            }
                         }
                     }
                 }
@@ -157,5 +166,51 @@ impl Sim {
 
     pub fn role(&self, i: usize) -> Role {
         self.nodes[i].mle.role()
+    }
+
+    /// Phase 7 stand-in: let node `idx` (a REED that asked for a router ID)
+    /// get one from the leader at node `leader`; node `idx` becomes router.
+    pub fn grant_router(&mut self, leader: usize, idx: usize) {
+        let now = self.now;
+        let req = self.nodes[idx]
+            .env
+            .solicits
+            .pop()
+            .expect("no Address Solicit");
+        let ext = self.nodes[idx].env.ext;
+        let previous = self.nodes[idx]
+            .mle
+            .previous_router_id()
+            .map(|i| opentrust_core::types::Rloc16(u16::from(i) << 10));
+        let grant = {
+            let a = &mut self.nodes[leader];
+            a.mle
+                .handle_address_solicit(&mut a.env, now, ext, previous, req.reason as u8)
+                .expect("grant")
+        };
+        let b = &mut self.nodes[idx];
+        b.mle.address_solicit_reply(
+            &mut b.env,
+            now,
+            crate::router::RouterIdReply::Granted {
+                rloc16: grant.rloc16,
+                id_sequence: grant.id_sequence,
+                mask: grant.mask,
+            },
+        );
+        self.pump();
+    }
+
+    /// Make node `idx` a router: wait for its Address Solicit and grant it.
+    pub fn upgrade(&mut self, leader: usize, idx: usize) {
+        assert!(
+            self.run_until(Duration::from_secs(200), |s| !s.nodes[idx]
+                .env
+                .solicits
+                .is_empty()),
+            "no Address Solicit"
+        );
+        self.grant_router(leader, idx);
+        assert_eq!(self.role(idx), Role::Router);
     }
 }

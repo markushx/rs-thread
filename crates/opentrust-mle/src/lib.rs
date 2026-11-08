@@ -58,6 +58,8 @@ mod parent_tests;
 #[cfg(test)]
 mod persist_tests;
 #[cfg(all(test, feature = "ftd"))]
+mod router_link_tests;
+#[cfg(all(test, feature = "ftd"))]
 mod router_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod sim;
