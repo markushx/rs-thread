@@ -20,6 +20,7 @@ use super::csl::*;
 use super::fcs::fcs;
 use super::filter::{FilterError, FilterParams};
 use super::indirect::{IndirectQueue, NeighborMap, SrcMatch, ext_to_u64};
+use super::link_metrics::*;
 use super::poll::PollSender;
 use super::sub_mac::{
     TxKind, TxOp, TxState, air_time, csma_backoff_exponent, max_csma_duration, random_backoff,
@@ -27,7 +28,8 @@ use super::sub_mac::{
 use super::types::*;
 use crate::frame::{
     Address, Beacon, CslIe, FCS_LEN, Frame, FrameBuilder, FrameMut, FrameType, FrameVersion,
-    KeyIdentifier, MacCommand, SecurityHeader, ThreadBeaconPayload,
+    KeyIdentifier, MacCommand, SecurityHeader, THREAD_IE_ENH_ACK_PROBING, ThreadBeaconPayload,
+    VendorIe,
 };
 use crate::frame_security::{FrameSecurity, RxSecurityInfo};
 
@@ -56,6 +58,9 @@ pub struct MacConfig {
     pub cca_threshold: i8,
     /// Channels scans may use.
     pub supported_channels: u32,
+    /// Noise floor in dBm for link margins reported in enhanced ACKs
+    /// (OpenThread `SubMac::GetNoiseFloor`).
+    pub noise_floor: i8,
 }
 
 impl MacConfig {
@@ -72,6 +77,7 @@ impl MacConfig {
             tx_power: caps.default_tx_power,
             cca_threshold: caps.default_cca_threshold,
             supported_channels: SUPPORTED_CHANNEL_MASK,
+            noise_floor: caps.receive_sensitivity,
         }
     }
 }
@@ -249,6 +255,8 @@ pub struct Mac<
     csl_children: Vec<CslChild, CSLQ>,
     csl_tx_child: Option<Address>,
     csl_dirty: bool,
+    probe_subject: ProbeTable<ENH_ACK_PROBING_LEN>,
+    probe_initiator: ProbeTable<ENH_ACK_PROBING_LEN>,
     /// SFD time for the frame the next `start_frame` creates (CSL tx).
     next_tx_timed: Option<u64>,
 }
@@ -373,6 +381,8 @@ impl<
             csl_children: Vec::new(),
             csl_tx_child: None,
             csl_dirty: false,
+            probe_subject: ProbeTable::default(),
+            probe_initiator: ProbeTable::default(),
             next_tx_timed: None,
             hw_sec: HwSecurity {
                 enabled: caps
@@ -976,6 +986,89 @@ impl<
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Enhanced-ACK based Link Metrics probing (MAC part)
+    // ------------------------------------------------------------------
+
+    /// Subject side: report `flags` (at most two metrics, LQI / link margin /
+    /// RSSI) of every frame from the probing initiator (`short`, `ext`) in the
+    /// Thread vendor IE of the enhanced ACKs sent for it. Empty `flags` clear
+    /// the configuration ([`Error::NotFound`] if there was none). The call
+    /// the MLE Link Metrics Management handler makes for Enh-ACK Flags 1 / 0.
+    /// [`Error::InvalidArgs`] for more than two metrics, [`Error::NoBufs`] if
+    /// the table ([`ENH_ACK_PROBING_LEN`]) is full.
+    ///
+    /// Only the MAC's own (software) enhanced ACKs carry the IE; a radio
+    /// that acknowledges in hardware does not know the configuration.
+    pub fn configure_enh_ack_probing(
+        &mut self,
+        short: ShortAddress,
+        ext: ExtAddress,
+        flags: LinkMetricsFlags,
+    ) -> Result<()> {
+        self.probe_subject.configure(short, ext, flags)
+    }
+
+    /// Subject side: forget all initiators (`otLinkMetricsResetEnhAckProbing`).
+    pub fn reset_enh_ack_probing(&mut self) {
+        self.probe_subject.clear();
+    }
+
+    /// Initiator side: the subject (`short`, `ext`) was configured (through
+    /// MLE) to report `flags` in its enhanced ACKs: decode its probing IEs
+    /// and report them as [`Event::EnhAckLinkMetrics`]. Empty `flags` stop it.
+    pub fn track_enh_ack_probing(
+        &mut self,
+        short: ShortAddress,
+        ext: ExtAddress,
+        flags: LinkMetricsFlags,
+    ) -> Result<()> {
+        self.probe_initiator.configure(short, ext, flags)
+    }
+
+    /// Initiator side: stop tracking all subjects.
+    pub fn reset_tracked_enh_ack_probing(&mut self) {
+        self.probe_initiator.clear();
+    }
+
+    /// The probing IE data for the enhanced ACK of `rx`, if its sender is a
+    /// configured initiator and the metrics are known; bytes used.
+    fn enh_ack_probe_data(
+        &self,
+        rx: &Frame<'_>,
+        info: &PsduRxInfo,
+        out: &mut [u8; ENH_ACK_PROBING_MAX_DATA],
+    ) -> usize {
+        if rx.version() != FrameVersion::V2015 {
+            return 0;
+        }
+        let Some(e) = self.probe_subject.find(rx.src_address()) else {
+            return 0;
+        };
+        let rssi = info.rssi.filter(|r| *r != RSSI_INVALID);
+        encode_enh_ack_data(e.flags, info.lqi, rssi, self.config.noise_floor, out).unwrap_or(0)
+    }
+
+    /// An ACK from `peer` for our frame: decode its probing IE
+    /// (OpenThread `Mac::ProcessEnhAckProbing`).
+    fn process_enh_ack_probing(&mut self, ack: &Frame<'_>, peer: Address) {
+        let Some(e) = self.probe_initiator.find(peer) else {
+            return;
+        };
+        let flags = e.flags;
+        let Some(ie) = ack.find_thread_ie(THREAD_IE_ENH_ACK_PROBING) else {
+            return;
+        };
+        if ie.data.len() > ENH_ACK_PROBING_MAX_DATA {
+            return;
+        }
+        let values = decode_enh_ack_data(flags, ie.data);
+        self.push_event(Event::EnhAckLinkMetrics {
+            neighbor: peer,
+            values,
+        });
     }
 
     // ------------------------------------------------------------------
@@ -1618,6 +1711,7 @@ impl<
         }
         if let Ok(f) = Frame::parse(buf) {
             self.csl_update_child(&f, peer, info.timestamp_us, now);
+            self.process_enh_ack_probing(&f, peer);
         }
         Some(fp)
     }
@@ -2333,11 +2427,17 @@ impl<
                 return;
             };
             let csl_ie = self.csl_ack_ie(&f, info, buf.len() + FCS_LEN);
+            let mut probe = [0u8; ENH_ACK_PROBING_MAX_DATA];
+            let probe_len = self.enh_ack_probe_data(&f, info, &mut probe);
             let r = if f.version() == FrameVersion::V2015 {
                 FrameBuilder::enh_ack(&mut out, &f, frame_pending)
                     .map(|b| match csl_ie {
                         Some(ie) => b.header_ie(ie),
                         None => b,
+                    })
+                    .map(|b| match probe_len {
+                        0 => b,
+                        n => b.header_ie(VendorIe::thread_enh_ack_probing(&probe[..n])),
                     })
                     .and_then(FrameBuilder::build)
             } else {

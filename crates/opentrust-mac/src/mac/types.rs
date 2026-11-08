@@ -9,6 +9,7 @@ use opentrust_platform::radio::{
     sim::MAX_PSDU_LEN,
 };
 
+use super::link_metrics::EnhAckProbingValues;
 use crate::frame::{Address, FCS_LEN, Frame, ThreadBeaconPayload};
 use crate::frame_security::RxSecurityInfo;
 
@@ -149,6 +150,15 @@ pub enum Event {
     /// CSL transmissions to this child failed too often without an ACK: it
     /// is no longer CSL synchronized (queued frames wait for its data poll).
     CslChildOutOfSync(Address),
+    /// An enhanced ACK from a neighbor tracked with
+    /// [`Mac::track_enh_ack_probing`](super::Mac::track_enh_ack_probing)
+    /// carried link metrics of the frame it acknowledged.
+    EnhAckLinkMetrics {
+        /// The neighbor (the acked frame's destination).
+        neighbor: Address,
+        /// The reported values.
+        values: EnhAckProbingValues,
+    },
 }
 
 /// Upper-layer requests, for facades that pass requests through a queue

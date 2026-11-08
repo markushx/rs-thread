@@ -3,5 +3,6 @@
 mod core_tests;
 mod csl_tests;
 mod driver_tests;
+mod link_metrics_tests;
 mod security_tests;
 mod util;

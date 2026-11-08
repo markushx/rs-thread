@@ -114,3 +114,7 @@ pub const SRC_MATCH_CAPACITY: usize = opentrust_platform::radio::SRC_MATCH_CAPAC
 /// Default capacity of the table of CSL children (parent side, const
 /// generic of [`Mac`](super::Mac)).
 pub const CSL_CHILD_LEN: usize = 8;
+
+/// Capacity of each of the two Enhanced-ACK probing tables (initiators this
+/// device reports to as subject, subjects it tracks as initiator).
+pub const ENH_ACK_PROBING_LEN: usize = 8;
