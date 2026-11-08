@@ -11,10 +11,22 @@
 //! - [`neighbor`], [`link_quality`]: neighbor/child/router data model, tables.
 //! - [`endpoint`]: UDP glue (port 19788, rx validation/decryption, dispatch, tx).
 
+pub mod attach;
+pub mod child;
 pub mod consts;
 pub mod endpoint;
+pub mod env;
 pub mod link_quality;
 pub mod message;
+pub mod mle;
 pub mod neighbor;
 pub mod security;
 pub mod tlv;
+
+pub use env::{MleEnv, MleEvent, Role};
+pub use mle::{Mle, MleConfig};
+
+#[cfg(test)]
+mod attach_tests;
+#[cfg(test)]
+mod test_support;
