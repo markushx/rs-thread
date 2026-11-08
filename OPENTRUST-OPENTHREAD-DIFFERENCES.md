@@ -98,7 +98,7 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | Area | OpenThread | OpenTrust | Reason | Interop |
 |------|------------|-----------|--------|---------|
 | API shape | `Lowpan::Compress/Decompress` work on `Message` + `FrameBuilder`/`FrameData` and read Network Data directly | Functions on byte slices (`compress`, `decompress`, `decompress_datagram`); contexts come from a `ContextProvider` trait (`ContextTable` is a ready implementation) | Sans-IO, no global Network Data; Phase 7 implements the trait | API |
-| IPv6 types | Full `Ip6::Header`/`Udp::Header` | Minimal `Ipv6Header`/`UdpHeader` in `opentrust_lowpan::ip6` (documented seam to Phase 4); the codecs take/produce raw datagram bytes | Phase 4 owns IPv6 | API |
+| IPv6 types | Full `Ip6::Header`/`Udp::Header` | Minimal `Ipv6Header`/`UdpHeader` in `opentrust_lowpan::ip6`, re-exported by `opentrust_net::header` (which adds setters and the extension headers); the codecs take/produce raw datagram bytes | Avoid a dependency cycle between lowpan and net | API |
 | Context prefix length | Up to 128 bits | Same (bits beyond /64 are applied to the IID); stateful multicast uses the first 64 prefix bits like OT | — | none |
 | Link-local detection when compressing | `IsLinkLocalUnicast` (`fe80::/10`); the decompressor restores `fe80::/64`, so `fe80:0:0:1::x` would be corrupted | Only `fe80::/64` is treated as link-local, other `fe80::/10` addresses fall through to context/inline | Round-trip correctness | none |
 | Stateful multicast without context 0 | Compares against a cleared context (prefix length 0, all-zero prefix), which can wrongly match | Requires a real context 0 | Round-trip correctness | none |
@@ -121,3 +121,39 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | Fragmenter | Per-message state in `Message` (offset, tag), 0 = unset tag | `Fragmenter` iterator with caller-supplied tag; `TagCounter` never yields 0 | Sans-IO | API |
 | Fragment size limit | `uint16_t` size masked to 11 bits | Datagrams above 2047 bytes are rejected when fragmenting (`InvalidArgs`) | Avoid silently wrong size | stricter |
 | Mesh forwarding | `HandleMesh` mixes parsing, routing, queueing | `handle_mesh` only decides (deliver/forward/drop) via `LocalRlocs`/`NextHops`; a 2-hop loop is reported as `DropReason::RoutingLoop` and the caller invalidates the route; no route is detected immediately (OT drops at send time) | Routing table is Phase 7 | API |
+
+## Network layer (IPv6) (`opentrust-net`)
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| API shape | `Ip6`, `Udp`, `Icmp`, `Mpl`, `Netif` operate on `Message`s from the global pool and read the instance (MLE, Network Data, child table) directly | Byte-slice datagrams, caller-provided `Scratch` space, time/RNG in `Ctx`, and an `Ip6Env` trait for role, Network Data route lookup, on-mesh test and sleepy children; `Netif`/`Mpl`/`UdpSockets`/`AddressResolver` are plain const-generic structs | Sans-IO, no alloc, no globals | API |
+| Message pool | Datagrams and MPL buffered copies live in the shared message pool | MPL buffered messages are stored inline (`BUFS` x 1280 B, default 4); no pool involvement in `Ip6`/`UdpSockets` | Simple ownership without lifetimes in the public types; sizes are explicit | API |
+| Extension-header validation | Only the Hop-by-Hop header is parsed for datagrams that are merely forwarded; other headers only when receiving | The whole chain is always validated (`parse_datagram`); malformed or unsupported chains are dropped even if they would only be forwarded | One parser, defensive | stricter |
+| Routing header | Dropped (when processed) | Parsed and skipped by the parser; dropped by the receive path when the datagram is for us, ignored when only forwarding | Parser reusable for other callers | none |
+| Fragment header | Atomic fragments walked; others dropped unless `IP6_FRAGMENTATION_ENABLE` | Same as the default build (no IPv6 reassembly; non-atomic fragments dropped) | Not needed for Thread | none |
+| `RemoveMplOption` | Strips the MPL option before passing datagrams to the host | Not implemented (no host interface yet) | Phase 9 border routing | API |
+| Host handling | `PassToHost` has extra policy (multicast loop, border-router counters, backbone) | `RxOutcome::forward_host` only reflects `DetermineAction` | No host interface yet | API |
+| MPL timing and Trickle | Proactive forwarding with a custom random schedule (`GenerateNextTransmissionTime`, 64 ms window, router: 2 total transmissions, child: 0); **no RFC 6206 Trickle** | Same algorithm and constants, as deadlines on `Instant`; `opentrust_core::trickle` is deliberately not used because OpenThread does not use Trickle for MPL | Interop with OpenThread's observable retransmissions | none |
+| MPL randomness | `Random::NonCrypto::GetUint8InRange` | `Rng::next_u32() % interval` with the caller's RNG (bias < 2^-24) | Deterministic tests | none |
+| MPL seed lifetime tick | `TimeTicker` (shared 1 s tick) | Own 1 s deadline chain started at the first seed insertion | Sans-IO | none |
+| MPL sleepy-child copy | `PrepareMulticastToLargerThanRealmLocal` clones the datagram for sleepy children that subscribed | Not done in `Ip6::send`; `DetermineAction` honours `has_sleepy_child_with_address` for received datagrams only | Child table is Phase 7 | API |
+| Datagram size | `kMaxDatagramLength` 1280 and optional IP fragmentation | 1280 hard limit (`Error::NoBufs`) | Same default | none |
+| UDP checksum | `VerifyMessageChecksum` | Verified in `Ip6::handle` (UDP: zero checksum and length mismatches dropped as OT does); `UdpSockets` re-checks the length | Defensive | none |
+| UDP delivery rules | Socket list with head insertion; first match wins; multicast matches any socket on the port | Same matching rules; among overlapping matches the most recently opened socket wins (same effect as head insertion) | — | none |
+| UDP bind conflicts | Platform bind decides; the internal list accepts duplicates | Explicit `Error::Already` for overlapping address/port bindings; internal receivers' ports cannot be bound | Predictable socket API for `edge-nal` | stricter |
+| Ephemeral port | `GetEphemeralPort` skips TMF and SRP-server ports | Same, and also skips ports already bound | Avoid collisions without a platform bind | none |
+| UDP receive queue | Callback per datagram | Bounded per-socket queue (`Q` packets of `BUF` bytes); overflow counted and dropped; longer payloads truncated with a flag | Async facade pulls data | API |
+| ICMPv6 error generation | `Icmp::SendError` quotes the IPv6 header only, no limiter; errors only from the mesh forwarder/reassembly | `Ip6::build_error` quotes the IPv6 header only (like OT) and adds RFC 4443 section 2.4 suppression rules (no errors for errors, unspecified/multicast sources, multicast destinations except Packet Too Big/Param Problem code 2) and a token-bucket rate limiter (burst 10, one per 100 ms) | RFC 4443 compliance; OT has no limiter | none |
+| Hop-limit exhaustion | Silent drop (no Time Exceeded) | Same | Matches OT | none |
+| Echo responder | Replies via `SendDatagram` | Reply datagram built into `Scratch`; echo to our own address is not looped back through the reply path | Edge case | none |
+| Source selection | `Ip6::SelectSourceAddress` | Same rules, including the RLOC rule; ALOCs are skipped before the "same address" rule as in OT | — | none |
+| Address scope | `Address::GetScope`; mesh-local addresses get a realm-local scope override | Same | — | none |
+| Multicast API errors | `kErrorRejected` for fixed/non-external groups | `Error::InvalidArgs` (no `Rejected` in the shared error type) | Error set | API |
+| All-Thread-nodes groups | Subscribed by MLE when the mesh-local prefix changes | `Netif::set_mesh_local_prefix` (re)subscribes `ff32:40:<mlp>::1` and `ff33:40:<mlp>::1` itself | Keeps prefix-derived state consistent in one place | none |
+| SLAAC IID | SHA-256(prefix, "wpan", DAD counter, 32-byte secret); Network_ID not used; secret persisted in settings | Same, with an optional RFC 7217 Network_ID (`None` = OT-compatible); secret is a caller argument | Persistence is the caller's | none |
+| SLAAC manager | Reads Network Data, filter callback, notifier events | Takes the on-mesh prefix list as input (`OnMeshPrefix`), filter as `fn` pointer, 1 s deadlines instead of the time ticker | Network Data is Phase 7 | API |
+| SLAAC context ID tracking | Updates the 6LoWPAN context ID per address and notifies MLE | Not tracked | Phase 7 | API |
+| Address resolver API | Calls `MeshForwarder::HandleResolved`, sends TMF directly | Emits `ResolverEvent`s (send query/error, resolved/failed) to a caller sink; replies to `/a/aq` are decided by `address_query_response` | CoAP/TMF are Phase 5/7 | API |
+| Address resolver lists | Four intrusive linked lists | One entry array with a state and an insertion counter (same eviction order and capacities) | No alloc, no pointers | none |
+| Address resolver extras | `ResolveUsingNetDataServices`, Backbone Router queries, DUA, `/a/ae` child handling | Not implemented | Phases 7/9 | API |
+| DHCPv6 | Optional client/server | Not implemented | Legacy; no use case yet | none |

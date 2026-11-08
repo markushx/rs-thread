@@ -95,10 +95,21 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 4 – IPv6 / UDP / ICMPv6 core (§5)
 
-- [ ] Own minimal IPv6 stack, modeled on OpenThread's `src/core/net` (which has its own IPv6/UDP/ICMPv6/MPL stack); `smoltcp` lacks Thread specifics (RLOC/ALOC, MPL, mesh-local scoping) and only re-evaluate if it saves real effort: addresses (link-local, ML-EID, RLOC, ALOC, GUA/SLAAC), multicast subscriptions, MPL (RFC 7731) for realm-local multicast
-- [ ] UDP sockets API, ICMPv6 echo, errors
-- [ ] Address resolution: Address Query/Notification/Error (`/a/aq`, `/a/an`, `/a/ae`), EID-to-RLOC cache (§5.x)
-- [ ] DHCPv6 / SLAAC (as needed for BR prefixes), DUA (§5.x, 1.2)
+- [x] Own minimal IPv6 stack in `opentrust-net`, modeled on OpenThread's `src/core/net` (`smoltcp` lacks Thread specifics: RLOC/ALOC, MPL, mesh-local scoping): fixed + extension headers (Hop-by-Hop/MPL/padding, Fragment, Routing/Destination skip), pseudo-header checksum, ICMPv6 builders (`header`, `checksum`, `icmp6`)
+- [x] Addresses (`addr`, `netif`, `slaac`): link-local, ML-EID, RLOC, ALOCs, GUA/OMR via SLAAC (RFC 7217 IIDs as OT, deprecation timer), unicast/multicast tables with fixed/internal/external subscriptions, Thread all-nodes/routers/MPL-forwarders and the mesh-local-derived all-Thread-nodes groups, RFC 6724-subset source selection
+- [x] Sans-IO IPv6 core (`ip6::Ip6`): receive path (validate, receive/forward-to-Thread/forward-to-host decision with `Ip6Env` hooks, extension headers, IPv6-in-IPv6 tunnel, checksum verification, hop limit, ICMPv6/TMF forward filters), send path (source selection, MPL option insertion, tunnelling of larger-scope multicast, loopback), ICMPv6 echo responder and rate-limited error builder
+- [x] MPL (RFC 7731) as OpenThread implements it (`mpl`): seed set, buffered retransmissions with jittered deadlines, duplicate suppression, seed ID from RLOC16
+- [x] UDP sockets (`udp`): fixed-capacity socket table, bind/connect/ephemeral ports 49152-65535 (OT rules), bounded receive queues with per-packet metadata, internal receiver hooks for MLE (19788) and TMF (61631); mapping to the Phase 10 `edge-nal` facade documented in the module
+- [x] Address resolution data structures (`resolver`): EID-to-RLOC cache with OT's cached/snooped/query/query-retry states, timeouts, exponential retry delay and ramp-down, eviction order, snooping, notification and duplicate-address decisions, address-query/-error decision helpers
+  - [ ] TMF messages `/a/aq`, `/a/an`, `/a/ae` (CoAP encoding, TLVs, sending, ACKs) wired to `resolver::ResolverEvent` (Phase 5 for CoAP/TMF, Phase 7 for the router-side child lookup)
+  - [ ] Mesh forwarder glue: hold datagrams while an EID resolves, `HandleResolved`, ICMPv6 destination-unreachable on no route/resolution failure, snooping from forwarded frames (Phase 6/7; the data structures and `Ip6::build_error` exist)
+  - [ ] Network Data providers for `Ip6Env` (`route_lookup`, `is_on_mesh`) and for SLAAC (`OnMeshPrefix` list) (Phase 7)
+  - [ ] Persisted SLAAC IID secret key in settings (Phase 6 settings wiring; the key is a caller argument)
+- [ ] DHCPv6 address allocation (OT `Dhcp6Client`/`Dhcp6Server`, legacy; only if a use case needs it)
+- [ ] Domain Unicast Address (DUA, Thread 1.2, `/n/dr`, `/b/bq`, `/b/bb`, duplicate DUA handling in `/a/ae`) -> Phase 9
+- [ ] Multicast Listener Registration (MLR, `/n/mr`) for subscribed multicast groups -> Phase 9
+- [ ] IPv6 fragmentation/reassembly above the 6LoWPAN layer (OT `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`, off by default; not needed for 1280-byte Thread datagrams)
+- [ ] Host (border router) interface: `RemoveMplOption` before passing to host, host-origin multicast policy (Phase 9, border routing)
 
 ## Phase 5 – CoAP / CoAPS
 

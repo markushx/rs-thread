@@ -210,7 +210,7 @@ pub struct RxOutcome {
     /// on the Thread network (sleepy children).
     pub inner_forward_thread: bool,
     /// Length of a reply datagram (ICMPv6 echo reply) in
-    /// [`Scratch::reply`]; transmit it on the Thread network.
+    /// the scratch reply buffer (see [`RxOutcome::reply`]); transmit it on the Thread network.
     pub reply_len: Option<usize>,
 }
 

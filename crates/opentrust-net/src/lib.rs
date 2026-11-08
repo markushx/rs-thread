@@ -14,6 +14,26 @@
 //! - [`udp`]: UDP socket table and internal receiver hooks.
 //! - [`icmp6`]: ICMPv6 message types and builders.
 //!
+//! # Data flow
+//!
+//! The crate is sans-IO and allocation-free. Everything is driven by the
+//! caller with `now: Instant`, a random source and byte slices:
+//!
+//! ```text
+//!  6LoWPAN reassembler --datagram--> Ip6::handle --> RxOutcome
+//!                                       |               |- deliver  -> UdpSockets::handle_datagram / ICMPv6 handlers
+//!                                       |               |- forward_thread -> mesh forwarder (hop limit already decremented)
+//!                                       |               |- forward_host   -> host interface
+//!                                       |               `- reply (echo)    -> mesh forwarder
+//!  UdpSockets::build_send --> Ip6::send --> datagram for the mesh forwarder (+ local loopback delivery)
+//!  Ip6::next_deadline / Ip6::poll          MPL retransmissions
+//!  AddressResolver::{resolve, poll}        EID -> RLOC16 (events drive TMF in Phase 5/7)
+//! ```
+//!
+//! Questions only other layers can answer (role, Network Data routes,
+//! sleepy children, router table next hops) are traits: [`ip6::Ip6Env`],
+//! [`resolver::ResolverEnv`], [`resolver::ChildLookup`].
+//!
 //! Behaviour follows OpenThread's `src/core/net`; deviations are listed in
 //! `OPENTRUST-OPENTHREAD-DIFFERENCES.md` ("Network layer (IPv6)").
 
