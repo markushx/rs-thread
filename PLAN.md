@@ -214,6 +214,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] API docs, architecture doc, porting guide for new platforms
 - [ ] Release crates to crates.io
 
+## Phase 14 – Cleanup
+
+- [ ] Full code review
+- [ ] Remove mention of PLAN phases from code and comments
+
 ## Milestones
 
 1. **M1 – Codecs**: MAC + 6LoWPAN + MLE TLVs + crypto, verified by OT vectors and differential tests
