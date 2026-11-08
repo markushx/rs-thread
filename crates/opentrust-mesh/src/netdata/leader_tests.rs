@@ -445,3 +445,32 @@ fn stable_copy_of_leader_data_masks_rlocs() {
     let m = l.copy_to(false, &mut out).unwrap();
     assert_eq!(&out[..m], l.data().as_bytes());
 }
+
+#[test]
+fn commissioning_data_set_replace_remove() {
+    let mut l = Leader::<256>::new();
+    l.start(3, 7);
+    let ch = l.set_commissioning_data(&[9, 2, 0x04, 0x00]).unwrap();
+    assert!(ch.any && !ch.stable);
+    assert_eq!((l.version(), l.stable_version()), (4, 7));
+    assert_eq!(l.commissioning_data(), Some(&[9, 2, 0x04, 0x00][..]));
+    // The TLV is not stable.
+    let mut out = [0u8; 64];
+    assert_eq!(l.copy_to(true, &mut out).unwrap(), 0);
+    assert_eq!(l.copy_to(false, &mut out).unwrap(), 6);
+    // Replacing keeps other TLVs and moves it last.
+    l.set_commissioning_data(&[11, 2, 0, 5]).unwrap();
+    assert_eq!(l.commissioning_data(), Some(&[11, 2, 0, 5][..]));
+    assert_eq!(l.version(), 5);
+    // Empty removes it.
+    l.set_commissioning_data(&[]).unwrap();
+    assert_eq!(l.commissioning_data(), None);
+    assert_eq!(l.version(), 6);
+    // Too big: unchanged.
+    let big = [0u8; 255];
+    assert!(l.set_commissioning_data(&big).is_err());
+    assert_eq!(l.version(), 6);
+    let ch = l.increment_version_and_stable();
+    assert!(ch.stable);
+    assert_eq!((l.version(), l.stable_version()), (7, 8));
+}

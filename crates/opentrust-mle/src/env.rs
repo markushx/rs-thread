@@ -5,7 +5,7 @@
 //!
 //! The MLE core ([`Mle`](crate::Mle)) is *sans-IO* and owns only MLE state:
 //! role, attach state machine, parent / candidate / children, the outgoing
-//! MLE frame counter, timers (as [`Instant`](opentrust_core::time::Instant) deadlines). Everything that is
+//! MLE frame counter, timers (as [`Instant`] deadlines). Everything that is
 //! owned elsewhere is reached through the [`MleEnv`] trait, which the caller
 //! implements on a small struct borrowing the pieces (`&mut KeyManager`,
 //! `&mut Mac`, `&mut Netif`, the UDP sink, the settings store, an RNG). The
@@ -33,8 +33,8 @@ use core::net::Ipv6Addr;
 use opentrust_core::Result;
 use opentrust_core::crypto::CryptoBackend;
 use opentrust_core::settings::{ChildInfo, NetworkInfo, ParentInfo};
-use opentrust_core::time::Duration;
-use opentrust_core::types::{ExtAddress, Iid, Prefix64, Rloc16};
+use opentrust_core::time::{Duration, Instant};
+use opentrust_core::types::{ExtAddress, ExtPanId, Iid, Prefix64, Rloc16};
 use opentrust_mac::security::KeyManager;
 
 use crate::tlv::{LeaderData, Timestamp};
@@ -149,9 +149,65 @@ pub enum MleEvent {
         /// Router's RLOC16.
         rloc16: Rloc16,
     },
+    /// An Announce from a network with a newer Active Dataset arrived
+    /// (OT: the device would re-attach there after
+    /// `ANNOUNCE_PROCESS_TIMEOUT`; the Announce attach state is not
+    /// implemented, the caller decides).
+    AnnounceFromNewerNetwork {
+        /// Channel of the announcing network.
+        channel: u8,
+        /// PAN ID of the announcing network.
+        pan_id: u16,
+        /// Its Active Timestamp.
+        timestamp: Timestamp,
+    },
     /// The router table changed (route costs, next hops, ID set): the
     /// routing layer should refresh what it derives from it.
     RouterTableChanged,
+}
+
+/// MAC-level options of an outgoing MLE message (Discovery Request /
+/// Response and Announce are sent on a specific channel / PAN ID; Announce
+/// is protected by link-layer security).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TxOptions {
+    /// Send on this channel instead of the PAN channel (OT
+    /// `Message::SetChannel`).
+    pub channel: Option<u8>,
+    /// Destination PAN ID of the frame (OT `Message::SetPanId`); `None`:
+    /// the current PAN ID.
+    pub pan_id: Option<u16>,
+    /// Protect the datagram with link-layer security as well.
+    pub link_security: bool,
+}
+
+/// A Discovery Request received by a router (Thread 1.4.1 section 4.13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiscoveryRequestInfo {
+    /// Extended address of the sender.
+    pub ext_address: ExtAddress,
+    /// Thread version of the scanner (Discovery Request TLV); 0 if the TLV
+    /// was missing.
+    pub version: u8,
+    /// The scanner is a Joiner.
+    pub joiner: bool,
+    /// Source PAN ID of the frame.
+    pub pan_id: Option<u16>,
+}
+
+/// Where a Discovery Response came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiscoveryResponseInfo {
+    /// Extended address of the responding router.
+    pub ext_address: ExtAddress,
+    /// PAN ID of the frame (the network's PAN ID).
+    pub pan_id: Option<u16>,
+    /// Channel the response was received on.
+    pub channel: Option<u8>,
+    /// RSS in dBm.
+    pub rss: Option<i8>,
+    /// LQI.
+    pub lqi: Option<u8>,
 }
 
 /// Why a REED asks the leader for a router ID (Thread Status TLV values of
@@ -231,7 +287,32 @@ pub trait MleEnv {
     /// [`UdpSink`](opentrust_coap::tmf::UdpSink)).
     fn send(&mut self, src: Ipv6Addr, dst: Ipv6Addr, payload: &[u8]) -> Result<()>;
 
+    /// Like [`send`](Self::send) with MAC-level options (channel, PAN ID,
+    /// link security). Default: the options are ignored.
+    fn send_with(
+        &mut self,
+        _opts: &TxOptions,
+        src: Ipv6Addr,
+        dst: Ipv6Addr,
+        payload: &[u8],
+    ) -> Result<()> {
+        self.send(src, dst, payload)
+    }
+
     // ------------------------------------------------------------ MAC / netif
+
+    /// Current PAN ID (for Announce).
+    fn pan_id(&self) -> u16 {
+        0xffff
+    }
+    /// Current PAN channel (for Announce).
+    fn pan_channel(&self) -> u8 {
+        11
+    }
+    /// Extended PAN ID of the Active Operational Dataset, if any.
+    fn ext_pan_id(&self) -> Option<ExtPanId> {
+        None
+    }
 
     /// Set the MAC short address ([`Rloc16::INVALID`] clears it) and the
     /// RLOC / locator addresses derived from it.
@@ -287,9 +368,10 @@ pub trait MleEnv {
         Ok(0)
     }
     /// Store Network Data received from the parent, together with the
-    /// Leader Data that versions it (parsing is not implemented yet).
+    /// Leader Data that versions it (the core does not parse it).
     fn set_network_data(&mut self, _leader: &LeaderData, _data: &[u8]) {}
-    /// Timestamp of the local Active Operational Dataset.
+    /// Timestamp of the Active Operational Dataset of the network (OT
+    /// `ActiveDatasetManager::GetTimestamp`).
     fn active_timestamp(&self) -> Option<Timestamp> {
         None
     }
@@ -297,20 +379,48 @@ pub trait MleEnv {
     fn pending_timestamp(&self) -> Option<Timestamp> {
         None
     }
-    /// The Active Operational Dataset TLVs for a Child ID Response.
-    fn active_dataset(&self, _out: &mut [u8]) -> Result<usize> {
+    /// The Active Operational Dataset TLVs for a Child ID Response (without
+    /// the Active Timestamp TLV).
+    fn active_dataset(&self, _now: Instant, _out: &mut [u8]) -> Result<usize> {
         Ok(0)
     }
     /// The Pending Operational Dataset TLVs for a Child ID Response.
-    fn pending_dataset(&self, _out: &mut [u8]) -> Result<usize> {
+    fn pending_dataset(&self, _now: Instant, _out: &mut [u8]) -> Result<usize> {
         Ok(0)
     }
     /// Datasets received in a Child ID Response / Data Response.
     fn dataset_received(
         &mut self,
+        _now: Instant,
         _active: Option<(Timestamp, Option<&[u8]>)>,
         _pending: Option<(Timestamp, Option<&[u8]>)>,
     ) {
+    }
+
+    // ------------------------------------------------------------ discovery
+
+    /// A Discovery Request arrived at an eligible router: should it be
+    /// answered? (OT: a Joiner is only answered while Network Data has
+    /// non-empty Steering Data, `IsJoiningAllowed`.) Default: yes.
+    fn accept_discovery_request(&mut self, _info: &DiscoveryRequestInfo) -> bool {
+        true
+    }
+    /// The sub-TLVs of the Thread Discovery TLV of a Discovery Response
+    /// (MeshCoP Discovery Response, Extended PAN ID, Network Name,
+    /// Steering Data, Joiner UDP Port, ...). Default: none, no response is
+    /// sent.
+    fn discovery_response(&mut self, _out: &mut [u8]) -> Result<usize> {
+        Err(opentrust_core::Error::NotImplemented)
+    }
+    /// A Discovery Response arrived (also while the device is disabled):
+    /// `tlvs` are the sub-TLVs of the Thread Discovery TLV.
+    fn discovery_response_received(&mut self, _info: &DiscoveryResponseInfo, _tlvs: &[u8]) {}
+    /// With an Announce from a network whose Active Timestamp is newer:
+    /// should it be ignored because a Pending Dataset with at least that
+    /// Active Timestamp is about to be applied? (OT
+    /// `kAnnounceBackoffForPendingDataset`.) Default: no.
+    fn pending_dataset_applies_soon(&self, _announced: &Timestamp) -> bool {
+        false
     }
 
     // ------------------------------------------------------------ persistence (SettingsStore)

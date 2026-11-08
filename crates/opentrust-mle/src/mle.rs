@@ -30,8 +30,8 @@
 //! - `router`, `router_link`, `advert` (feature `ftd`): the router and
 //!   leader role, router links, Advertisements, partitions (Phase 6c).
 //!
-//! Not part of the MLE core: Announce / Discovery (not implemented yet), the
-//! Address Solicit exchange over TMF (`opentrust-mesh`, hook:
+//! Discovery and Announce transport is in [`crate::discovery`]. Not part of
+//! the MLE core: the Address Solicit exchange over TMF (`opentrust-mesh`, hook:
 //! [`MleEnv::request_router_id`]).
 
 use core::net::Ipv6Addr;
@@ -46,7 +46,7 @@ use crate::attach::AttachCtx;
 use crate::child::ChildCtx;
 use crate::consts::THREAD_VERSION;
 use crate::endpoint::{self, LinkRxInfo, MleRx};
-use crate::env::{MleEnv, MleEvent, Role};
+use crate::env::{MleEnv, MleEvent, Role, TxOptions};
 use crate::message::{Command, MleBuilder};
 use crate::neighbor::{ChildTable, Neighbor, NeighborState, Parent};
 use crate::router_config::RouterConfig;
@@ -130,6 +130,8 @@ pub struct Mle<const C: usize> {
     pub(crate) parent_side: crate::parent::ParentSide,
     #[cfg(feature = "ftd")]
     pub(crate) rtr: crate::router::RouterCtx,
+    #[cfg(feature = "ftd")]
+    pub(crate) discovery_out: heapless::Vec<crate::discovery::DiscoveryOut, 2>,
 }
 
 impl<const C: usize> Mle<C> {
@@ -157,6 +159,8 @@ impl<const C: usize> Mle<C> {
             parent_side: crate::parent::ParentSide::new(),
             #[cfg(feature = "ftd")]
             rtr: crate::router::RouterCtx::new(),
+            #[cfg(feature = "ftd")]
+            discovery_out: heapless::Vec::new(),
         }
     }
 
@@ -349,10 +353,15 @@ impl<const C: usize> Mle<C> {
         .flatten()
         .min();
         #[cfg(feature = "ftd")]
-        let d = [d, self.parent_deadline(), self.router_deadline()]
-            .into_iter()
-            .flatten()
-            .min();
+        let d = [
+            d,
+            self.parent_deadline(),
+            self.router_deadline(),
+            self.discovery_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         d
     }
 
@@ -377,6 +386,7 @@ impl<const C: usize> Mle<C> {
             self.poll_parent(env, now);
             self.poll_router_link(env, now);
             self.poll_advert(env, now);
+            self.poll_discovery(env, now);
             if self.rtr.tick.is_some_and(|t| now >= t) {
                 self.router_tick(env, now);
             }
@@ -398,10 +408,12 @@ impl<const C: usize> Mle<C> {
         payload: &[u8],
         scratch: &mut [u8],
     ) -> Result<Command> {
-        if self.role == Role::Disabled {
+        let rx = MleRx::parse(env.keys(), meta, link, payload, scratch)?;
+        // Discovery Responses are accepted while disabled (a scanner is
+        // not attached).
+        if self.role == Role::Disabled && rx.meta.security.is_some() {
             return Err(Error::InvalidState);
         }
-        let rx = MleRx::parse(env.keys(), meta, link, payload, scratch)?;
         self.handle_rx(env, now, &rx)
     }
 
@@ -415,7 +427,7 @@ impl<const C: usize> Mle<C> {
         rx: &MleRx<'_>,
     ) -> Result<Command> {
         let Some(sec) = rx.meta.security else {
-            return Ok(rx.command);
+            return self.handle_unsecured(env, now, rx);
         };
         if self.role == Role::Disabled {
             return Err(Error::InvalidState);
@@ -441,6 +453,7 @@ impl<const C: usize> Mle<C> {
             Command::ChildUpdateResponse => self.handle_child_update_response(env, now, rx, nb)?,
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
             Command::Advertisement => self.handle_advertisement(env, now, rx, nb)?,
+            Command::Announce => self.handle_announce(env, rx)?,
             #[cfg(feature = "ftd")]
             Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,
             #[cfg(feature = "ftd")]
@@ -621,6 +634,18 @@ impl<const C: usize> Mle<C> {
         c
     }
 
+    /// Like [`send`](Self::send) with MAC-level options.
+    pub(crate) fn send_with<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        dst: Ipv6Addr,
+        cmd: Command,
+        opts: &TxOptions,
+        build: impl FnOnce(&mut TlvWriter<'_>) -> Result<()>,
+    ) -> Result<()> {
+        tx_with(env, &mut self.mle_counter, dst, cmd, opts, build)
+    }
+
     /// Build, secure and send one MLE message to `dst`.
     pub(crate) fn send<E: MleEnv>(
         &mut self,
@@ -670,6 +695,18 @@ pub(crate) fn tx<E: MleEnv>(
     cmd: Command,
     build: impl FnOnce(&mut TlvWriter<'_>) -> Result<()>,
 ) -> Result<()> {
+    tx_with(env, counter, dst, cmd, &TxOptions::default(), build)
+}
+
+/// [`tx`] with MAC-level options.
+pub(crate) fn tx_with<E: MleEnv>(
+    env: &mut E,
+    counter: &mut MleFrameCounter,
+    dst: Ipv6Addr,
+    cmd: Command,
+    opts: &TxOptions,
+    build: impl FnOnce(&mut TlvWriter<'_>) -> Result<()>,
+) -> Result<()> {
     if !endpoint::is_valid_tx_destination(&dst) {
         return Err(Error::InvalidArgs);
     }
@@ -679,5 +716,9 @@ pub(crate) fn tx<E: MleEnv>(
     let len = b.finish();
     let src = ipv6::link_local(&env.ext_address());
     let n = security::secure(env.keys(), counter, &mut buf, len, &src, &dst)?;
-    env.send(src, dst, &buf[..n])
+    if *opts == TxOptions::default() {
+        env.send(src, dst, &buf[..n])
+    } else {
+        env.send_with(opts, src, dst, &buf[..n])
+    }
 }

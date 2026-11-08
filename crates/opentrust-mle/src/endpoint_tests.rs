@@ -154,6 +154,7 @@ fn register_and_full_loopback_through_udp() {
         LinkRxInfo {
             rss: Some(-60),
             lqi: Some(200),
+            ..Default::default()
         },
         payload,
         &mut scratch,
@@ -196,6 +197,7 @@ fn parse_exposes_metadata_and_sender() {
         LinkRxInfo {
             rss: Some(-70),
             lqi: Some(3),
+            ..Default::default()
         },
         payload,
         &mut scratch,

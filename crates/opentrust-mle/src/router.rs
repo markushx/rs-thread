@@ -177,10 +177,31 @@ fn set_next_hop_invalid(r: &mut Router) -> bool {
 impl<const C: usize> Mle<C> {
     // ------------------------------------------------------------ accessors
 
-    /// The device may take the router role (OT `IsRouterEligible`, without
-    /// the security policy).
+    /// The device may take the router role (OT `IsRouterEligible`,
+    /// including the Security Policy, see [`Mle::set_routing_policy`]).
     pub fn is_router_eligible(&self) -> bool {
-        self.cfg.router.eligible && self.is_full_thread_device()
+        self.cfg.router.eligible
+            && self.is_full_thread_device()
+            && self
+                .cfg
+                .router
+                .policy
+                .allows_routers(crate::consts::THREAD_VERSION)
+    }
+
+    /// The Security Policy of the Active Operational Dataset changed
+    /// (OT `HandleNotifierEvents(kEventSecurityPolicyChanged)`): a router or
+    /// leader that is no longer eligible detaches.
+    pub fn set_routing_policy<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: Instant,
+        policy: crate::router_config::RoutingPolicy,
+    ) {
+        self.cfg.router.policy = policy;
+        if self.role.is_router_or_leader() && !self.is_router_eligible() {
+            self.become_detached(env, now);
+        }
     }
 
     /// Change router eligibility. Becoming ineligible while router or

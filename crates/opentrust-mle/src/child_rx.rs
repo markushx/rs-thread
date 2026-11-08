@@ -107,7 +107,7 @@ impl<const C: usize> Mle<C> {
                     env.set_network_data(&leader, nd);
                     env.event(MleEvent::NetworkDataChanged);
                     if active.is_some() || pending.is_some() {
-                        env.dataset_received(active, pending);
+                        env.dataset_received(now, active, pending);
                     }
                 }
                 Err(Error::NotFound) => data_request = true,

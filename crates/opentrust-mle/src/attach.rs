@@ -23,8 +23,9 @@
 //! several candidates, and starts a partition of its own (becomes leader)
 //! when an attach to any partition finds none.
 //!
-//! Deviations from OT: no Announce attach state (Phase 8), no
-//! "reattach with stored Active/Pending dataset" sequence (Phase 8). A
+//! Deviations from OT: no Announce attach state (an Announce from a newer
+//! network only raises an event, see [`crate::discovery`]), no
+//! "reattach with stored Active/Pending dataset" sequence. A
 //! Parent Response is only accepted while Parent Requests are being sent.
 
 use opentrust_core::time::{Duration, Instant};
@@ -320,7 +321,7 @@ impl<const C: usize> Mle<C> {
                         ParentRequestType::ToRoutersAndReeds => PARENT_REQ_SCANMASK_RE_TIMEOUT,
                     };
                 } else {
-                    // No Announce state (Phase 8): the attempt is over.
+                    // No Announce attach state: the attempt is over.
                     self.attach.state = AttachState::Idle;
                     self.attach.candidate = None;
                     self.reattach(env, now);
@@ -675,7 +676,7 @@ impl<const C: usize> Mle<C> {
             Err(Error::NotFound) => None,
             Err(e) => return Err(e),
         };
-        env.dataset_received(active, pending);
+        env.dataset_received(now, active, pending);
 
         let cand = self.attach.candidate.take().ok_or(Error::InvalidState)?;
         // OT SetStateDetached(): leaves the old attachment.

@@ -215,6 +215,35 @@ impl Timestamp {
         })
     }
 
+    /// The timestamp of an MLE Orphan Announce (OT `SetToOrphanAnnounce`):
+    /// zero seconds and ticks, authoritative flag set.
+    pub const ORPHAN_ANNOUNCE: Self = Self {
+        seconds: 0,
+        ticks: 0,
+        authoritative: true,
+    };
+
+    /// OT `IsOrphanAnnounce`.
+    pub fn is_orphan_announce(&self) -> bool {
+        *self == Self::ORPHAN_ANNOUNCE
+    }
+
+    /// OT `Timestamp::Compare`: a present (valid) timestamp is newer than
+    /// an absent one; then seconds, ticks and the authoritative bit decide.
+    pub fn compare(a: Option<&Self>, b: Option<&Self>) -> core::cmp::Ordering {
+        use core::cmp::Ordering;
+        match (a, b) {
+            (None, None) => Ordering::Equal,
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (Some(a), Some(b)) => a
+                .seconds
+                .cmp(&b.seconds)
+                .then(a.ticks.cmp(&b.ticks))
+                .then(a.authoritative.cmp(&b.authoritative)),
+        }
+    }
+
     /// Encode to 8 bytes.
     pub fn to_bytes(&self) -> [u8; 8] {
         let v = (self.seconds & 0xffff_ffff_ffff) << 16

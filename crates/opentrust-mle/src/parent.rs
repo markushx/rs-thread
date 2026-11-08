@@ -733,8 +733,8 @@ impl<const C: usize> Mle<C> {
         let nd_len = env.network_data(!mode.full_network_data(), &mut nd)?;
         let mut active = [0u8; 256];
         let mut pending = [0u8; 256];
-        let active_len = env.active_dataset(&mut active).unwrap_or(0);
-        let pending_len = env.pending_dataset(&mut pending).unwrap_or(0);
+        let active_len = env.active_dataset(now, &mut active).unwrap_or(0);
+        let pending_len = env.pending_dataset(now, &mut pending).unwrap_or(0);
         let route = self.parent_side.info.route64.clone();
         let dst = ipv6::link_local(&ext);
         self.send(env, dst, Command::ChildIdResponse, |w| {
@@ -1203,8 +1203,8 @@ impl<const C: usize> Mle<C> {
         } else {
             0
         };
-        let active_len = env.active_dataset(&mut active).unwrap_or(0);
-        let pending_len = env.pending_dataset(&mut pending).unwrap_or(0);
+        let active_len = env.active_dataset(now, &mut active).unwrap_or(0);
+        let pending_len = env.pending_dataset(now, &mut pending).unwrap_or(0);
         let route = self.parent_side.info.route64.clone();
         self.send(env, rx.meta.src, Command::DataResponse, |w| {
             w.source_address(rloc)?;
