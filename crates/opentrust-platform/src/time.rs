@@ -8,7 +8,7 @@
 //!
 //! - the sans-IO core (`opentrust-core`, `-mac`, ...) never reads a clock; it
 //!   takes `now: Instant` as an argument and returns the next deadline;
-//! - the async facade (`opentrust-embassy`, Phase 10) needs only "what time is
+//! - the async facade (`opentrust-embassy`) needs only "what time is
 //!   it" ([`Clock::now`]) and "wake me at time T" ([`Alarm::wait_until`]),
 //!   which is a few lines to implement over any executor's timer (embassy-time,
 //!   a hardware compare register, tokio, a simulator's virtual clock).

@@ -28,7 +28,7 @@
 //! - [`persist`](crate::persist): `NetworkInfo` / `ParentInfo` / `ChildInfo`
 //!   save and restore.
 //! - `router`, `router_link`, `advert` (feature `ftd`): the router and
-//!   leader role, router links, Advertisements, partitions (Phase 6c).
+//!   leader role, router links, Advertisements, partitions.
 //!
 //! Discovery and Announce transport is in [`crate::discovery`]. Not part of
 //! the MLE core: the Address Solicit exchange over TMF (`opentrust-mesh`, hook:

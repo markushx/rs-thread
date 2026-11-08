@@ -5,7 +5,7 @@
 //!
 //! These are plain data holders with the small invariants OpenThread
 //! encodes in their accessors; the *protocol* (attach, link establishment,
-//! timeouts, routing) lives in the state machines built on top (Phase 6b/6c).
+//! timeouts, routing) lives in the state machines built on top ([`Mle`](crate::Mle)).
 //!
 //! - [`Neighbor`]: what is common to parent, routers and children - address,
 //!   [`NeighborState`], device mode, version, last-heard time, incoming key

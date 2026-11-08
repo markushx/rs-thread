@@ -4,7 +4,7 @@
 //! up to the command dispatch, `Mle::TxMessage::SendTo`).
 //!
 //! No protocol logic lives here; attach, link establishment, routing etc.
-//! are implemented by [`MleHandler`]s in Phase 6b/6c.
+//! are implemented by [`MleHandler`]s (the [`Mle`](crate::Mle) state machine).
 //!
 //! # Receive path
 //!

@@ -17,7 +17,7 @@
 //! SLAAC on-mesh prefix, and deprecates then removes it
 //! [`DEPRECATION_INTERVAL`] after the prefix disappears. Network Data is
 //! supplied by the caller as a slice of [`OnMeshPrefix`], so this module
-//! does not depend on the Phase 7 Network Data store.
+//! does not depend on the Network Data store (`opentrust-mesh`).
 
 use core::net::Ipv6Addr;
 

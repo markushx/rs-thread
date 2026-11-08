@@ -27,7 +27,7 @@
 //!                                       |               `- reply (echo)    -> mesh forwarder
 //!  UdpSockets::build_send --> Ip6::send --> datagram for the mesh forwarder (+ local loopback delivery)
 //!  Ip6::next_deadline / Ip6::poll          MPL retransmissions
-//!  AddressResolver::{resolve, poll}        EID -> RLOC16 (events drive TMF in Phase 5/7)
+//!  AddressResolver::{resolve, poll}        EID -> RLOC16 (events drive TMF in opentrust-mesh)
 //! ```
 //!
 //! Questions only other layers can answer (role, Network Data routes,

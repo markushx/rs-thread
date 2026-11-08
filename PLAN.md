@@ -245,7 +245,7 @@ Open for the security batch (hooks exist, nothing implemented):
 ## Phase 14 – Cleanup
 
 - [ ] Full code review
-- [ ] Remove mention of PLAN phases from code and comments
+- [x] Remove mention of PLAN phases from code and comments (keep it that way for new code)
 - [ ] Check what can/needs to be disabled on embedded devices
 
 ## Milestones

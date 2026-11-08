@@ -11,7 +11,8 @@
 //! ([`Mac::track_enh_ack_probing`](super::Mac::track_enh_ack_probing)); the IE
 //! of the neighbor's enhanced ACKs is then decoded and reported as
 //! [`Event::EnhAckLinkMetrics`](super::Event::EnhAckLinkMetrics). The MLE Link
-//! Metrics Management messages that drive both are Phase 6.
+//! Metrics Management messages that drive both belong to MLE and are not
+//! implemented yet.
 
 use heapless::Vec;
 use opentrust_core::types::{ExtAddress, ShortAddress};

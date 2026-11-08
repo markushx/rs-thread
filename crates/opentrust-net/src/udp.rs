@@ -17,7 +17,7 @@
 //!   port) and writes `[UDP header | payload]`; hand the bytes and the
 //!   returned [`crate::ip6::SendInfo`] to [`crate::ip6::Ip6::send`].
 //!
-//! # Mapping to `edge-nal` (Phase 10 async facade)
+//! # Mapping to `edge-nal` (async facade)
 //!
 //! The facade owns a `UdpSockets` (behind a blocking mutex) next to the
 //! stack and wakes tasks whenever [`UdpSockets::rx_epoch`] changes after a

@@ -222,7 +222,7 @@ fn child_follows_leader_data_changes_announced_by_its_parent() {
     sim.start(1);
     assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
     sim.run(secs(60));
-    // The leader publishes new Network Data (Phase 7 does this via TMF).
+    // The leader publishes new Network Data (opentrust-mesh does this via TMF).
     let mut ld = *sim.nodes[0].mle.leader_data();
     ld.data_version = ld.data_version.wrapping_add(1);
     ld.stable_data_version = ld.stable_data_version.wrapping_add(1);

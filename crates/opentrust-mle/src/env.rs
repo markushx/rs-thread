@@ -9,7 +9,7 @@
 //! owned elsewhere is reached through the [`MleEnv`] trait, which the caller
 //! implements on a small struct borrowing the pieces (`&mut KeyManager`,
 //! `&mut Mac`, `&mut Netif`, the UDP sink, the settings store, an RNG). The
-//! future `Instance` (Phase 10) implements it once for its fields; unit tests
+//! future `Instance` (public API) implements it once for its fields; unit tests
 //! implement it on a plain struct.
 //!
 //! This keeps ownership flat (no `Rc`/`RefCell`, no back-references),

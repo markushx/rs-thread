@@ -2,7 +2,7 @@
 //!
 //! # Seam to the IPv6 layer
 //!
-//! Phase 4 (`opentrust-net`) owns the full IPv6 stack. This module is
+//! `opentrust-net` owns the full IPv6 stack. This module is
 //! deliberately limited to what header compression needs: the fixed IPv6
 //! header, the UDP header and the protocol numbers LOWPAN_NHC knows about.
 //! The 6LoWPAN API otherwise exchanges plain byte slices (an uncompressed

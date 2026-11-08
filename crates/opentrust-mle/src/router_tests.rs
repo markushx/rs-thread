@@ -118,7 +118,7 @@ fn reed_requests_a_router_id_and_becomes_router() {
     assert_eq!(req.previous_router_id, None);
     assert!(sim.nodes[1].mle.is_address_solicit_pending());
 
-    // Phase 7 stand-in: deliver the request to the leader and the grant back.
+    // Stand-in for the TMF Address Solicit: deliver the request to the leader and the grant back.
     let now = sim.now;
     let ext = sim.nodes[1].env.ext;
     let grant = {

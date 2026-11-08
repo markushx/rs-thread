@@ -32,7 +32,7 @@ fn dst() -> Ipv6Addr {
     Ipv6Addr::from(hex::<16>("ff020000000000000000000000000001"))
 }
 
-/// The Phase 1 crypto reference vector (`crypto::tests::mle_message_reference`,
+/// The crypto reference vector (`crypto::tests::mle_message_reference`,
 /// Thread §7.3 / OT `ProcessMessageSecurity`, Python/OpenSSL): network key
 /// 00112233..eeff, key sequence 0, sender fe80::1322:3344:5566:7788,
 /// destination ff02::1, frame counter 1, plaintext `0b 00 01 02`.
