@@ -46,10 +46,15 @@ pub struct Sim {
 impl Sim {
     /// `n` FTD nodes with ext addresses `ext(1)..=ext(n)`, no links.
     pub fn new(n: u8) -> Self {
+        Self::with_modes(&[FTD; MAX_NODES][..usize::from(n)])
+    }
+
+    /// One node per entry of `modes`, ext addresses `ext(1)..`.
+    pub fn with_modes(modes: &[DeviceMode]) -> Self {
         let mut nodes = Vec::new();
-        for i in 1..=n {
+        for (i, mode) in (1u8..).zip(modes) {
             let _ = nodes.push(Node {
-                mle: Mle::new(MleConfig::new(FTD)),
+                mle: Mle::new(MleConfig::new(*mode)),
                 env: TestEnv::new(i),
                 rx: [0; 24],
                 tx: [0; 24],

@@ -203,6 +203,12 @@ impl<const C: usize> Mle<C> {
         &self.children
     }
 
+    /// Mutable child table, for the layers that maintain registered
+    /// addresses (Address Error handling removes a duplicate address).
+    pub fn children_mut(&mut self) -> &mut ChildTable<C> {
+        &mut self.children
+    }
+
     /// `true` while an attach attempt is in progress.
     pub fn is_attaching(&self) -> bool {
         self.attach.is_attaching()

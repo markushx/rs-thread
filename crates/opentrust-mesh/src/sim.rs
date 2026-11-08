@@ -1,7 +1,8 @@
 //! Test-only mesh simulator: the MLE simulator of `opentrust-mle` (links,
-//! deterministic time, MLE message delivery) plus one TMF agent per node.
-//! TMF datagrams travel between nodes over an ideal network (they are
-//! delivered to the node that owns the destination RLOC); frame-level
+//! deterministic time, MLE message delivery) plus one TMF agent, interface
+//! and address cache per node. TMF datagrams travel between nodes over an
+//! ideal network (unicast to the node that owns the destination RLOC,
+//! realm-local all-routers multicast to every router); frame-level
 //! forwarding is tested separately.
 
 #![allow(dead_code, missing_debug_implementations)]
@@ -11,20 +12,27 @@ extern crate std;
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Vec;
+use opentrust_coap::endpoint::Request;
 use opentrust_coap::tmf::{Agent, Handler, Responder, TmfEnv, TmfRx, UdpSink};
 use opentrust_coap::uri::Uri;
 use opentrust_core::Result;
 use opentrust_core::time::{Duration, Instant};
-use opentrust_core::types::Prefix64;
+use opentrust_core::types::{Prefix64, Rloc16, ipv6};
 use opentrust_mle::env::MleEnv;
 use opentrust_mle::sim::Sim;
 use opentrust_mle::test_support::MLP;
+use opentrust_mle::tlv::DeviceMode;
+use opentrust_mle::{Mle, Role};
 use opentrust_net::ip6::SendInfo;
+use opentrust_net::netif::Netif;
+use opentrust_net::resolver::{AddressResolver, Resolution, ResolverEnv, ResolverEvent};
 use opentrust_net::udp::UdpMeta;
 
+use crate::address::{self, AddressAction};
 use crate::router_id::{self, RouterIdOutbox};
 
 pub type TmfAgent = Agent<4, 16, 4, 256>;
+pub type SimNetif = Netif<8, 4>;
 
 pub struct Datagram {
     pub src: Option<Ipv6Addr>,
@@ -80,13 +88,41 @@ impl TmfEnv for MlTmfEnv {
     }
 }
 
+/// Routing answers for the address cache.
+pub struct SimResolverEnv<'a>(pub &'a Mle<4>);
+
+impl ResolverEnv for SimResolverEnv<'_> {
+    fn has_route_to(&self, rloc16: Rloc16) -> bool {
+        self.0.next_hop_and_path_cost(rloc16).0.is_some()
+    }
+    fn is_ftd(&self) -> bool {
+        true
+    }
+    fn is_own_rloc16(&self, rloc16: Rloc16) -> bool {
+        self.0.rloc16() == rloc16
+    }
+    fn is_minimal_child(&self, rloc16: Rloc16) -> bool {
+        use opentrust_mle::neighbor::StateFilter;
+        self.0
+            .children()
+            .find_by_rloc(rloc16, StateFilter::Valid)
+            .is_some_and(|c| !c.neighbor.mode.full_thread_device())
+    }
+}
+
 pub struct TmfNode {
     pub agent: TmfAgent,
     pub outbox: RouterIdOutbox,
     pub sink: Sink,
     pub rng: XRng,
+    pub netif: SimNetif,
+    pub resolver: AddressResolver<8>,
     /// Requests received, by URI id.
     pub rx: std::collections::BTreeMap<u16, u32>,
+    /// `Resolved` / `ResolutionFailed` events, for the tests.
+    pub resolved: std::vec::Vec<ResolverEvent>,
+    /// Addresses removed after an Address Error.
+    pub errors_seen: u32,
 }
 
 pub struct MeshSim {
@@ -97,28 +133,54 @@ pub struct MeshSim {
     next_mid: u16,
 }
 
-/// The TMF handler of one node: the router ID exchange.
+/// The TMF handler of one node.
 struct NodeHandler<'a> {
-    node: &'a mut opentrust_mle::test_support::TestEnv,
-    mle: &'a mut opentrust_mle::Mle<4>,
+    env: &'a mut opentrust_mle::test_support::TestEnv,
+    mle: &'a mut Mle<4>,
     now: Instant,
     rx: &'a mut std::collections::BTreeMap<u16, u32>,
+    netif: &'a mut SimNetif,
+    resolver: &'a mut AddressResolver<8>,
+    actions: std::vec::Vec<AddressAction>,
+    events: std::vec::Vec<ResolverEvent>,
+    errors_seen: &'a mut u32,
 }
 
 impl Handler for NodeHandler<'_> {
-    fn handle(
-        &mut self,
-        uri: Uri,
-        req: &opentrust_coap::endpoint::Request<'_>,
-        rsp: &mut dyn Responder,
-    ) {
+    fn handle(&mut self, uri: Uri, req: &Request<'_>, rsp: &mut dyn Responder) {
         *self.rx.entry(uri.id()).or_default() += 1;
+        let iid = ipv6::iid(&self.env.ml_eid());
         match uri {
             Uri::AddressSolicit => {
-                router_id::handle_address_solicit(self.mle, self.node, self.now, req, rsp);
+                if let Some(h) =
+                    router_id::handle_address_solicit(self.mle, self.env, self.now, req, rsp)
+                    && let Some(old) = h.stale_rloc16
+                {
+                    self.resolver.remove_entries_for_rloc16(old);
+                }
             }
             Uri::AddressRelease => {
-                router_id::handle_address_release(self.mle, self.node, self.now, req, rsp);
+                router_id::handle_address_release(self.mle, self.env, self.now, req, rsp);
+            }
+            Uri::AddressQuery => {
+                if let Some(a) =
+                    address::handle_address_query(self.netif, self.mle, &iid, self.now, req)
+                {
+                    self.actions.push(a);
+                }
+            }
+            Uri::AddressNotify => {
+                let events = &mut self.events;
+                address::handle_address_notify(self.resolver, self.now, req, rsp, &mut |e| {
+                    events.push(e)
+                });
+            }
+            Uri::AddressError => {
+                match address::handle_address_error(self.netif, self.mle, &iid, req, rsp) {
+                    address::AddressErrorOutcome::Ignored => {}
+                    address::AddressErrorOutcome::AddressRemoved => *self.errors_seen += 1,
+                    address::AddressErrorOutcome::ChildAddressRemoved(a) => self.actions.push(a),
+                }
             }
             _ => {}
         }
@@ -127,8 +189,12 @@ impl Handler for NodeHandler<'_> {
 
 impl MeshSim {
     pub fn new(n: u8) -> Self {
-        let sim = Sim::new(n);
-        let tmf = (0..n)
+        Self::with_modes(&[DeviceMode::new(true, true, true); 5][..usize::from(n)])
+    }
+
+    pub fn with_modes(modes: &[DeviceMode]) -> Self {
+        let sim = Sim::with_modes(modes);
+        let tmf = (0..modes.len() as u8)
             .map(|i| {
                 let mut agent = TmfAgent::new(0x100 * u16::from(i + 1));
                 for u in [
@@ -145,7 +211,11 @@ impl MeshSim {
                     outbox: RouterIdOutbox::new(),
                     sink: Sink::default(),
                     rng: XRng(0x1357_9bdf ^ u64::from(i + 1)),
+                    netif: SimNetif::new(),
+                    resolver: AddressResolver::new(),
                     rx: Default::default(),
+                    resolved: std::vec::Vec::new(),
+                    errors_seen: 0,
                 }
             })
             .collect();
@@ -171,11 +241,59 @@ impl MeshSim {
         MLP.rloc(self.sim.nodes[i].mle.rloc16())
     }
 
+    pub fn ml_eid(&self, i: usize) -> Ipv6Addr {
+        self.sim.nodes[i].env.ml_eid()
+    }
+
+    /// Bring the interface of node `i` in line with the MLE state.
+    fn sync_netif(&mut self, i: usize) {
+        let n = &self.sim.nodes[i];
+        let nif = &mut self.tmf[i].netif;
+        let _ = nif.set_mesh_local_prefix(MLP);
+        let _ = nif.set_mesh_local_eid(&ipv6::iid(&n.env.ml_eid()));
+        let r = n.mle.rloc16();
+        let _ = nif.set_rloc16((r != Rloc16::INVALID).then_some(r));
+    }
+
     fn owner_of(&self, dst: &Ipv6Addr) -> Option<usize> {
         (0..self.sim.nodes.len()).find(|&i| {
             let n = &self.sim.nodes[i];
-            n.mle.rloc16() != opentrust_core::types::Rloc16::INVALID && self.rloc(i) == *dst
+            n.mle.rloc16() != Rloc16::INVALID && self.rloc(i) == *dst
         })
+    }
+
+    /// Start resolving `eid` at node `i` (queries allowed).
+    pub fn resolve(&mut self, i: usize, eid: &Ipv6Addr) -> opentrust_core::Result<Resolution> {
+        self.sync_netif(i);
+        let now = self.sim.now;
+        let mut ev = std::vec::Vec::new();
+        let n = &self.sim.nodes[i];
+        let t = &mut self.tmf[i];
+        let r = t
+            .resolver
+            .resolve(now, eid, true, &SimResolverEnv(&n.mle), &mut |e| ev.push(e));
+        self.handle_events(i, ev);
+        r
+    }
+
+    fn handle_events(&mut self, i: usize, events: std::vec::Vec<ResolverEvent>) {
+        let now = self.sim.now;
+        let n = &self.sim.nodes[i];
+        let t = &mut self.tmf[i];
+        for e in events {
+            if let Some(p) = address::send_resolver_event(
+                e,
+                &mut t.resolver,
+                &mut t.agent,
+                now,
+                &mut t.rng,
+                &mut t.sink,
+                n.mle.rloc16(),
+                &n.env,
+            ) {
+                t.resolved.push(p);
+            }
+        }
     }
 
     /// Move TMF requests out of the cores into the agents and deliver
@@ -213,18 +331,36 @@ impl MeshSim {
                         n.mle.address_solicit_reply(&mut n.env, now, r);
                     }
                 }
+                // Address cache timers.
+                let mut ev = std::vec::Vec::new();
+                t.resolver.poll(now, &mut |e| ev.push(e));
+                if !ev.is_empty() {
+                    moved = true;
+                    self.handle_events(i, ev);
+                }
             }
             for i in 0..self.tmf.len() {
                 let out = core::mem::take(&mut self.tmf[i].sink.out);
                 for d in out {
                     moved = true;
+                    let src = d.src.unwrap_or_else(|| self.rloc(i));
+                    if d.dst.is_multicast() {
+                        for j in 0..self.tmf.len() {
+                            if j != i
+                                && self.sim.nodes[j].mle.role().is_router_or_leader()
+                                && !self.blocked.contains(&(i, j))
+                            {
+                                self.deliver(j, src, &d);
+                            }
+                        }
+                        continue;
+                    }
                     let Some(dst) = self.owner_of(&d.dst) else {
                         continue;
                     };
                     if self.blocked.contains(&(i, dst)) {
                         continue;
                     }
-                    let src = d.src.unwrap_or_else(|| self.rloc(i));
                     self.deliver(dst, src, &d);
                 }
             }
@@ -236,6 +372,7 @@ impl MeshSim {
     }
 
     fn deliver(&mut self, to: usize, src: Ipv6Addr, d: &Datagram) {
+        self.sync_netif(to);
         let now = self.sim.now;
         let meta = UdpMeta {
             peer: SocketAddrV6::new(src, 61631, 0, 0),
@@ -248,14 +385,21 @@ impl MeshSim {
         let t = &mut self.tmf[to];
         let env = MlTmfEnv(n.env.mesh_local_prefix());
         let mut h = NodeHandler {
-            node: &mut n.env,
+            env: &mut n.env,
             mle: &mut n.mle,
             now,
             rx: &mut t.rx,
+            netif: &mut t.netif,
+            resolver: &mut t.resolver,
+            actions: std::vec::Vec::new(),
+            events: std::vec::Vec::new(),
+            errors_seen: &mut t.errors_seen,
         };
         let r = t
             .agent
             .handle_dispatch(now, &mut t.sink, &env, &meta, &d.payload, &mut h);
+        let actions = core::mem::take(&mut h.actions);
+        let events = core::mem::take(&mut h.events);
         match r {
             TmfRx::Response { user, msg, .. } => {
                 if let Some(rep) = router_id::client_response(user, &msg) {
@@ -269,6 +413,20 @@ impl MeshSim {
             }
             _ => {}
         }
+        for a in actions {
+            let n = &self.sim.nodes[to];
+            let t = &mut self.tmf[to];
+            let _ = address::send_action(
+                &mut t.agent,
+                now,
+                &mut t.rng,
+                &mut t.sink,
+                n.mle.rloc16(),
+                &n.env,
+                &a,
+            );
+        }
+        self.handle_events(to, events);
     }
 
     /// Send a hand-made CoAP request from node `from` to node `to`'s RLOC
@@ -303,10 +461,39 @@ impl MeshSim {
         Some((msg.code(), msg.payload().to_vec()))
     }
 
+    /// Like [`MeshSim::raw_request`] but deliver whatever the receiver
+    /// sends in turn (answers, follow-up messages).
+    pub fn inject(
+        &mut self,
+        from: usize,
+        to: usize,
+        path: &str,
+        ty: opentrust_coap::message::Type,
+        code: opentrust_coap::message::Code,
+        payload: &[u8],
+    ) {
+        use opentrust_coap::message::MessageBuilder;
+        let mut b = [0u8; 256];
+        self.next_mid += 1;
+        let mut m = MessageBuilder::new(&mut b, ty, code, self.next_mid, &[0xcd]).unwrap();
+        m.uri_path(path).unwrap();
+        let n = m.finish_with_payload(payload).unwrap();
+        let d = Datagram {
+            src: None,
+            dst: self.rloc(to),
+            dst_port: 61631,
+            payload: Vec::from_slice(&b[..n]).unwrap(),
+        };
+        let src = self.rloc(from);
+        self.deliver(to, src, &d);
+        self.pump();
+    }
+
     fn next_tmf_deadline(&self) -> Option<Instant> {
         self.tmf
             .iter()
-            .filter_map(|t| t.agent.next_deadline())
+            .flat_map(|t| [t.agent.next_deadline(), t.resolver.next_deadline()])
+            .flatten()
             .min()
     }
 
@@ -316,10 +503,10 @@ impl MeshSim {
         loop {
             let step = (self.sim.now + Duration::from_millis(50)).min(end);
             let mut t = step;
-            if let Some(x) = self.next_tmf_deadline() {
-                if x > self.sim.now {
-                    t = t.min(x);
-                }
+            if let Some(x) = self.next_tmf_deadline()
+                && x > self.sim.now
+            {
+                t = t.min(x);
             }
             self.sim.run(t - self.sim.now);
             self.pump();
@@ -338,5 +525,10 @@ impl MeshSim {
             self.run(Duration::from_millis(100));
         }
         f(self)
+    }
+
+    /// Roles of all nodes, for assertion messages.
+    pub fn roles(&self) -> std::vec::Vec<Role> {
+        self.sim.nodes.iter().map(|n| n.mle.role()).collect()
     }
 }
