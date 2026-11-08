@@ -442,6 +442,7 @@ impl<const C: usize> Mle<C> {
         let reg = rx.tlvs.address_registration()?;
         let ml = env.mesh_local_prefix();
         child.clear_addresses();
+        child.set_ml_eid_iid(None);
         let mut stored = 0;
         for e in reg {
             let addr: Ipv6Addr = match e? {

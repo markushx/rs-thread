@@ -16,12 +16,12 @@ use crate::test_support::{MLP, Out, TestEnv, ll};
 use crate::tlv::{Connectivity, DeviceMode, LeaderData, ParentPriority, ty};
 use opentrust_core::settings::ChildInfo;
 
-const ROUTER_RLOC: Rloc16 = Rloc16(0x0400);
-const FTD: DeviceMode = DeviceMode::new(true, true, true);
+pub(crate) const ROUTER_RLOC: Rloc16 = Rloc16(0x0400);
+pub(crate) const FTD: DeviceMode = DeviceMode::new(true, true, true);
 const RX_ON: DeviceMode = DeviceMode::new(true, false, true);
 const SLEEPY: DeviceMode = DeviceMode::new(false, false, false);
 
-fn leader() -> LeaderData {
+pub(crate) fn leader() -> LeaderData {
     LeaderData {
         partition_id: 0x1122_3344,
         weighting: 64,
@@ -31,7 +31,7 @@ fn leader() -> LeaderData {
     }
 }
 
-fn router() -> (Mle<4>, TestEnv) {
+pub(crate) fn router() -> (Mle<4>, TestEnv) {
     let mut env = TestEnv::new(10);
     env.provided_nd = Vec::from_slice(&[0xaa, 0xbb, 0xcc]).unwrap();
     let mut mle: Mle<4> = Mle::new(MleConfig::new(FTD));

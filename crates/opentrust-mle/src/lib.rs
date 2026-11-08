@@ -35,6 +35,8 @@ mod attach_tests;
 #[cfg(test)]
 mod child_tests;
 #[cfg(all(test, feature = "ftd"))]
+mod e2e_tests;
+#[cfg(all(test, feature = "ftd"))]
 mod parent_tests;
 #[cfg(test)]
 mod persist_tests;
