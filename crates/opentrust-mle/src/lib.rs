@@ -17,8 +17,14 @@
 //! re-attach. It reaches the key manager, MAC, netif, settings and network
 //! through the [`MleEnv`] trait (see the [`env`](mod@env) module for the design) and is driven
 //! by [`Mle::receive`] and [`Mle::poll`] / [`Mle::next_deadline`].
-//! Router links, Advertisements, partitions and the router role are Phase
-//! 6c.
+//!
+//! Phase 6c adds, behind feature `ftd`, the router and leader role: leader
+//! start and the Disabled -> Detached -> Child (REED) -> Router -> Leader
+//! state machine (`router`), router links with Link Request / Accept
+//! (`router_link`), Advertisements on a Trickle timer with route cost
+//! propagation (`advert`) and partitions (comparison, merge, leader loss).
+//! The Address Solicit exchange with the leader is the one thing left to
+//! Phase 7 (TMF): see [`MleEnv::request_router_id`].
 
 #[cfg(feature = "ftd")]
 mod advert;
@@ -55,6 +61,8 @@ mod attach_tests;
 mod child_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod mesh_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod parent_tests;
 #[cfg(all(test, feature = "ftd"))]
