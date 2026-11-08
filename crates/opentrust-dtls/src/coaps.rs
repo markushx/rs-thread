@@ -201,6 +201,21 @@ where
         let r = self
             .session
             .handle_datagram(now, &mut self.rng, record, plaintext);
+        if let Ok(rx) = r {
+            // Process the remaining records (handshake, alerts); further
+            // application records are dropped (one plaintext per call).
+            let mut rest = &record[rx.consumed..];
+            let mut scratch = [0u8; MAX_CONTENT_LEN];
+            while !rest.is_empty() {
+                match self
+                    .session
+                    .handle_datagram(now, &mut self.rng, rest, &mut scratch)
+                {
+                    Ok(more) => rest = &rest[more.consumed..],
+                    Err(_) => break,
+                }
+            }
+        }
         let f = self.flush();
         let app = r?.app_data;
         f?;
@@ -444,6 +459,25 @@ mod tests {
             n.agent.decrypt(n.now, &AGENT_PEER, &d, &mut pt),
             Err(Error::InvalidArgs)
         );
+    }
+
+    #[test]
+    fn coaps_close_notify_after_app_data_in_one_datagram() {
+        let mut n = Net::new(b"J01NME", b"J01NME");
+        n.pump(|_, _| true);
+        let opts = SendOpts::default();
+        n.joiner.send(&AGENT_PEER, &opts, b"first").unwrap();
+        n.joiner.send(&AGENT_PEER, &opts, b"second").unwrap();
+        n.joiner.close(&AGENT_PEER);
+        let d: Vec<u8> = n.joiner.udp_mut().sent.concat();
+        let mut pt = [0u8; 64];
+        assert_eq!(
+            n.agent.decrypt(n.now, &JOINER_PEER, &d, &mut pt).unwrap(),
+            Some(5)
+        );
+        assert_eq!(&pt[..5], b"first");
+        // "second" is dropped, but the trailing close_notify is processed.
+        assert_eq!(n.agent.state(), State::Closed(CloseReason::Peer));
     }
 
     #[test]

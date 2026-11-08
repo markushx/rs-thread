@@ -24,7 +24,7 @@ Keep this file up to date with every change that deviates from OpenThread.
 | Clock / alarm | `otPlatAlarmMilli*` / `otPlatAlarmMicro*` | Own `Clock` / async `Alarm` traits; `embassy-time` adapter belongs in `opentrust-embassy` | Keep platform crate free of embassy-time driver choices | API |
 | Entropy | `otPlatEntropyGet` | `rand_core::CryptoRng` (0.10) | Same type as rs-matter / esp-rs openthread | API |
 | Logging | `otLog*` | `opentrust_core::{trace,debug,info,warn,error}!` → `defmt` or `log` | Embedded Rust conventions | none |
-| DTLS / EC-JPAKE | mbedTLS | Rust EC-JPAKE on RustCrypto `p256` + minimal sans-IO DTLS 1.2 (ADR 0001); mbedTLS only as test oracle | No heap, no C toolchain, no `unsafe` | none (planned, Phase 5b; `opentrust-coap` already has the `SecureTransport` seam) |
+| DTLS / EC-JPAKE | mbedTLS | Rust EC-JPAKE on RustCrypto `p256` (`opentrust_core::crypto::ecjpake`) + minimal sans-IO DTLS 1.2 (`opentrust-dtls`, ADR 0001); mbedTLS only as test oracle. Details in "DTLS / EC-JPAKE" below | No heap, no C toolchain, no `unsafe` | none (byte-compatible with mbedTLS 3.6; see below) |
 
 ## Core (`opentrust-core`)
 
@@ -176,5 +176,40 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | TMF link security | Not in the TMF filter (mesh forwarder drops unsecured frames) | `Agent::require_link_security` (default on) drops datagrams without link-layer security | Defence in depth | stricter |
 | TMF default priority | `NewPriorityResponseMessage` per handler | `Agent::response_priority` (default net), per-request priority for `post` | | none |
 | URI list | `uri_paths.cpp`, 40 entries | `Uri` enum, same paths in the same sorted order (test) | | none |
-| CoAPS | `SecureAgent` on mbedTLS | `SecureTransport` trait seam; DTLS/EC-JPAKE is Phase 5b | | none (planned) |
+| CoAPS | `SecureAgent` on mbedTLS | `SecureTransport` trait seam, implemented by `opentrust_dtls::coaps::Coaps` (see "DTLS / EC-JPAKE") | | none |
 | Test oracle | OT has no CoAP unit tests | Dev-only differential tests against `coap-lite` (random messages encode byte-identically and parse identically both ways); the production codec stays no-alloc | | none |
+
+## DTLS / EC-JPAKE (`opentrust_core::crypto::ecjpake`, `opentrust-dtls`)
+
+Reference: mbedTLS 3.6.0 as configured by OpenThread
+(`third_party/mbedtls/mbedtls-config.h`, `src/core/meshcop/secure_transport.cpp`).
+Interop was checked manually against mbedTLS 3.6.0 `ssl_server2` /
+`ssl_client2` (default config + `MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED`):
+both roles, cookies, fragmented flights, identical KEK, wrong password.
+
+| Area | OpenThread (mbedTLS) | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Implementation | mbedTLS `ecjpake.c` + `ssl_*.c`, heap-allocated contexts | `EcJpake<C: P256>` (port of `ecjpake.c`, `SoftP256` on RustCrypto `p256`) + `Session<B, C>` with fixed buffers (about 5 KB per session incl. the AES key schedules) | ADR 0001 | none |
+| Cipher suites | `TLS_ECJPAKE_WITH_AES_128_CCM_8`; with the TLS API also PSK / ECDHE-ECDSA suites | Only `TLS_ECJPAKE_WITH_AES_128_CCM_8`; no certificates (TCAT is Phase 9) | Thread commissioning needs nothing else | none |
+| EC point format | Reads uncompressed and compressed points, writes the negotiated format | Uncompressed only (sent, and required in `ec_point_formats` if the peer sends that extension) | OpenThread never negotiates compressed points | stricter |
+| Password | Any length up to the MPI limit (32 bytes in OT's config); `s = 0` not rejected | 1..=32 bytes; a password that is `0 mod n` is rejected | Degenerate secrets | stricter |
+| ZKP `r` encoding | Minimal length; `r = 0` would be written as an empty (invalid) vector | Same minimal length; a nonce giving `r = 0` is redrawn | Never emit an invalid message | none |
+| Received points | `X` checked for zero and (via the multiplication) on-curve; `V` only compared | Every point (`X`, `V`, round-two `X`) fully validated (uncompressed, coordinates `< p`, on curve, not identity); `r < n` as mbedTLS; peer generator and shared point `K` must not be the identity; trailing bytes rejected | Defence in depth (cofactor 1, so equivalent for valid peers) | stricter |
+| Blinding | Scalar blinding with random multiples of `n` and randomized coordinates | Constant-time `p256` arithmetic without extra blinding | `p256` is constant time; blinding protects mbedTLS's non-CT bignum code | none |
+| Client/Server random | 32 random bytes (no `MBEDTLS_HAVE_TIME` in OT's config) | 32 random bytes | | none |
+| ServerHello session id | 32 random bytes | Empty (no session cache, no resumption) | Nothing to resume | none |
+| ServerHello extensions | `renegotiation_info` (if SCSV/extension seen), `ec_point_formats` (if sent by client), `ecjpake_key_kp_pair`; echoes `max_fragment_length` | Same order and conditions; `max_fragment_length` is ignored (OT clients never send it) | | none |
+| Unsolicited ServerHello extensions | Ignored | Abort with `handshake_failure` (RFC 5246 §7.4.1.4) | | stricter |
+| Duplicate extensions | Not checked for most extensions | Duplicates of interpreted extensions are rejected | RFC 5246 §7.4.1.4 | stricter |
+| Extended master secret, encrypt-then-MAC, CID, renegotiation, tickets | Disabled in OT's config | Not implemented; requests from other mbedTLS configs are ignored (not echoed), as RFC 7627/7366 allow | | none |
+| Cookies | `mbedtls_ssl_cookie`: 4-byte time + HMAC-SHA224, 60 s, bound to the peer IPv6 address | 4-byte time + truncated HMAC-SHA256 (32 bytes), 60 s, bound to the caller's client id (`Coaps`: address **and** port); ZKPs of the first ClientHello are only verified once the cookie is valid; a malformed ClientHello before cookie verification is dropped silently | Cookies are opaque to the client; less work for unverified peers | none |
+| ClientHello fragmentation | Not supported (server) | Not supported (server); our client never fragments it with the default MTU | Same as mbedTLS | none |
+| Future handshake messages / epoch-1 records before CCS | Buffered (`MBEDTLS_SSL_DTLS_MAX_BUFFERING`) | Dropped; recovered by the retransmission of the peer's flight. Out-of-order fragments of the current message are reassembled | Fixed RAM | none (slower recovery under reordering) |
+| Retransmission | `mbedtls_ssl_conf_handshake_timeout(8000, 60000)`: retransmit after 8, 16, 32, 60 s timeouts then fail; MTU 508 from the 2nd retransmission; resend on the last message of the peer's previous flight | Same (`Config::OPENTHREAD`, default); `Config::THREAD_SPEC` (8 s / 32 s: two retransmissions as Thread 1.4.1 §7.4.5 requires, which OpenThread exceeds) | Spec vs. OT | none |
+| Final flight | Server keeps its last flight while the handshake context lives | Server re-sends CCS + Finished whenever the client's Finished is retransmitted while connected | Simplicity | none |
+| Record size | `MBEDTLS_SSL_MAX_CONTENT_LEN` 768 (900 with the CoAP secure API) | Sends at most 768-byte records (`MAX_CONTENT_LEN`), handshake flights packed into datagrams of at most `Config::mtu` (768); accepts handshake messages up to 768 bytes and application records as large as the caller's buffer | Do not exceed the input buffer of OT peers | none |
+| Alerts | Bad MAC while expecting Finished: `bad_record_mac`; Finished mismatch: `decode_error` (+ OT `handshake_failure`); other errors: `handshake_failure` from OT's `SecureSession::Process` | Bad MAC while expecting Finished: `bad_record_mac`; every other handshake failure (ZKP, missing extension, unexpected message, Finished mismatch, timeout): `handshake_failure` | Thread 1.4.1 §7.4.4 | none |
+| Invalid records | Silently discarded (DTLS) | Same, incl. replayed, wrong-epoch and unauthenticated records (64-record window) | RFC 6347 §4.1.2.7 | none |
+| KEK export | `HandleMbedtlsExportKeys`: `SHA-256(key_block)[0..16]` | Same value, computed from the key block at key derivation and exposed once connected (`Session::kek`); never exposed for an aborted handshake | | none |
+| Sessions / connection attempts | One `SecureSession` per transport, `mMaxConnectionAttempts`, guard times | One `Session` (or `Coaps`) per peer, created by the caller; attempt limits and guard times belong to MeshCoP (Phase 8) | Sans-IO | API |
+| Application records per datagram (CoAPS) | `mbedtls_ssl_read` loop delivers all | `Session::handle_datagram` delivers all (via `Received::consumed`); `Coaps::decrypt` (one plaintext per `SecureTransport::decrypt`) delivers the first, processes the remaining handshake/alert records and drops further application records of the same datagram | Seam signature; OT/mbedTLS send one per datagram | none |

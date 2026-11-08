@@ -51,7 +51,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] `ChildInfo` and dataset codecs (with MLE / MeshCoP)
 - [x] Crypto trait: AES-128-CCM*, AES-CMAC/HMAC-SHA256, KDF (Thread key derivation §7), PBKDF2-CMAC for PSKc, EC-JPAKE + DTLS 1.2 deps; software impls (RustCrypto) + HW-accelerated backends (nrf CryptoCell/ESP AES)
   - [x] `opentrust_core::crypto`: `CryptoBackend` trait, CCM* (M=0/4/8/16), MAC/MLE nonces, MAC/MLE/TREL keys, HKDF, TLS 1.2 PRF, KEK, PBKDF2-AES-CMAC-PRF-128/PSKc, `soft-crypto` backend; spec + OT unit-test vectors
-  - [ ] HW backends (Phase 12), EC-JPAKE + DTLS 1.2 (Phase 5, see ADR 0001)
+  - [ ] HW backends (Phase 12)
+  - [x] EC-JPAKE + DTLS 1.2 (Phase 5b, see ADR 0001)
   - [ ] Cross-check TREL key, KEK and MLE-message vectors (self-generated) against `openthread-sys` (Phase 11)
   - [x] Secret key types are not `Copy`, zeroize on drop, constant-time `==`
 - [x] Entropy: `opentrust_platform::Entropy` = `rand_core::CryptoRng` (0.10, same as rs-matter/esp-rs openthread)
@@ -118,7 +119,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] Block-wise transfer (RFC 7959) and Observe: off in OT's default config; only the `BlockOption` codec exists
 - [x] TMF agent on UDP 61631 (`opentrust_coap::tmf`): URI list, DSCP/priority mapping, `IsTmfMessage` filtering, handler dispatcher, `UdpSockets` receiver registration
   - [ ] Wire `/a/aq`, `/a/an`, `/a/ae` to `resolver::ResolverEvent` (Phase 7), MLE/MeshCoP handlers (Phases 6-8)
-- [ ] Phase 5b: DTLS 1.2 + EC-JPAKE (CoAPS for commissioning, ADR 0001); plugs in behind `opentrust_coap::endpoint::SecureTransport`
+- [x] Phase 5b: DTLS 1.2 + EC-JPAKE (CoAPS for commissioning, ADR 0001): `opentrust_core::crypto::ecjpake` (feature `ecjpake`, RustCrypto `p256`, all mbedTLS self-test vectors), crate `opentrust-dtls` (sans-IO DTLS 1.2, `TLS_ECJPAKE_WITH_AES_128_CCM_8` only, client + server, cookies, retransmission, fragmentation, KEK) and `opentrust_dtls::coaps::Coaps` behind `opentrust_coap::endpoint::SecureTransport`; manually interop-tested against mbedTLS 3.6.0 `ssl_server2`/`ssl_client2`
+  - [ ] Automated differential/interop handshakes against `openthread-sys` / mbedTLS (Joiner and Commissioner, both roles, lossy links) (Phase 11)
+  - [ ] Hardware P-256 backends for the `ecjpake::P256` trait (CryptoCell, CRACEN, ESP ECC) and an rs-matter `EcPoint`/`EcScalar` adapter (Phase 12)
+  - [ ] Fuzz the record/handshake parsers and the EC-JPAKE readers (Phase 11)
+  - [ ] Security review of the EC-JPAKE/DTLS code before M4 (ADR 0001)
+  - [ ] Wire into MeshCoP Joiner / Commissioner / Border Agent (relay, ePSKc, connection-attempt limits, guard times) (Phase 8)
 
 ## Phase 6 – MLE (§4)
 

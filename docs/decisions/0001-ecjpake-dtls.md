@@ -104,7 +104,7 @@ esp-rs/openthread and rs-matter's `mbedtls` backend already use) and call
   existing DTLS crates are `std`/WebRTC-oriented and would need forking to
   add a PAKE suite and remove `std`. Not viable.
 
-## Decision (leaning)
+## Decision
 
 **Option (a)**: implement EC-JPAKE in Rust on RustCrypto `p256` (behind a
 narrow P-256 trait so a hardware or rs-matter-backed implementation can be
@@ -121,9 +121,11 @@ Placement: EC-JPAKE in `opentrust-core::crypto::ecjpake` (feature
 
 ## Consequences
 
-- Add `p256 = { version = "0.14", default-features = false, features =
-  ["arithmetic"] }` when work starts (same line as rs-matter, so a combined
-  build has a single copy).
+- `p256 = { version = "0.14", default-features = false, features =
+  ["arithmetic"] }` (same line as rs-matter, so a combined build has a
+  single copy). Implemented: `opentrust_core::crypto::ecjpake` (feature
+  `ecjpake`) and the `opentrust-dtls` crate (with `coaps::Coaps` behind
+  `SecureTransport`).
 - Security review of the EC-JPAKE/DTLS code is mandatory before M4
   (constant-time scalar handling, ZKP verification incl. point validation
   and rejection of the identity, `Finished` MAC comparison in constant time,
