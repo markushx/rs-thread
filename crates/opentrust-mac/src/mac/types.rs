@@ -5,7 +5,7 @@ use opentrust_core::Result;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{ExtAddress, PanId};
 use opentrust_platform::radio::{
-    Config, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig, sim::MAX_PSDU_LEN,
+    Config, MacKeys, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig, sim::MAX_PSDU_LEN,
 };
 
 use crate::frame::{Address, FCS_LEN, Frame, ThreadBeaconPayload};
@@ -220,6 +220,16 @@ pub enum RadioAction {
     /// [`Radio::set_src_match_config`](opentrust_platform::Radio::set_src_match_config)
     /// (only for radios with `MacCapabilities::SRC_MATCH`).
     SetSrcMatch(SrcMatchConfig),
+    /// [`Radio::set_mac_keys`](opentrust_platform::Radio::set_mac_keys)
+    /// (radios that secure frames / enhanced ACKs themselves).
+    SetMacKeys(Option<MacKeys>),
+    /// [`Radio::set_mac_frame_counter`](opentrust_platform::Radio::set_mac_frame_counter).
+    SetMacFrameCounter {
+        /// The counter.
+        frame_counter: u32,
+        /// Only raise the radio's counter.
+        if_larger: bool,
+    },
     /// [`Radio::set_receive`](opentrust_platform::Radio::set_receive).
     Receive {
         /// Channel.

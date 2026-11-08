@@ -8,6 +8,7 @@ use opentrust_core::time::{Duration, Instant};
 use opentrust_core::timer::TimerQueue;
 use opentrust_core::types::{Channel, ExtAddress, PanId, ShortAddress};
 use opentrust_core::{Error, Result};
+use opentrust_platform::radio::MacKeys;
 use opentrust_platform::radio::{
     Capabilities, Config, MacCapabilities, PsduRxInfo, PsduTxInfo, RSSI_INVALID, RadioCaps,
     RadioErrorKind, SoftMacNeeds, SrcMatchConfig,
@@ -165,6 +166,19 @@ impl RxMeta {
     }
 }
 
+/// What was pushed to a radio that secures frames or enhanced ACKs itself.
+#[derive(Debug, Default)]
+struct HwSecurity {
+    /// The radio needs keys and counters (`TRANSMIT_SEC` / `RECEIVE_TIMING`).
+    enabled: bool,
+    keys_sent: bool,
+    keys: Option<MacKeys>,
+    /// Frame counter pushed to the radio / reported back by it.
+    counter: u32,
+    /// A `SetMacFrameCounter` is due (`if_larger` flag).
+    counter_due: Option<bool>,
+}
+
 enum AttemptNext {
     Csma,
     RetxDelay(Duration),
@@ -213,6 +227,7 @@ pub struct Mac<S, G> {
     timers: TimerQueue<TimerId, 2>,
     events: Deque<Event, EVENT_QUEUE_LEN>,
     counters: MacCounters,
+    hw_sec: HwSecurity,
 }
 
 impl<S, G> core::fmt::Debug for Mac<S, G> {
@@ -299,6 +314,12 @@ impl<S: FrameSecurity, G: Rng> Mac<S, G> {
             timers: TimerQueue::new(),
             events: Deque::new(),
             counters: MacCounters::default(),
+            hw_sec: HwSecurity {
+                enabled: caps
+                    .phy
+                    .intersects(Capabilities::TRANSMIT_SEC | Capabilities::RECEIVE_TIMING),
+                ..HwSecurity::default()
+            },
         }
     }
 
@@ -767,6 +788,9 @@ impl<S: FrameSecurity, G: Rng> Mac<S, G> {
             self.src_match_dirty = false;
             return Some(RadioAction::SetSrcMatch(self.src_match.table().clone()));
         }
+        if let Some(a) = self.poll_hw_security() {
+            return Some(a);
+        }
         let ready_channel = match &self.tx {
             Some(tx) if tx.state == TxState::Ready => Some(tx.channel),
             _ => None,
@@ -803,6 +827,73 @@ impl<S: FrameSecurity, G: Rng> Mac<S, G> {
             });
         }
         None
+    }
+
+    /// Keys / frame counter for a radio that secures frames or enhanced ACKs
+    /// itself. Keys are compared with what was pushed last, so every change
+    /// made through [`security_mut`](Self::security_mut) (key sequence
+    /// switch, network key change) reaches the radio. A key change resets
+    /// the radio's counter (`if_larger = false`, the KeyManager restarts at
+    /// 0); otherwise the counter is only ever raised.
+    fn poll_hw_security(&mut self) -> Option<RadioAction> {
+        if !self.hw_sec.enabled {
+            return None;
+        }
+        let keys = self.security.radio_keys();
+        if !self.hw_sec.keys_sent || keys != self.hw_sec.keys {
+            self.hw_sec.keys_sent = true;
+            self.hw_sec.keys = keys;
+            self.hw_sec.counter_due = Some(false);
+            self.hw_sec.counter = self.security.current_frame_counter();
+            return Some(RadioAction::SetMacKeys(keys));
+        }
+        let fc = self.security.current_frame_counter();
+        if self.hw_sec.counter_due.is_none() && fc > self.hw_sec.counter {
+            self.hw_sec.counter_due = Some(true);
+            self.hw_sec.counter = fc;
+        }
+        let if_larger = self.hw_sec.counter_due.take()?;
+        Some(RadioAction::SetMacFrameCounter {
+            frame_counter: self.hw_sec.counter,
+            if_larger,
+        })
+    }
+
+    /// The radio finished the frame of the last [`RadioAction::Transmit`]
+    /// (`TRANSMIT_SEC`: frame counter, key index, CSL IE and possibly the
+    /// MIC were assigned in place). Call it with the PSDU and info as the
+    /// radio left them, before [`on_tx_done`](Self::on_tx_done). The frame
+    /// counter used is fed back to the key manager and the updated frame
+    /// replaces the one retransmissions use.
+    pub fn on_tx_frame_updated(&mut self, psdu: &[u8], info: &PsduTxInfo) {
+        if self.in_flight != Some(InFlight::Frame) || !self.hw_sec.enabled {
+            return;
+        }
+        let Some(n) = psdu.len().checked_sub(FCS_LEN) else {
+            return;
+        };
+        let Some(tx) = self.tx.as_mut() else {
+            return;
+        };
+        let Ok(f) = Frame::parse(&psdu[..n]) else {
+            return;
+        };
+        if let Some(s) = f.security_header() {
+            if let (Some(fc), KeyIdentifier::Index(i)) = (s.frame_counter, s.key) {
+                self.security.frame_counter_used(fc, i);
+                self.hw_sec.counter = self
+                    .hw_sec
+                    .counter
+                    .max(self.security.current_frame_counter());
+            }
+        }
+        if info.header_updated {
+            if let Ok(buf) = FrameBuf::from_slice(&psdu[..n]) {
+                tx.frame = buf;
+            }
+            tx.header_updated = true;
+            tx.security_processed = info.security_processed;
+        }
     }
 
     fn radio_config(&self) -> Config {
@@ -865,7 +956,10 @@ impl<S: FrameSecurity, G: Rng> Mac<S, G> {
         Some(RadioAction::Transmit(TxAction {
             info: PsduTxInfo {
                 security_processed: tx.security_processed,
-                header_updated: tx.security_processed || tx.retries > 0 || tx.retransmission,
+                header_updated: tx.header_updated
+                    || tx.security_processed
+                    || tx.retries > 0
+                    || tx.retransmission,
                 csl_present: false,
                 retransmission: tx.retries > 0 || tx.retransmission,
                 tx_at_us: None,
@@ -1207,6 +1301,7 @@ impl<S: FrameSecurity, G: Rng> Mac<S, G> {
             seq,
             security_processed,
             retransmission: false,
+            header_updated: false,
             max_csma_backoffs,
             max_frame_retries,
             csma_backoffs: 0,
@@ -1622,8 +1717,16 @@ impl<S: FrameSecurity, G: Rng> Mac<S, G> {
             return;
         };
         let secured = Frame::parse(&ack).is_ok_and(|f| f.security_enabled());
-        if secured && self.security.secure_tx(&mut ack, &self.ext).is_err() {
-            return;
+        if secured {
+            let r = match self.security.secure_enh_ack(&mut ack, &self.ext) {
+                Err(Error::InvalidArgs) => {
+                    self.security.secure_tx(&mut ack, &self.ext).map(|()| None)
+                }
+                r => r,
+            };
+            if r.is_err() {
+                return;
+            }
         }
         self.pending_ack = Some((ack, channel));
     }
@@ -1632,6 +1735,13 @@ impl<S: FrameSecurity, G: Rng> Mac<S, G> {
     /// `psdu` is the PSDU **including** the FCS (`info.len` octets).
     pub fn on_rx(&mut self, psdu: &[u8], info: &PsduRxInfo, now: Instant) {
         self.counters.rx_total += 1;
+        if let Some(a) = &info.ack_security {
+            self.security.ack_frame_counter_used(a);
+            self.hw_sec.counter = self
+                .hw_sec
+                .counter
+                .max(self.security.current_frame_counter());
+        }
         let buf = psdu
             .len()
             .checked_sub(FCS_LEN)

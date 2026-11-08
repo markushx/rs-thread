@@ -588,6 +588,26 @@ impl<B: CryptoBackend> KeyManager<B> {
 }
 
 impl<B: CryptoBackend> FrameSecurity for KeyManager<B> {
+    fn radio_keys(&self) -> Option<MacKeys> {
+        Some(self.mac_keys())
+    }
+
+    fn current_frame_counter(&self) -> u32 {
+        self.frame_counter
+    }
+
+    fn frame_counter_used(&mut self, frame_counter: u32, key_index: u8) {
+        KeyManager::frame_counter_used(self, frame_counter, key_index);
+    }
+
+    fn secure_enh_ack(
+        &mut self,
+        ack: &mut [u8],
+        src_ext: &ExtAddress,
+    ) -> Result<Option<AckSecurity>> {
+        KeyManager::secure_enh_ack(self, ack, src_ext)
+    }
+
     /// Key ID mode 1: next outgoing frame counter, current key index and MAC
     /// key, nonce from `src_ext`. Key ID mode 2: key source `0xffffffff`,
     /// key index `0xff`, the well-known key and nonce address, and a separate

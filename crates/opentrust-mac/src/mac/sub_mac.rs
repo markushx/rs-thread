@@ -67,6 +67,8 @@ pub(crate) struct TxOp {
     /// The frame was sent before (an indirect frame offered to an earlier
     /// poll).
     pub retransmission: bool,
+    /// The radio assigned frame counter / CSL IE already (`TRANSMIT_SEC`).
+    pub header_updated: bool,
     pub max_csma_backoffs: u8,
     pub max_frame_retries: u8,
     pub csma_backoffs: u8,

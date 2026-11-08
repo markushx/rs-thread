@@ -2,4 +2,5 @@
 
 mod core_tests;
 mod driver_tests;
+mod security_tests;
 mod util;

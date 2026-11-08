@@ -162,6 +162,15 @@ where
         let res = match action {
             RadioAction::Configure(cfg) => self.radio.set_config(&cfg).await,
             RadioAction::SetSrcMatch(cfg) => self.radio.set_src_match_config(&cfg).await,
+            RadioAction::SetMacKeys(keys) => self.radio.set_mac_keys(keys.as_ref()).await,
+            RadioAction::SetMacFrameCounter {
+                frame_counter,
+                if_larger,
+            } => {
+                self.radio
+                    .set_mac_frame_counter(frame_counter, if_larger)
+                    .await
+            }
             RadioAction::Receive { channel } => self.radio.set_receive(channel).await,
             RadioAction::Sleep => self.radio.set_sleep().await,
             RadioAction::EnergyScan {
@@ -200,6 +209,9 @@ where
                 };
                 self.interrupted = false;
                 let now = self.clock.now();
+                if r.is_some() {
+                    self.mac.on_tx_frame_updated(&tx.psdu, &tx.info);
+                }
                 match r {
                     None => self.mac.on_tx_done(TxOutcome::AckTimeout, now),
                     Some(Ok(None)) => self.mac.on_tx_done(TxOutcome::Sent, now),

@@ -14,6 +14,7 @@
 use opentrust_core::crypto::SecurityLevel;
 use opentrust_core::types::ExtAddress;
 use opentrust_core::{Error, Result};
+use opentrust_platform::radio::{AckSecurity, MacKeys};
 
 use crate::frame::{Frame, KeyIdMode};
 
@@ -58,6 +59,42 @@ pub trait FrameSecurity {
         psdu: &mut [u8],
         src_ext: &ExtAddress,
     ) -> Result<Option<RxSecurityInfo>>;
+
+    /// The keys a radio that secures frames or enhanced ACKs itself needs
+    /// (`Radio::set_mac_keys`); `None` if there are none (the default). The
+    /// MAC compares it with what it last pushed and pushes changes.
+    fn radio_keys(&self) -> Option<MacKeys> {
+        None
+    }
+
+    /// The next outgoing MAC frame counter, for `Radio::set_mac_frame_counter`.
+    fn current_frame_counter(&self) -> u32 {
+        0
+    }
+
+    /// A radio secured a frame with `frame_counter` and key index
+    /// `key_index` itself: move the outgoing counter past it.
+    fn frame_counter_used(&mut self, frame_counter: u32, key_index: u8) {
+        let _ = (frame_counter, key_index);
+    }
+
+    /// A radio secured an enhanced ACK itself (see
+    /// [`PsduRxInfo::ack_security`](opentrust_platform::radio::PsduRxInfo::ack_security)).
+    fn ack_frame_counter_used(&mut self, ack: &AckSecurity) {
+        self.frame_counter_used(ack.frame_counter, ack.key_id);
+    }
+
+    /// Secure an enhanced ACK in software. The default is
+    /// [`secure_tx`](Self::secure_tx); implementations that must keep the key
+    /// index of the acked frame override it. Returns the security material
+    /// used, if the implementation reports it.
+    fn secure_enh_ack(
+        &mut self,
+        ack: &mut [u8],
+        src_ext: &ExtAddress,
+    ) -> Result<Option<AckSecurity>> {
+        self.secure_tx(ack, src_ext).map(|()| None)
+    }
 }
 
 impl<T: FrameSecurity + ?Sized> FrameSecurity for &mut T {
@@ -71,6 +108,30 @@ impl<T: FrameSecurity + ?Sized> FrameSecurity for &mut T {
         src_ext: &ExtAddress,
     ) -> Result<Option<RxSecurityInfo>> {
         (**self).unsecure_rx(psdu, src_ext)
+    }
+
+    fn radio_keys(&self) -> Option<MacKeys> {
+        (**self).radio_keys()
+    }
+
+    fn current_frame_counter(&self) -> u32 {
+        (**self).current_frame_counter()
+    }
+
+    fn frame_counter_used(&mut self, frame_counter: u32, key_index: u8) {
+        (**self).frame_counter_used(frame_counter, key_index);
+    }
+
+    fn ack_frame_counter_used(&mut self, ack: &AckSecurity) {
+        (**self).ack_frame_counter_used(ack);
+    }
+
+    fn secure_enh_ack(
+        &mut self,
+        ack: &mut [u8],
+        src_ext: &ExtAddress,
+    ) -> Result<Option<AckSecurity>> {
+        (**self).secure_enh_ack(ack, src_ext)
     }
 }
 
