@@ -7,7 +7,7 @@
 use opentrust_core::time::Duration;
 
 /// UDP port used by MLE (Thread 1.4.1 §4.3; OT `kUdpPort`).
-pub const MLE_UDP_PORT: u16 = 19788;
+pub use opentrust_net::udp::MLE_UDP_PORT;
 /// IPv6 hop limit of every MLE message; received messages with another
 /// value are dropped (§4.3).
 pub const MLE_HOP_LIMIT: u8 = 255;
