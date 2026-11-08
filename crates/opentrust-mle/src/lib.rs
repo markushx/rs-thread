@@ -3,13 +3,22 @@
 //!
 //! Part of OpenTrust, a pure Rust implementation of the Thread 1.4.1 protocol.
 //!
-//! Phase 6a provides the protocol *building blocks*, no state machines:
+//! Phase 6a provides the protocol *building blocks*:
 //!
 //! - [`consts`]: Table 4-3 constants.
 //! - [`tlv`]: typed parse/build of every MLE TLV.
 //! - [`message`], [`security`]: commands, message building, MLE security.
 //! - [`neighbor`], [`link_quality`]: neighbor/child/router data model, tables.
 //! - [`endpoint`]: UDP glue (port 19788, rx validation/decryption, dispatch, tx).
+//!
+//! Phase 6b adds the sans-IO state machine [`Mle`]: child-side
+//! [`attach`], child role operation ([`child`]), parent-side child handling
+//! (feature `ftd`, default on: `parent`) and [`persist`]ence with fast
+//! re-attach. It reaches the key manager, MAC, netif, settings and network
+//! through the [`MleEnv`] trait (see the [`env`](mod@env) module for the design) and is driven
+//! by [`Mle::receive`] and [`Mle::poll`] / [`Mle::next_deadline`].
+//! Router links, Advertisements, partitions and the router role are Phase
+//! 6c.
 
 pub mod attach;
 pub mod child;

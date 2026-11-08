@@ -219,9 +219,10 @@ both roles, cookies, fragmented flights, identical KEK, wrong password.
 Reference: `src/core/thread/mle_tlvs.{hpp,cpp}`, `mle_types.hpp`, `mle.cpp`
 (`ProcessMessageSecurity`, `HandleUdpReceive`, `TxMessage::SendTo`),
 `neighbor.hpp`, `child.hpp`, `router.hpp`, `link_quality.{hpp,cpp}`,
-`tests/unit/test_link_quality.cpp`. The protocol logic (attach, link
-establishment, partitions, roles) is not part of this section yet (Phase
-6b/6c).
+`tests/unit/test_link_quality.cpp`. Phase 6b logic (attach, child
+role, parent-side attach handling, persistence) is described in the second
+table below; link establishment, partitions and the router role are Phase
+6c.
 
 | Area | OpenThread | OpenTrust | Reason | Interop |
 |------|------------|-----------|--------|---------|
@@ -251,3 +252,36 @@ establishment, partitions, roles) is not part of this section yet (Phase
 | Link quality | `LinkQualityInfo::Get<SubMac>().GetNoiseFloor()` implicit | Noise floor passed to `add_rss`; `LinkQuality::from_margin` is `const` and takes `Option<LinkQuality>` for the hysteresis | No global instance | API |
 | RSS averager | `-static_cast<int8_t>(avg >> 3)` (wraps at -128 to -128) | Computed in `i16` and clamped to `i8::MIN` | No overflow panics; same values | none |
 | `ChildInfo` settings | `Settings::ChildInfo` packed struct | `opentrust_core::settings::ChildInfo`, same 17-byte layout (ext, timeout u32 LE, rloc16 LE, mode, version LE) | | none |
+
+### MLE state machine (Phase 6b: `attach`, `child`, `child_rx`, `parent`, `persist`)
+
+Reference: `mle.cpp` (`Attach`, `HandleAttachTimer`, `SendParentRequest`,
+`HandleParentResponse`, `IsBetterParent`, `SendChildIdRequest`,
+`HandleChildIdResponse`, `SendChildUpdateRequestToParent`,
+`HandleChildUpdate*OnChild`, `HandleDataResponse`, `HandleLeaderData`,
+`ProcessKeySequence`, `Restore`, `Store`), `mle_ftd.cpp`
+(`HandleParentRequest`, `SendParentResponse`, `HandleChildIdRequest`,
+`SendChildIdResponse`, `HandleChildUpdate*OnParent`, `HandleTimeTick`),
+`child_supervision.cpp`.
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Structure | `Mle` singleton reaching `Get<KeyManager>()`, `Get<Mac::Mac>()`, `Get<ThreadNetif>()`, `Get<Settings>()`, timers, `Random` | `Mle<C>` owns only MLE state; everything else goes through the `MleEnv` trait the caller implements (context passing); `now` and an RNG (`fill_random`) are parameters; `poll` + `next_deadline` replace timers | Sans-IO, no globals, `Instance` (Phase 10) wires the env | API |
+| Tx path | `Message` queue, `MeshForwarder`, delayed sender, MLE retransmission queue | `MleEnv::send(src, dst, secured payload)`; messages are built and secured on the stack (<= 1024 bytes); only the Parent Response jitter is a deferred send; no generic MLE retransmission queue (Child Update / Data Request retry timers as OT) | No message pool yet | none |
+| Child table capacity | `OPENTHREAD_CONFIG_*` compile-time | const generic `Mle<C>`; `C = 0` for end devices; parent-side code behind cargo feature `ftd` (default on) | Embedded footprint | none |
+| Announce attach state | After the last Parent Request an unattached device announces on all channels | Not implemented: the attempt ends after the Parent Requests | Announce / Discovery are Phase 8 | none (slower recovery after channel changes) |
+| Reattach with stored datasets | `kReattachActive` / `kReattachPending` retry with stored Active / Pending Dataset | Not implemented | Dataset handling is Phase 8 | none |
+| Attach modes | Partition comparison for `kSamePartition` / `kBetterPartition` / `kDowngradeToReed` in `HandleParentResponse` | Modes exist; the FTD partition / id-sequence checks and the FTD fallback to become leader after a failed attach are Phase 6c hooks (marked in `attach`) | Needs partitions | none |
+| Parent Response acceptance | Accepted in any attach state | Only while Parent Requests are being sent (`ParentRequest` state) | A late response would clobber a pending Child ID Request candidate | stricter |
+| Parent selection | `IsBetterParent` incl. CSL accuracy metric for sleepy children | Same order of criteria, without the CSL metric | CSL receiver MLE parameters open | none |
+| Child ID Request | Address Registration mode setting, `SupervisionInterval` for sleepy children | Same TLVs; all registered addresses are sent on the Child ID Request, mesh-local only in the detached Child Update Request | | none |
+| Child supervision | `SupervisionListener` fed by MAC rx | Check timer in `Mle` (190 s default, only for sleepy children), restarted by `parent_frame_received` (MAC glue) and by MLE messages from the parent; the parent side counts seconds per sleepy child and calls `MleEnv::send_child_supervision` | MAC glue is the caller's | none |
+| Poll period | `DataPollSender::GetDefaultPollPeriod` | `Mle::default_poll_period` (timeout - 4 s) pushed to the env with `set_poll_period`; the MAC poll sender keeps the fast / retx / attach-mode rules | | none |
+| Key sequence adoption | `ProcessKeySequence` after every handler | `process_key_sequence` after dispatch, same Authoritative / Peer / Unknown classes; `KeyManager::set_key_sequence` flags | | none |
+| Leader data / Network Data | Parsed into `NetworkData::Leader` | `MleEnv::set_network_data(leader, bytes)`; versions in Leader Data are compared with serial arithmetic; dataset timestamps compared with the env's | Network Data is Phase 7 | none |
+| Parent: Child Update from a restoring child | `HandleChildUpdateRequestOnParent` ignores children that are not `Valid` | Accepts `Restored` / `ChildUpdateRequest` children and makes them valid | Fast re-attach after the *child* restarted works without waiting for the parent's own Child Update Request | looser |
+| Parent: Restored children | Child Update Request every time tick until answered (rx-on) | Child Update Request once after restore (state `ChildUpdateRequest`); the child timeout removes silent children | Simpler; the child retries itself | none |
+| Parent: REED | A child-role FTD answers Parent Requests to routers and REEDs and upgrades | Only router / leader answer; REED is Phase 6c | | none |
+| Parent: Connectivity / Route TLVs | Computed from the router table | Supplied by the router role through `RouterInfo` (`enter_router_role`, `set_router_info`) | Router table logic is Phase 6c | none |
+| Persistence | `Store()` called from many places; `Restore()` at `Start` | `Mle::store` / `store_if_needed` (called after every `receive` / `poll`) write through `MleEnv::store_*`; `Mle::restore` returns `Restored::Child` or `Restored::Router` (the router role itself is entered by the caller); the FTD capability is taken from the configuration, not the record | Env owns the settings store | none |
+| Child records | `Settings::ChildInfo` per child, written by `StoreChild` | `MleEnv::store_child_info` / `delete_child_info` (upsert by extended address) | | none |
