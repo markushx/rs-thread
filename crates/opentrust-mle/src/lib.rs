@@ -73,7 +73,12 @@ mod persist_tests;
 mod router_link_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod router_tests;
-#[cfg(all(test, feature = "ftd"))]
-mod sim;
-#[cfg(test)]
-mod test_support;
+/// Multi-node simulator, also used by the `opentrust-mesh` tests.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+#[cfg(feature = "ftd")]
+pub mod sim;
+/// Fake [`MleEnv`], also used by the `opentrust-mesh` tests.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;

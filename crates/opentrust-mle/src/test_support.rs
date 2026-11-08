@@ -1,6 +1,8 @@
 //! Test environment shared by the MLE state machine tests: a fake
 //! [`MleEnv`] with deterministic randomness and captured output.
 
+#![allow(missing_docs, missing_debug_implementations, dead_code)]
+
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Vec;
@@ -20,13 +22,13 @@ use crate::message::Command;
 use crate::mle::Mle;
 use crate::tlv::{LeaderData, Timestamp};
 
-pub(crate) struct Out {
+pub struct Out {
     pub src: Ipv6Addr,
     pub dst: Ipv6Addr,
     pub data: Vec<u8, 1100>,
 }
 
-pub(crate) struct TestEnv {
+pub struct TestEnv {
     pub keys: KeyManager<SoftCrypto>,
     pub ext: ExtAddress,
     pub rng: u64,
@@ -50,13 +52,13 @@ pub(crate) struct TestEnv {
     pub solicit_fails: bool,
 }
 
-pub(crate) const MLP: Prefix64 = Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 1]);
+pub const MLP: Prefix64 = Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 1]);
 
-pub(crate) fn ext(n: u8) -> ExtAddress {
+pub fn ext(n: u8) -> ExtAddress {
     ExtAddress([0x02, 0, 0, 0, 0, 0, 0, n])
 }
 
-pub(crate) fn ll(e: &ExtAddress) -> Ipv6Addr {
+pub fn ll(e: &ExtAddress) -> Ipv6Addr {
     ipv6::link_local(e)
 }
 

@@ -13,16 +13,28 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-coap/defmt"]
-log = ["dep:log", "opentrust-core/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-coap/log"]
+# Router-only code: leader / router side of the TMF exchanges, routing and
+# forwarding of other nodes' traffic, indirect queues for sleepy children.
+default = ["ftd"]
+ftd = ["opentrust-mle/ftd"]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-coap/defmt", "opentrust-lowpan/defmt", "opentrust-mac/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-coap/log", "opentrust-lowpan/log", "opentrust-mac/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
 opentrust-mle = { workspace = true }
 opentrust-net = { workspace = true }
 opentrust-coap = { workspace = true }
+opentrust-lowpan = { workspace = true }
+opentrust-mac = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
+
+[dev-dependencies]
+opentrust-mle = { workspace = true, features = ["test-support"] }
+opentrust-platform = { workspace = true }
 
 [lints]
 workspace = true

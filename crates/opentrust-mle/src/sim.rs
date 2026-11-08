@@ -2,7 +2,7 @@
 //! with fake environments, a link matrix (RSS or no link) and deterministic
 //! time. Test-only.
 
-#![allow(dead_code)] // a test toolbox: not every helper is used by every test
+#![allow(dead_code, missing_docs, missing_debug_implementations)] // a test toolbox: not every helper is used by every test
 
 extern crate std;
 
@@ -15,11 +15,11 @@ use crate::mle::{Mle, MleConfig};
 use crate::test_support::TestEnv;
 use crate::tlv::DeviceMode;
 
-pub(crate) const T0: Instant = Instant::from_secs(1000);
-pub(crate) const FTD: DeviceMode = DeviceMode::new(true, true, true);
-pub(crate) const MAX_NODES: usize = 5;
+pub const T0: Instant = Instant::from_secs(1000);
+pub const FTD: DeviceMode = DeviceMode::new(true, true, true);
+pub const MAX_NODES: usize = 5;
 
-pub(crate) struct Node {
+pub struct Node {
     pub mle: Mle<4>,
     pub env: TestEnv,
     /// Messages received, by command number.
@@ -37,7 +37,7 @@ impl Node {
     }
 }
 
-pub(crate) struct Sim {
+pub struct Sim {
     pub nodes: Vec<Node, MAX_NODES>,
     pub now: Instant,
     link: [[Option<i8>; MAX_NODES]; MAX_NODES],
@@ -66,6 +66,11 @@ impl Sim {
     pub fn connect(&mut self, a: usize, b: usize, rss: i8) {
         self.link[a][b] = Some(rss);
         self.link[b][a] = Some(rss);
+    }
+
+    /// RSS of the link from `a` to `b`, if any.
+    pub fn link(&self, a: usize, b: usize) -> Option<i8> {
+        self.link[a][b]
     }
 
     pub fn disconnect(&mut self, a: usize, b: usize) {
@@ -212,5 +217,22 @@ impl Sim {
         );
         self.grant_router(leader, idx);
         assert_eq!(self.role(idx), Role::Router);
+    }
+
+    /// Make router `idx` see more active routers than the downgrade
+    /// threshold, so that after the role transition delay it re-attaches
+    /// as a REED and releases its router ID.
+    pub fn force_downgrade(&mut self, idx: usize) {
+        let now = self.now;
+        let n = &mut self.nodes[idx];
+        n.mle.cfg.router.downgrade_threshold = 1;
+        n.mle.cfg.router.selection_jitter_secs = 3;
+        n.mle.start_role_transition(&mut n.env);
+        let mut mask = n.mle.router_id_mask();
+        for id in [50, 51] {
+            mask.insert(id).unwrap();
+        }
+        let seq = n.mle.router_id_sequence();
+        n.mle.update_router_id_set(&mut n.env, now, seq, &mask);
     }
 }
