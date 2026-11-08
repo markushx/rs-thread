@@ -631,3 +631,6 @@ impl<'a> MessageBuilder<'a> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod diff_tests;
