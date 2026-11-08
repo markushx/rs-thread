@@ -36,6 +36,8 @@
 //! - [`mgmt`]: the `/c/ag` `/c/as` `/c/pg` `/c/ps` `/c/ar` TMF handlers and clients.
 //! - [`commissioner`] (feature `ftd`): the leader's commissioner session
 //!   (`/c/lp`, `/c/la`, `/c/cs`, `/c/cg`).
+//! - [`updater`] (feature `ftd`): the Dataset Updater (change part of the
+//!   Active Dataset through a Pending Dataset).
 //! - [`discovery`]: Discovery Request / Response content and the active
 //!   scanner.
 //! - [`scan`]: Energy Scan, PAN ID Query and Announce Begin (servers and
@@ -56,6 +58,8 @@ pub mod scan;
 pub mod steering;
 pub mod timestamp;
 pub mod tlv;
+#[cfg(feature = "ftd")]
+pub mod updater;
 
 #[cfg(test)]
 mod dataset_tests;

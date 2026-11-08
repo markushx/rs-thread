@@ -180,7 +180,8 @@ Phase 8a (this batch, crate `opentrust-meshcop`, leader / router code behind fea
 - [x] Discovery (`opentrust_mle::discovery` transport, `opentrust_meshcop::discovery` content, Steering Data filter, active scanner state machine), MLE Announce send / receive
 - [x] Energy Scan, PAN ID Query, Announce Begin servers and commissioner-side requests (`scan`: `/c/es` `/c/er` `/c/pq` `/c/pc` `/c/ab`)
 - [x] Multi-node tests (`net_sim`, `sim_tests`, `sim_scan_tests` over the MLE simulator with a TMF agent, dataset managers and commissioner state per node)
-- [ ] Dataset Updater (`dataset_updater.cpp`), Dataset persistence for the delay timer across resets (the full delay restarts), `MGMT_*_GET` for the Commissioner Dataset by a commissioner client (the leader side exists)
+- [x] Dataset Updater (`opentrust_meshcop::updater`) and persistence of the Pending delay across resets (checkpoint every 60 s)
+- [ ] `MGMT_COMMISSIONER_GET` by a commissioner client for the Commissioner Dataset (the leader side exists; `mgmt::send_get` is the request side for Active / Pending)
 - [x] Announce attach state and Orphan Announces (see Phase 6b)
 - [ ] Reattach with the stored Active / Pending Dataset, periodic Announce sender (see Phase 6b)
 

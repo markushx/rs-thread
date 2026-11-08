@@ -651,3 +651,131 @@ fn leader_without_network_data_detaches_after_the_sync_wait() {
     assert_ne!(net.role(0), Role::Leader);
     assert!(!net.nodes[0].nd.is_waiting_for_sync());
 }
+
+/// Run the network in one-second steps and feed the dataset events of
+/// node `i` to `u`; the outcome once it finished.
+fn run_updater(
+    net: &mut Net,
+    i: usize,
+    u: &mut crate::updater::DatasetUpdater,
+    max: u64,
+) -> Option<crate::updater::UpdateOutcome> {
+    for _ in 0..max {
+        net.run(secs(1));
+        let now = net.now();
+        let events: std::vec::Vec<_> = net.shared(i).env.events.drain(..).collect();
+        for e in events {
+            let s = net.shared(i);
+            if let Some(o) = u.handle_event(&s.ds, now, e) {
+                return Some(o);
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn dataset_updater_changes_the_channel() {
+    use crate::updater::{DatasetUpdater, UpdateOutcome};
+    let d = dataset(1, 15, 0x1234, 0x42, "OpenTrust");
+    let mut net = form(&d);
+    let mut u = DatasetUpdater::new();
+
+    let mut changes = Dataset::default();
+    changes.set_channel(20).unwrap();
+    // Already the case: refused. Timestamps in the request: refused.
+    let mut same = Dataset::default();
+    same.set_channel(15).unwrap();
+    let now = net.now();
+    {
+        let s = &mut *net.shared(2);
+        assert_eq!(
+            u.request_update(&mut s.ds, &mut s.env, now, &same, [1, 1]),
+            Err(opentrust_core::Error::Already)
+        );
+        let mut bad = changes.clone();
+        bad.set_timestamp(DatasetType::Active, &ts(5)).unwrap();
+        assert_eq!(
+            u.request_update(&mut s.ds, &mut s.env, now, &bad, [1, 1]),
+            Err(opentrust_core::Error::InvalidArgs)
+        );
+        u.request_update(&mut s.ds, &mut s.env, now, &changes, [7, 9])
+            .unwrap();
+        assert_eq!(
+            u.request_update(&mut s.ds, &mut s.env, now, &changes, [7, 9]),
+            Err(opentrust_core::Error::Busy)
+        );
+    }
+    assert!(u.is_update_ongoing());
+    // The Pending Dataset travels to the leader and applies after the
+    // default delay; the update finishes with the new Active Dataset.
+    assert_eq!(
+        run_updater(&mut net, 2, &mut u, 400),
+        Some(UpdateOutcome::Done)
+    );
+    assert!(!u.is_update_ongoing());
+    net.run(secs(30));
+    for i in 0..3 {
+        let s = net.shared(i);
+        assert_eq!(s.env.cur.channel, 20, "node {i}");
+        let a = s.ds.read(DatasetType::Active, net.now()).unwrap();
+        assert_eq!(a.tlvs().pan_id().unwrap(), 0x1234);
+        let ats = s.ds.timestamp(DatasetType::Active).unwrap();
+        assert!(compare_ts(&ats, &ts(1)).is_gt(), "node {i}");
+    }
+}
+
+fn compare_ts(a: &Timestamp, b: &Timestamp) -> core::cmp::Ordering {
+    crate::timestamp::compare(Some(a), Some(b))
+}
+
+#[test]
+fn dataset_updater_reports_a_conflicting_update() {
+    use crate::updater::{DatasetUpdater, UpdateOutcome};
+    let d = dataset(1, 15, 0x1234, 0x42, "OpenTrust");
+    let mut net = form(&d);
+    let mut u = DatasetUpdater::new();
+    let mut changes = Dataset::default();
+    changes.set_channel(20).unwrap();
+    let now = net.now();
+    {
+        let s = &mut *net.shared(2);
+        u.request_update(&mut s.ds, &mut s.env, now, &changes, [1, 1])
+            .unwrap();
+    }
+    // Another device sets a different channel with a much newer timestamp.
+    let mut p = dataset(9, 22, 0x1234, 0x42, "OpenTrust");
+    p.set_timestamp(DatasetType::Pending, &ts(9)).unwrap();
+    p.set_delay_timer(10_000).unwrap();
+    net.post(1, leader_aloc(), Uri::PendingSet, p.as_bytes());
+    assert_eq!(
+        run_updater(&mut net, 2, &mut u, 200),
+        Some(UpdateOutcome::Conflict)
+    );
+    assert!(!u.is_update_ongoing());
+}
+
+#[test]
+fn pending_delay_survives_a_reset_by_the_last_checkpoint() {
+    use crate::manager::Datasets;
+    let d = dataset(1, 15, 0x1234, 0x42, "OpenTrust");
+    let mut net = form(&d);
+    let mut p = dataset(2, 20, 0x1234, 0x42, "OpenTrust");
+    p.set_timestamp(DatasetType::Pending, &ts(2)).unwrap();
+    p.set_delay_timer(250_000).unwrap();
+    net.post(2, leader_aloc(), Uri::PendingSet, p.as_bytes());
+    assert_eq!(state_of(&mut net, 2), State::Accept);
+    // 130 s later node 2 resets and restores its datasets from settings:
+    // the stored Pending Dataset carries the delay of the last checkpoint
+    // (at most one interval old), not the full delay.
+    net.run(secs(130));
+    let full = net.shared(2).ds.remaining_delay_ms(net.now()).unwrap() + 130_000;
+    assert!(full > 240_000, "{full}");
+    let now = net.now();
+    let s = &mut *net.shared(2);
+    s.ds = Datasets::new();
+    s.ds.restore(&mut s.env, now, DatasetType::Pending).unwrap();
+    let rem = s.ds.remaining_delay_ms(now).unwrap();
+    assert!(rem < 200_000, "restarted with {rem}");
+    assert!(rem > 100_000, "{rem}");
+}

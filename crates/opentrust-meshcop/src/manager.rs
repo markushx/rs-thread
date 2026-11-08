@@ -27,6 +27,11 @@ use crate::dataset::{Dataset, DatasetType};
 use crate::timestamp::{Timestamp, compare};
 use crate::tlv::{DEFAULT_DELAY_MS, MAX_DELAY_MS, MIN_DELAY_MS, SecurityPolicy, ty};
 
+/// While the Pending delay timer runs the Pending Dataset is stored again
+/// with the remaining delay at this interval, so a reset does not restart
+/// the full delay (see [`Datasets::checkpoint_pending_delay`]).
+pub const DELAY_CHECKPOINT_INTERVAL: Duration = Duration::from_secs(60);
+
 /// Retry delay for sending MGMT_SET to the leader (`kSendSetDelay`).
 pub const SEND_SET_DELAY: Duration = Duration::from_millis(5000);
 
@@ -142,6 +147,7 @@ struct Manager {
 pub struct Datasets {
     m: [Manager; 2],
     delay_deadline: Option<Instant>,
+    delay_checkpoint: Option<Instant>,
     delay_timer_minimal_ms: u32,
 }
 
@@ -157,6 +163,7 @@ impl Datasets {
         Self {
             m: Default::default(),
             delay_deadline: None,
+            delay_checkpoint: None,
             delay_timer_minimal_ms: MIN_DELAY_MS,
         }
     }
@@ -353,6 +360,7 @@ impl Datasets {
         env.delete(t);
         if t == DatasetType::Pending {
             self.delay_deadline = None;
+            self.delay_checkpoint = None;
         }
         Self::signal(env, t);
     }
@@ -590,11 +598,31 @@ impl Datasets {
 
     fn start_delay_timer_for_with_start(&mut self, start: Instant, d: &Dataset) {
         self.delay_deadline = None;
+        self.delay_checkpoint = None;
         if let Ok(delay) = d.tlvs().delay_timer() {
             let delay = delay.min(MAX_DELAY_MS);
             self.delay_deadline =
                 Some(start.saturating_add(Duration::from_millis(u64::from(delay))));
+            self.delay_checkpoint = Some(start.saturating_add(DELAY_CHECKPOINT_INTERVAL));
         }
+    }
+
+    /// Store the Pending Dataset with the remaining delay (the Delay Timer
+    /// TLV of [`read`](Self::read)) while the delay timer runs. A reset
+    /// then restores the timer with what was left at the last checkpoint
+    /// ([`restore`](Self::restore) starts the delay from the stored TLV)
+    /// instead of the full delay. [`poll`](Self::poll) does this every
+    /// [`DELAY_CHECKPOINT_INTERVAL`]; call it directly before a planned
+    /// shutdown.
+    pub fn checkpoint_pending_delay<E: DatasetEnv>(&mut self, env: &mut E, now: Instant) {
+        if self.delay_deadline.is_none() {
+            self.delay_checkpoint = None;
+            return;
+        }
+        if let Some(d) = self.read(DatasetType::Pending, now) {
+            let _ = env.store(DatasetType::Pending, d.as_bytes());
+        }
+        self.delay_checkpoint = Some(now.saturating_add(DELAY_CHECKPOINT_INTERVAL));
     }
 
     /// OT `PendingDatasetManager::StartDelayTimer()`: (re)start from the
@@ -629,6 +657,7 @@ impl Datasets {
     /// Timestamp or a different network key, then drop it.
     fn handle_delay_timer<E: DatasetEnv>(&mut self, env: &mut E, now: Instant) {
         self.delay_deadline = None;
+        self.delay_checkpoint = None;
         if let Some(mut d) = self.read(DatasetType::Pending, now) {
             let replace = match d.tlvs().active_timestamp() {
                 Err(_) => false,
@@ -659,6 +688,8 @@ impl Datasets {
     pub fn poll<E: DatasetEnv>(&mut self, env: &mut E, now: Instant) {
         if self.delay_deadline.is_some_and(|d| d <= now) {
             self.handle_delay_timer(env, now);
+        } else if self.delay_checkpoint.is_some_and(|c| c <= now) {
+            self.checkpoint_pending_delay(env, now);
         }
         for t in [DatasetType::Active, DatasetType::Pending] {
             if self.mgr(t).send_set_at.is_some_and(|d| d <= now) {
@@ -672,6 +703,7 @@ impl Datasets {
     pub fn next_deadline(&self) -> Option<Instant> {
         self.delay_deadline
             .into_iter()
+            .chain(self.delay_checkpoint)
             .chain(self.m.iter().filter_map(|m| m.send_set_at))
             .min()
     }
