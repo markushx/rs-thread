@@ -21,11 +21,9 @@ opentrust-core = { workspace = true }
 opentrust-mac = { workspace = true }
 opentrust-net = { workspace = true }
 opentrust-coap = { workspace = true }
+heapless = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-heapless = { workspace = true }

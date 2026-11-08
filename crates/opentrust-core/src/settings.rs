@@ -206,6 +206,52 @@ impl ParentInfo {
     }
 }
 
+/// One child of the child table (`Settings::ChildInfo`, key
+/// [`SettingsKey::ChildInfo`]; one record per child, stored with
+/// `Settings::AddChildInfo`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ChildInfo {
+    /// Child's extended address.
+    pub ext_address: ExtAddress,
+    /// Child timeout in seconds.
+    pub timeout: u32,
+    /// Child's RLOC16.
+    pub rloc16: Rloc16,
+    /// MLE device mode bits.
+    pub mode: u8,
+    /// Thread version of the child.
+    pub version: u16,
+}
+
+impl ChildInfo {
+    /// Encoded size: `8+4+2+1+2` bytes (packed C++ struct).
+    pub const ENCODED_LEN: usize = 17;
+
+    /// Encode in OpenThread's layout. Returns the number of bytes written.
+    pub fn encode(&self, out: &mut [u8]) -> Result<usize> {
+        let mut w = Writer::new(out);
+        w.write_slice(self.ext_address.as_bytes())?;
+        w.write_u32_le(self.timeout)?;
+        w.write_u16_le(self.rloc16.0)?;
+        w.write_u8(self.mode)?;
+        w.write_u16_le(self.version)?;
+        Ok(w.len())
+    }
+
+    /// Decode from OpenThread's layout (trailing bytes ignored).
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        let mut r = Reader::new(buf);
+        Ok(Self {
+            ext_address: ExtAddress(r.read_array()?),
+            timeout: r.read_u32_le()?,
+            rloc16: Rloc16(r.read_u16_le()?),
+            mode: r.read_u8()?,
+            version: r.read_u16_le()?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,5 +359,31 @@ mod tests {
         assert_eq!(ParentInfo::decode(&buf).unwrap(), pi);
         assert_eq!(ParentInfo::decode(&buf[..9]).unwrap_err(), Error::Parse);
         assert_eq!(pi.encode(&mut buf[..9]).unwrap_err(), Error::NoBufs);
+    }
+
+    // Layout from OpenThread `Settings::ChildInfo` (OT_TOOL_PACKED):
+    // ExtAddress[8], u32 timeout, u16 rloc16, u8 mode, u16 version, little-endian.
+    #[test]
+    fn child_info_layout_and_roundtrip() {
+        let ci = ChildInfo {
+            ext_address: ExtAddress([1, 2, 3, 4, 5, 6, 7, 8]),
+            timeout: 0x0000_00f0,
+            rloc16: Rloc16(0x0401),
+            mode: 0x0a,
+            version: 4,
+        };
+        let mut buf = [0u8; 17];
+        assert_eq!(ci.encode(&mut buf).unwrap(), ChildInfo::ENCODED_LEN);
+        assert_eq!(
+            buf,
+            [
+                1, 2, 3, 4, 5, 6, 7, 8, 0xf0, 0, 0, 0, 0x01, 0x04, 0x0a, 0x04, 0x00
+            ]
+        );
+        assert_eq!(ChildInfo::decode(&buf).unwrap(), ci);
+        for n in 0..17 {
+            assert_eq!(ChildInfo::decode(&buf[..n]).unwrap_err(), Error::Parse);
+        }
+        assert_eq!(ci.encode(&mut buf[..16]).unwrap_err(), Error::NoBufs);
     }
 }

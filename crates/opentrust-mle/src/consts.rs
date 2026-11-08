@@ -71,3 +71,13 @@ pub const THREAD_VERSION_1_4: u16 = 5;
 pub const MIN_CHALLENGE_LEN: usize = 4;
 /// Longest Challenge/Response value (OT `kMaxChallengeSize`).
 pub const MAX_CHALLENGE_LEN: usize = 8;
+
+/// Maximum route cost; a link/route with this cost is unusable (§5.9,
+/// OT `kMaxRouteCost` without long routes).
+pub const MAX_ROUTE_COST: u8 = 16;
+
+/// IPv6 addresses a child can register besides its ML-EID (OT
+/// `OPENTHREAD_CONFIG_MLE_IP_ADDRS_PER_CHILD` (6) minus one).
+pub const CHILD_MAX_ADDRESSES: usize = 5;
+/// TLV types remembered from a child's request (OT `Child::kMaxRequestTlvs`).
+pub const CHILD_MAX_REQUEST_TLVS: usize = 6;

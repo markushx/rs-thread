@@ -12,5 +12,6 @@
 pub mod consts;
 pub mod link_quality;
 pub mod message;
+pub mod neighbor;
 pub mod security;
 pub mod tlv;
