@@ -27,10 +27,11 @@
 //!   Update handling and child timeouts for a router.
 //! - [`persist`](crate::persist): `NetworkInfo` / `ParentInfo` / `ChildInfo`
 //!   save and restore.
+//! - `router`, `router_link`, `advert` (feature `ftd`): the router and
+//!   leader role, router links, Advertisements, partitions (Phase 6c).
 //!
-//! Not part of Phase 6b (see PLAN.md Phase 6c): Link Request/Accept,
-//! Advertisements, routing, partitions, leader election, router upgrade,
-//! Announce / Discovery, attach modes that need partition comparison.
+//! Not part of Phase 6: Announce / Discovery (Phase 8), the Address Solicit
+//! exchange over TMF (Phase 7, hook: [`MleEnv::request_router_id`]).
 
 use core::net::Ipv6Addr;
 
@@ -263,7 +264,7 @@ impl<const C: usize> Mle<C> {
             return Ok(());
         }
         if !mode.full_thread_device() && self.cfg.mode.full_thread_device() && C > 0 {
-            // FTD -> MTD while holding children is a Phase 6c transition.
+            // FTD -> MTD while holding children: Phase 7 (see PLAN.md).
             return Err(Error::InvalidState);
         }
         self.cfg.mode = mode;

@@ -271,7 +271,7 @@ Reference: `mle.cpp` (`Attach`, `HandleAttachTimer`, `SendParentRequest`,
 | Child table capacity | `OPENTHREAD_CONFIG_*` compile-time | const generic `Mle<C>`; `C = 0` for end devices; parent-side code behind cargo feature `ftd` (default on) | Embedded footprint | none |
 | Announce attach state | After the last Parent Request an unattached device announces on all channels | Not implemented: the attempt ends after the Parent Requests | Announce / Discovery are Phase 8 | none (slower recovery after channel changes) |
 | Reattach with stored datasets | `kReattachActive` / `kReattachPending` retry with stored Active / Pending Dataset | Not implemented | Dataset handling is Phase 8 | none |
-| Attach modes | Partition comparison for `kSamePartition` / `kBetterPartition` / `kDowngradeToReed` in `HandleParentResponse` | Modes exist; the FTD partition / id-sequence checks and the FTD fallback to become leader after a failed attach are Phase 6c hooks (marked in `attach`) | Needs partitions | none |
+| Attach modes | Partition comparison for `kSamePartition` / `kBetterPartition` / `kDowngradeToReed` in `HandleParentResponse` | Same checks and fallback to become leader (Phase 6c, see below) | | none |
 | Parent Response acceptance | Accepted in any attach state | Only while Parent Requests are being sent (`ParentRequest` state) | A late response would clobber a pending Child ID Request candidate | stricter |
 | Parent selection | `IsBetterParent` incl. CSL accuracy metric for sleepy children | Same order of criteria, without the CSL metric | CSL receiver MLE parameters open | none |
 | Child ID Request | Address Registration mode setting, `SupervisionInterval` for sleepy children | Same TLVs; all registered addresses are sent on the Child ID Request, mesh-local only in the detached Child Update Request | | none |
@@ -281,7 +281,36 @@ Reference: `mle.cpp` (`Attach`, `HandleAttachTimer`, `SendParentRequest`,
 | Leader data / Network Data | Parsed into `NetworkData::Leader` | `MleEnv::set_network_data(leader, bytes)`; versions in Leader Data are compared with serial arithmetic; dataset timestamps compared with the env's | Network Data is Phase 7 | none |
 | Parent: Child Update from a restoring child | `HandleChildUpdateRequestOnParent` ignores children that are not `Valid` | Accepts `Restored` / `ChildUpdateRequest` children and makes them valid | Fast re-attach after the *child* restarted works without waiting for the parent's own Child Update Request | looser |
 | Parent: Restored children | Child Update Request every time tick until answered (rx-on) | Child Update Request once after restore (state `ChildUpdateRequest`); the child timeout removes silent children | Simpler; the child retries itself | none |
-| Parent: REED | A child-role FTD answers Parent Requests to routers and REEDs and upgrades | Only router / leader answer; REED is Phase 6c | | none |
-| Parent: Connectivity / Route TLVs | Computed from the router table | Supplied by the router role through `RouterInfo` (`enter_router_role`, `set_router_info`) | Router table logic is Phase 6c | none |
-| Persistence | `Store()` called from many places; `Restore()` at `Start` | `Mle::store` / `store_if_needed` (called after every `receive` / `poll`) write through `MleEnv::store_*`; `Mle::restore` returns `Restored::Child` or `Restored::Router` (the router role itself is entered by the caller); the FTD capability is taken from the configuration, not the record | Env owns the settings store | none |
+| Parent: Connectivity / Route TLVs | Computed from the router table | Computed from the live router table (`fill_connectivity`, `route64_value`, refreshed before each message is handled); `enter_router_role` + `RouterInfo` stays as a static override used by the parent-side unit tests | | none |
+| Persistence | `Store()` called from many places; `Restore()` at `Start` | `Mle::store` / `store_if_needed` (called after every `receive` / `poll`) write through `MleEnv::store_*`; `Mle::restore` starts the router role restorer itself for a saved router / leader and returns `Restored::Child` or `Restored::Router` (informational); the FTD capability is taken from the configuration, not the record | Env owns the settings store | none |
 | Child records | `Settings::ChildInfo` per child, written by `StoreChild` | `MleEnv::store_child_info` / `delete_child_info` (upsert by extended address) | | none |
+
+### MLE router / leader role (Phase 6c: `router`, `router_link`, `advert`, `router_config`; feature `ftd`)
+
+Reference: `mle_ftd.cpp` (`BecomeRouter`, `BecomeLeader`, `SetStateRouterOrLeader`,
+`HandleAdvertisementOnFtd`, `SendLinkRequest`, `HandleLinkRequest`,
+`SendLinkAccept`, `HandleLinkAcceptVariant`, `HandleTimeTick`,
+`RouterRoleTransition`, `RouterRoleRestorer`, `ShouldDowngrade`,
+`HandleAddressSolicitResponse`, `HandleTmf<kUriAddressSolicit>`), `mle.cpp`
+(`HandleAdvertisement`, `HandleParentResponse`, `DelayedSender`),
+`router_table.cpp`, `mle_types.cpp` (`CalculateLeaderWeight`).
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Router ID exchange | `SendAddressSolicit` / `HandleAddressSolicitResponse` and the leader's `HandleTmf` are in `Mle` | The core calls `MleEnv::request_router_id` / `release_router_id` and is fed `Mle::address_solicit_reply`; the leader side is `handle_address_solicit` / `handle_address_release` returning a grant or a rejection | TMF / CoAP is Phase 7; keeps the core free of the CoAP agent | none |
+| Router eligibility | Security policy (`routersEnabled`, version threshold, CCM) evaluated in `IsRouterEligible` | `RouterConfig::eligible` and the FTD device mode only | Security policy / dataset handling is Phase 7/8 | looser (a policy that forbids routers must switch eligibility off) |
+| Alternate RLOC16 | A REED that becomes router keeps its child address for a while (`SetAlternateRloc16`) | Not kept | Forwarding is Phase 7 | none (in-flight packets to the old address are lost) |
+| Router table | `Array<Router>` + `RouterIdMap` indexes, mixed with the neighbor table and address resolver cleanup | `RouterTable<32>` slots by router ID, `allocated` mask and per-ID reuse seconds in `RouterCtx`; address resolver cleanup is the caller's reaction to `MleEvent::RouterTableChanged` / `RouterRemoved` | No instance-wide singletons | none |
+| Router table events | `NeighborTable::Signal`, `Notifier`, `HandleTableChanged` tasklet | `MleEvent::{RouterAdded, RouterRemoved, RouterTableChanged, PartitionChanged, LeaderStarted}` delivered synchronously through `MleEnv::event` | Event sink instead of notifier | API |
+| Partition change | `HandlePartitionChange` also clears the address resolver and aborts the Address Solicit transaction | Clears the router table, drops the pending solicit flag (a late `address_solicit_reply` is ignored), emits `PartitionChanged`; the address cache is the caller's | | none |
+| Timers | `TimeTicker` (1 s), `TrickleTimer`, `DelayedSender` message queue, `mAttachTimer` for the restorer | One 1 s `rtr.tick`, `opentrust_core::trickle::Trickle` (REED: plain mode), a 12-entry delayed queue (`DelayedKind`), a restorer deadline; all reported by `next_deadline` | Sans-IO | none |
+| Advertisement Imax | `TrickleTimer::SetIntervalMax` | `Trickle::set_imax` (new in `opentrust-core`) | | none |
+| Leader weight | `DeviceProperties` incl. power supply, BR, CCM, instability, adjustment | `DeviceProperties::leader_weight` with the same arithmetic and the `test_mle.cpp` vectors; `RouterConfig::leader_weight` holds the weight in use | | none |
+| Network Data on leader start | `NetworkData::Leader::Start` resets versions randomly | `become_leader` draws random data / stable versions into Leader Data and calls `set_network_data(leader, &[])`; `MleEvent::LeaderStarted` tells Phase 7 to reset its store | Network Data is Phase 7 | none |
+| Dataset check in `BecomeLeader` | Requires a complete Active Dataset | Not checked: the caller starts Thread only with a dataset | Datasets are Phase 8 | none |
+| Reference-device options | Router ID range, preferred partition ID, `mCcmEnabled`, time sync | Not implemented | Test-harness only | none |
+| Time Sync TLVs | Optional in Link Request / Accept, Advertisement | Not implemented | Time sync service not planned | none |
+| Link Request on a plain Advertisement | `UpdateRoutes` etc. use the message's average RSS of the neighbor entry | The RSS of the received frame is used for the link margin of an unknown router; known neighbors average their RSS in `Neighbor::link_info` | | none |
+| Data Request delay | `DelayedSender::ScheduleDataRequest` on all devices | Delayed queue only with feature `ftd`; end-device builds send the Data Request immediately | No queue on MTD | none (no 0..1 s jitter) |
+| `LinkReject` | Handled (ignored) | Not dispatched (dropped) | Not used by Thread | none |
+| Router role restorer | Reuses `mAttachTimer`; children restored by `ChildTable::Restore` before `Mle::Start` | Own deadline; `restore` loads the child records, the Child Update Requests go out once the router role is entered | | none |

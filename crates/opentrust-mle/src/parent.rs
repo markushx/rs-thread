@@ -63,7 +63,7 @@ const MAX_CHILD_ID: u16 = 511;
 /// Parent Responses waiting for their jitter delay.
 const PENDING_RESPONSES: usize = 4;
 
-/// What the router role (Phase 6c) tells the parent-side code.
+/// What the router role tells the parent-side code.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RouterInfo {
     /// Connectivity TLV sent in Parent Responses (leader cost, ID sequence,
@@ -130,10 +130,14 @@ fn add_unique(list: &mut Vec<u8, 16>, v: u8) {
 }
 
 impl<const C: usize> Mle<C> {
-    // ------------------------------------------------------------ role entry points (Phase 6c calls these)
+    // ------------------------------------------------------------ static role entry (tests)
 
     /// Take the router (or leader) role with the given RLOC16 and Leader
-    /// Data. Phase 6c's router/leader transitions call this; tests do too.
+    /// Data with a static [`RouterInfo`], bypassing the router state machine
+    /// (no router table, Advertisements or links): for tests of the
+    /// parent-side code. The real transitions are
+    /// [`become_leader`](Mle::become_leader) and
+    /// [`address_solicit_reply`](Mle::address_solicit_reply).
     pub fn enter_router_role<E: MleEnv>(
         &mut self,
         env: &mut E,

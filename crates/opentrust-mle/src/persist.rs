@@ -68,7 +68,8 @@ pub enum Restored {
 }
 
 impl<const C: usize> Mle<C> {
-    /// Previous partition ID kept for the router role (Phase 6c fills it).
+    /// Previous partition ID (the partition we were in before the last
+    /// partition change; persisted with `NetworkInfo`).
     pub fn previous_partition_id(&self) -> u32 {
         self.previous_partition_id
     }
