@@ -3,8 +3,8 @@
 //! The endpoint owns no socket and no clock. The caller feeds it received
 //! datagrams ([`Endpoint::handle_datagram`]) and time ([`Endpoint::poll`],
 //! [`Endpoint::next_deadline`]); everything it wants to put on the wire goes
-//! through a [`Transport`]. Plain UDP, the TMF agent and (later) a DTLS
-//! session are different `Transport`s over the same endpoint - see
+//! through a [`Transport`]. Plain UDP, the TMF agent and a DTLS session
+//! (`opentrust_dtls::coaps::Coaps`) are different `Transport`s over the same endpoint - see
 //! [`SecureTransport`].
 //!
 //! # Behaviour (follows OT; RFC 7252 section 4)
@@ -103,7 +103,8 @@ pub trait Transport {
     fn send(&mut self, peer: &Peer, opts: &SendOpts, data: &[u8]) -> Result<()>;
 }
 
-/// Seam for CoAPS (DTLS 1.2 + EC-JPAKE, a later task).
+/// Seam for CoAPS (DTLS 1.2 + EC-JPAKE), implemented by
+/// `opentrust_dtls::coaps::Coaps`.
 ///
 /// A secure session is a [`Transport`] whose `send` encrypts, plus an
 /// inbound path that turns received records into CoAP plaintext for

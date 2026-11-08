@@ -13,8 +13,8 @@
 //! | [`uri`] | the Thread TMF URI list |
 //!
 //! Generic TLV helpers shared with MLE/MeshCoP are in `opentrust_core::tlv`.
-//! CoAPS (DTLS 1.2 with EC-JPAKE) is a later task and plugs in through
-//! [`endpoint::SecureTransport`]. Deviations from OpenThread are listed in
+//! CoAPS (DTLS 1.2 with EC-JPAKE) plugs in through
+//! [`endpoint::SecureTransport`], implemented by `opentrust_dtls::coaps::Coaps`. Deviations from OpenThread are listed in
 //! `OPENTRUST-OPENTHREAD-DIFFERENCES.md` ("CoAP / TMF").
 
 #[cfg(test)]

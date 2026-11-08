@@ -14,6 +14,7 @@
 //! | [`record`] | record header, epochs, 48-bit sequence numbers, anti-replay window, `AES_128_CCM_8` (RFC 6655) |
 //! | [`handshake`] | handshake framing, fragment reassembly, Hello / HelloVerifyRequest codecs |
 //! | [`session`] | the client/server state machine: flights, retransmission timers, cookies, key derivation, Finished, KEK, alerts |
+//! | [`coaps`] | [`coaps::Coaps`]: a session behind the CoAP endpoint's `SecureTransport` seam |
 //!
 //! # Interoperability
 //!
@@ -38,6 +39,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod coaps;
 pub mod handshake;
 pub mod record;
 pub mod session;
