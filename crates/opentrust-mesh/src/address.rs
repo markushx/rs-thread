@@ -307,7 +307,7 @@ pub fn handle_address_notify<const N: usize>(
         sink,
     );
     if outcome == NotifyOutcome::Updated {
-        let _ = rsp.ack_empty();
+        let _ = rsp.respond(Code::CHANGED, &[]);
     }
     Some(outcome)
 }
@@ -340,7 +340,7 @@ pub fn handle_address_error<const U: usize, const M: usize, const C: usize>(
         return AddressErrorOutcome::Ignored;
     }
     if req.msg.ty() == Type::Con && !req.ctx.dst.is_multicast() {
-        let _ = rsp.ack_empty();
+        let _ = rsp.respond(Code::CHANGED, &[]);
     }
     let Ok((target, iid)) = parse_address_error(req.msg.payload()) else {
         return AddressErrorOutcome::Ignored;

@@ -180,7 +180,7 @@ fn queries_and_notifications_must_have_the_right_message_type() {
     let (code, body) = m
         .raw_request(1, 0, "a/an", Type::Con, Code::POST, &buf[..n])
         .unwrap();
-    assert_eq!(code, Code::EMPTY);
+    assert_eq!(code, Code::CHANGED);
     assert!(body.is_empty());
     assert_eq!(m.tmf[0].resolver.info(&GUA).unwrap().rloc16, Rloc16(0x0400));
 }
@@ -251,7 +251,7 @@ fn address_error_with_own_ml_eid_is_ignored() {
         .unwrap();
     // ... but the child registered GUA with another ML-EID, so it is removed
     // and the child is told (the first datagram of the router is the ACK).
-    assert_eq!(code, Code::EMPTY);
+    assert_eq!(code, Code::CHANGED);
     assert!(
         m.sim.nodes[1]
             .mle

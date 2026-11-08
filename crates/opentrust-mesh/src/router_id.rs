@@ -220,7 +220,7 @@ pub fn handle_address_release<E: MleEnv, const C: usize>(
     let rloc16 = t.rloc16().ok()?;
     let ext = t.ext_mac_address().ok()?;
     mle.handle_address_release(env, now, rloc16, ext).ok()?;
-    rsp.ack_empty().ok()?;
+    rsp.respond(Code::CHANGED, &[]).ok()?;
     Some(rloc16)
 }
 
