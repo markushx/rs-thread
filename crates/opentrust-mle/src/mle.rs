@@ -35,7 +35,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
-use opentrust_core::time::{Duration, Instant};
+use opentrust_core::time::Instant;
 use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_core::{Error, Result};
 use opentrust_net::udp::UdpMeta;
@@ -510,10 +510,13 @@ impl<const C: usize> Mle<C> {
         lo + u32::from_le_bytes(b) % (hi - lo)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn rand_duration<E: MleEnv>(env: &mut E, max: Duration) -> Duration {
+    #[cfg(feature = "ftd")]
+    pub(crate) fn rand_duration<E: MleEnv>(
+        env: &mut E,
+        max: opentrust_core::time::Duration,
+    ) -> opentrust_core::time::Duration {
         let ms = Self::rand_range(env, 0, max.as_millis().min(u64::from(u32::MAX)) as u32);
-        Duration::from_millis(u64::from(ms))
+        opentrust_core::time::Duration::from_millis(u64::from(ms))
     }
 
     pub(crate) fn new_challenge<E: MleEnv>(env: &mut E) -> [u8; 8] {

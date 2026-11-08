@@ -130,6 +130,9 @@ impl<const C: usize> Mle<C> {
         nb: Option<NbRef>,
     ) -> Result<RxClass> {
         if self.role.is_router_or_leader() {
+            #[cfg(feature = "ftd")]
+            return self.handle_child_update_request_on_parent(env, now, rx);
+            #[cfg(not(feature = "ftd"))]
             return Err(Error::Drop);
         }
         let t = &rx.tlvs;
@@ -283,6 +286,10 @@ impl<const C: usize> Mle<C> {
                 if nb != Some(NbRef::Parent) || !self.neighbor_is_valid(nb) {
                     return Err(Error::Security);
                 }
+            }
+            #[cfg(feature = "ftd")]
+            Role::Router | Role::Leader => {
+                return self.handle_child_update_response_on_parent(env, now, rx, nb);
             }
             _ => return Err(Error::Drop),
         }

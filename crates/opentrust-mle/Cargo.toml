@@ -13,7 +13,9 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-# Parent-side (router/FTD) handling of attaching children.
+# Parent-side (router/FTD) handling of attaching children. On by default;
+# end-device-only builds can use `default-features = false`.
+default = ["ftd"]
 ftd = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mac/defmt", "opentrust-net/defmt", "opentrust-coap/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-mac/log", "opentrust-net/log", "opentrust-coap/log"]

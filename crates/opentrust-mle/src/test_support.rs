@@ -40,6 +40,7 @@ pub(crate) struct TestEnv {
     pub nd_leader: Option<LeaderData>,
     pub provided_nd: Vec<u8, 64>,
     pub indirect: Vec<(ExtAddress, Rloc16), 8>,
+    pub supervised: Vec<(ExtAddress, Rloc16), 8>,
     pub extra_addrs: Vec<Ipv6Addr, 4>,
     pub settings: RamSettings<1024>,
 }
@@ -70,6 +71,7 @@ impl TestEnv {
             nd_leader: None,
             provided_nd: Vec::new(),
             indirect: Vec::new(),
+            supervised: Vec::new(),
             extra_addrs: Vec::new(),
             settings: RamSettings::new(),
         }
@@ -117,6 +119,16 @@ impl TestEnv {
             lqi: Some(200),
         };
         mle.receive(env, now, &meta, link, &out.data, &mut scratch)
+    }
+
+    #[cfg(feature = "ftd")]
+    pub fn settings_child_count(&self) -> usize {
+        self.settings.count(SettingsKey::ChildInfo)
+    }
+
+    #[cfg(feature = "ftd")]
+    pub fn load_child(&self, i: usize) -> Option<ChildInfo> {
+        MleEnv::load_child_info(self, i)
     }
 
     pub fn has_event(&self, e: MleEvent) -> bool {
@@ -181,6 +193,9 @@ impl MleEnv for TestEnv {
     }
     fn indirect_remove_child(&mut self, ext: &ExtAddress, _rloc16: Rloc16) {
         self.indirect.retain(|(e, _)| e != ext);
+    }
+    fn send_child_supervision(&mut self, ext: &ExtAddress, rloc16: Rloc16) {
+        let _ = self.supervised.push((*ext, rloc16));
     }
     fn network_data(&self, _stable_only: bool, out: &mut [u8]) -> Result<usize> {
         out.get_mut(..self.provided_nd.len())

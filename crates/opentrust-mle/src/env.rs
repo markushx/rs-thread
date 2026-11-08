@@ -203,6 +203,10 @@ pub trait MleEnv {
     /// source-match entries.
     fn indirect_remove_child(&mut self, _ext: &ExtAddress, _rloc16: Rloc16) {}
 
+    /// Send a child supervision message (an empty frame / message that
+    /// makes the sleepy child's data poll succeed) to a sleepy child.
+    fn send_child_supervision(&mut self, _ext: &ExtAddress, _rloc16: Rloc16) {}
+
     // ------------------------------------------------------------ network data / dataset (Phase 7/8 consumers)
 
     /// Full or stable (`stable_only`) Network Data for a Child ID /
