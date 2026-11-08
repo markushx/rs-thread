@@ -229,6 +229,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [ ] Full code review
 - [ ] Remove mention of PLAN phases from code and comments
+- [ ] Check what can/needs to be disabled on embedded devices
 
 ## Milestones
 
