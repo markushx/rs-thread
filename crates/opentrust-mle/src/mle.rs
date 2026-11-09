@@ -608,6 +608,54 @@ impl<const C: usize> Mle<C> {
             .map(NbRef::Child)
     }
 
+    /// Replay protection for a received secured data frame (OT
+    /// `MeshForwarder::HandleReceivedFrame` / `Mac::ProcessReceiveSecurity`):
+    /// the key sequence and frame counter must not be older than the last
+    /// ones accepted from the neighbor with MAC source address `src`, which
+    /// are updated. Frames from addresses that are not a (valid or
+    /// restoring) neighbor pass: MLE messages of attaching devices have
+    /// their own replay protection.
+    ///
+    /// [`Error::Security`] for an older key sequence or a replayed
+    /// counter, [`Error::Drop`] for an exact duplicate.
+    pub fn check_link_frame(
+        &mut self,
+        src: opentrust_mac::frame::Address,
+        key_sequence: u32,
+        frame_counter: u32,
+    ) -> Result<()> {
+        use opentrust_mac::frame::Address;
+        let nb = match src {
+            Address::Extended(e) => self.find_neighbor(&e, false),
+            Address::Short(s) => {
+                let rloc = Rloc16(s.0);
+                let f = crate::neighbor::StateFilter::ValidOrRestoring;
+                if self.parent.as_ref().is_some_and(|p| {
+                    p.router.neighbor.rloc16 == rloc
+                        && p.router.neighbor.state.is_valid_or_restoring()
+                }) {
+                    Some(NbRef::Parent)
+                } else {
+                    #[cfg(feature = "ftd")]
+                    let r = self
+                        .rtr
+                        .table
+                        .find_by_rloc(rloc, f)
+                        .map(|r| NbRef::Router(r.router_id));
+                    #[cfg(not(feature = "ftd"))]
+                    let r = None;
+                    r.or_else(|| self.children.index_by_rloc(rloc, f).map(NbRef::Child))
+                }
+            }
+            Address::None => None,
+        };
+        let Some(nb) = nb else { return Ok(()) };
+        let n = self.neighbor_mut(nb);
+        n.link_counters.check(key_sequence, frame_counter)?;
+        n.link_counters.update(key_sequence, frame_counter);
+        Ok(())
+    }
+
     pub(crate) fn neighbor_mut(&mut self, r: NbRef) -> &mut Neighbor {
         match r {
             NbRef::Parent => &mut self.parent.as_mut().expect("parent").router.neighbor,

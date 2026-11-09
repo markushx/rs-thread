@@ -324,6 +324,29 @@ fn selects_better_link_quality() {
     let p = child.parent().unwrap();
     assert!(p.router.neighbor.is_valid());
     assert_eq!(p.router.neighbor.link_counters.key_sequence(), 5);
+    // Link-layer replay protection for data frames from the parent.
+    let parent = opentrust_mac::frame::Address::Short(Rloc16(0x0400).into());
+    let fc = p.router.neighbor.link_counters.frame_counter().unwrap();
+    assert_eq!(child.check_link_frame(parent, 5, fc + 10), Ok(()));
+    assert_eq!(
+        child.check_link_frame(parent, 5, fc + 10),
+        Err(opentrust_core::Error::Drop),
+        "duplicate"
+    );
+    assert_eq!(
+        child.check_link_frame(parent, 5, fc + 5),
+        Err(opentrust_core::Error::Security),
+        "replay"
+    );
+    assert_eq!(
+        child.check_link_frame(parent, 4, u32::MAX),
+        Err(opentrust_core::Error::Security),
+        "old key sequence"
+    );
+    // Unknown sources pass (MLE has its own protection for attaching devices).
+    let other = opentrust_mac::frame::Address::Short(Rloc16(0x1234).into());
+    assert_eq!(child.check_link_frame(other, 5, 0), Ok(()));
+    let p = child.parent().unwrap();
     assert_eq!(p.leader_cost, 1);
     assert!(env.has_event(MleEvent::Attached {
         parent: p1.env.ext,
