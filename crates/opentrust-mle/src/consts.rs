@@ -79,6 +79,10 @@ pub const MAX_ROUTE_COST: u8 = 16;
 /// IPv6 addresses a child can register besides its ML-EID (OT
 /// `OPENTHREAD_CONFIG_MLE_IP_ADDRS_PER_CHILD` (6) minus one).
 pub const CHILD_MAX_ADDRESSES: usize = 5;
+/// Multicast groups larger than realm-local a child can have registered
+/// for Multicast Listener Registration (stored besides the unicast
+/// addresses).
+pub const CHILD_MAX_MULTICAST_ADDRESSES: usize = 4;
 /// TLV types remembered from a child's request (OT `Child::kMaxRequestTlvs`).
 pub const CHILD_MAX_REQUEST_TLVS: usize = 6;
 

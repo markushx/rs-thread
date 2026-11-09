@@ -104,13 +104,14 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] UDP sockets (`udp`): fixed-capacity socket table, bind/connect/ephemeral ports 49152-65535 (OT rules), bounded receive queues with per-packet metadata, internal receiver hooks for MLE (19788) and TMF (61631); mapping to the Phase 10 `edge-nal` facade documented in the module
 - [x] Address resolution data structures (`resolver`): EID-to-RLOC cache with OT's cached/snooped/query/query-retry states, timeouts, exponential retry delay and ramp-down, eviction order, snooping, notification and duplicate-address decisions, address-query/-error decision helpers
   - [x] TMF messages `/a/aq`, `/a/an`, `/a/ae` (CoAP encoding, TLVs, sending, ACKs) wired to `resolver::ResolverEvent`, router-side child lookup on the MLE child table, duplicate address handling (Phase 7a: `opentrust_mesh::address`)
-    - [ ] Backbone Query extension of `/a/aq` and DUA duplicate notification in `/a/ae` (Phase 9)
+    - [x] DUA duplicate notification in `/a/ae` (`address::AddressErrorOutcome::DuplicateDomainUnicast`, Phase 9)
+    - [ ] Backbone Query extension of `/a/aq` / `/b/bq` (belongs to the Backbone Router server role, Phase 9)
   - [x] Mesh forwarder glue: hold datagrams while an EID resolves, `HandleResolved`, ICMPv6 destination-unreachable on no route/resolution failure, snooping from forwarded frames (Phase 7a: `opentrust_mesh::forwarder`)
   - [x] Network Data providers for `Ip6Env` (`route_lookup`, `is_on_mesh`) and for SLAAC (`OnMeshPrefix` list) (Phase 7b, `opentrust_mesh::netdata::lookup::NetDataIp6Env`, `consumers::slaac_prefixes`)
   - [ ] Persisted SLAAC IID secret key in settings (Phase 6 settings wiring; the key is a caller argument)
 - [ ] DHCPv6 address allocation (OT `Dhcp6Client`/`Dhcp6Server`, legacy; only if a use case needs it)
-- [ ] Domain Unicast Address (DUA, Thread 1.2, `/n/dr`, `/b/bq`, `/b/bb`, duplicate DUA handling in `/a/ae`) -> Phase 9
-- [ ] Multicast Listener Registration (MLR, `/n/mr`) for subscribed multicast groups -> Phase 9
+- [x] Domain Unicast Address client (Thread 1.2, `/n/dr`, `/n/dn`, duplicate DUA handling in `/a/ae`: `opentrust_mesh::dua`); `/b/bq` / `/b/bb` belong to the Backbone Router server role (Phase 9)
+- [x] Multicast Listener Registration (MLR, `/n/mr`) for subscribed multicast groups (`opentrust_mesh::mlr`, Phase 9)
 - [ ] IPv6 fragmentation/reassembly above the 6LoWPAN layer (OT `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`, off by default; not needed for 1280-byte Thread datagrams)
 - [ ] Host (border router) interface: `RemoveMplOption` before passing to host, host-origin multicast policy (Phase 9, border routing)
 
@@ -153,7 +154,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [x] MLE delay queue and retransmission as OT: Link Request / Accept / Advertisement / Data Request delays, multicast Data Response jitter, aggregated Child Update Request of MTD children (`Mle::schedule_child_update_request`), Child Update / Data Request retries
     - [ ] Delayed Child Update Request triggers from the device glue (address changes of an MTD child call `schedule_child_update_request`)
   - [x] Address Registration context resolution (Phase 7b: `netdata::consumers::context_prefix64` / `context_id_for` back `MleEnv::lowpan_context` / `lowpan_context_for`)
-  - [ ] MLR state in `Child` (Phase 9)
+  - [x] MLR state in `Child` (`Child::multicast_listeners`, `MlrState`; Phase 9)
 - [x] Attach: Parent Request/Response, Child ID Request/Response, parent selection (link quality, connectivity) (6b)
 - [x] Child Update Request/Response, keep-alive, SED/MED modes, supervision (6b; SSED/CSL parameters remain open)
 - [x] Link Request/Accept (router link establishment), Advertisement, link margin/quality (6c)
@@ -173,7 +174,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Network Data (§5.13–5.15, Phase 7b, `opentrust_mesh::netdata`): TLV codec with typed iterators and the stable copy (`tlv`, `NetworkData<N>`; vectors of `test_network_data.cpp`), leader store (`leader`: `/a/sd` registration with validation and in-place merge, context ID allocation with 5 min reuse delay, service IDs, stale router / child entry removal, version and stable version), `/a/sd` server and client (`server_data`), local data and the OT notifier timing (`local`, `notifier`), consumers (`lookup`, `consumers`), distribution through MLE (`Leader::publish` + `Mle::network_data_updated`; full and stable data from `MleEnv::network_data`); multi-node tests in `netdata_sim_tests`
   - [x] Publisher is part of the mesh simulator (`MeshSim` polls `TmfNode::publisher`); tests: five publishers settle at three entries and a replacement takes over (`netdata_sim_tests`)
   - [x] Network Data Publisher (`netdata::publisher`: on-mesh prefix, external route, DNS/SRP anycast / unicast entries) and the `kBorderRouterRequest` decision in the notifier (`schedule_router_upgrade` / `router_upgrade_tick`)
-  - [ ] Consume the router upgrade flag in the MLE (`is_router_eligible` Border Router rule), Backbone Router / DUA entries, DNS/SRP query helpers, DHCPv6 / ND agent ALOC subscription, Publisher driven by the Border Routing Manager (requester quotas)
+  - [x] Backbone Router service and Domain Prefix entries are read by `netdata::backbone` (Primary BBR selection, BBR Dataset, Domain Prefix events; client side, Phase 9)
+  - [ ] Consume the router upgrade flag in the MLE (`is_router_eligible` Border Router rule), DNS/SRP query helpers, DHCPv6 / ND agent ALOC subscription, Publisher driven by the Border Routing Manager (requester quotas)
 - [x] Anycast locators, Service ALOCs (Phase 7b: `netdata::aloc` (leader, service and commissioner ALOC set maintenance), `netdata::anycast` (`/a/yl`), `lookup::anycast_lookup` for leader / service / commissioner / DHCP / ND ALOCs)
 - [x] Commissioning datasets (Phase 8a: Active / Pending Operational Dataset, delay timer in `opentrust_meshcop::{dataset, manager, mgmt}`; the Commissioning Data TLV of Network Data is written by `Leader::set_commissioning_data` and `opentrust_meshcop::leader`)
 
@@ -223,8 +225,12 @@ Security-relevant decisions for the review before M4:
 
 ## Phase 9 – Thread 1.2 / 1.3 / 1.4 features
 
-- [ ] Domain Unicast Address & Backbone Router client support (1.2)
-- [ ] Multicast Listener Registration (MLR) (1.2)
+- [x] Domain Unicast Address & Backbone Router client support (1.2): `netdata::backbone`, `dua` (generation with persisted DAD counter, `/n/dr` registration, retry / reregistration, duplicate handling, proxy registration for children), mesh-simulator tests with a fake Primary BBR
+  - [ ] Backbone Router server role (`BackboneRouter::Local` / `Manager`: BBR service publication, DUA ND proxying, `/b/bq`, `/b/ba`, `/b/bmr`, MLR on the backbone link)
+  - [ ] Thread 1.1 parents (registration through the BBR service ALOC)
+  - [ ] Device glue outside the simulator: persist the DAD counter (`take_dad_counter_update`), feed `DuaManager` / `MlrManager` from the real MLE events, `MleEnv::registered_addresses` with the DUA
+- [x] Multicast Listener Registration (MLR) (1.2): `mlr` (device and child groups, `/n/mr`, timeouts, reregistration, failed addresses, `MlrState` in `Child`)
+  - [ ] Commissioner MLR (Commissioner Session ID / Timeout TLVs)
 - [ ] Enhanced CSL, Link Metrics (initiator & subject)
 - [ ] SRP client (RFC 9665) & DNS-SD client (1.3) — **pulled forward**: required by Matter for operational discovery (`_matter._tcp`); target M4
 - [ ] TREL hooks (optional, 1.3)

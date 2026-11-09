@@ -17,18 +17,18 @@ use crate::netdata::tlv::{BrFlags, NetPrefix, THREAD_ENTERPRISE_NUMBER};
 use crate::sim::MeshSim;
 use crate::tlv::dua_status;
 
-fn secs(s: u64) -> Duration {
+pub(crate) fn secs(s: u64) -> Duration {
     Duration::from_secs(s)
 }
 
-const FTD: DeviceMode = DeviceMode::new(true, true, true);
-const SED: DeviceMode = DeviceMode::new(false, false, false);
+pub(crate) const FTD: DeviceMode = DeviceMode::new(true, true, true);
+pub(crate) const SED: DeviceMode = DeviceMode::new(false, false, false);
 
 fn domain_prefix() -> NetPrefix {
     NetPrefix::from_addr(&"fd00:7d03:7d03:7d03::".parse::<Ipv6Addr>().unwrap(), 64).unwrap()
 }
 
-fn bbr(server16: u16, seq: u8) -> BbrConfig {
+pub(crate) fn bbr(server16: u16, seq: u8) -> BbrConfig {
     BbrConfig {
         server16,
         sequence_number: seq,
@@ -39,7 +39,7 @@ fn bbr(server16: u16, seq: u8) -> BbrConfig {
 
 /// Leader (0), routers 1 and 2 in a triangle, and a sleepy child 3 of
 /// router 2.
-fn bring_up() -> MeshSim {
+pub(crate) fn bring_up() -> MeshSim {
     let modes = [FTD, FTD, FTD, SED];
     let mut m = MeshSim::with_modes(&modes);
     for (x, y) in [(0, 1), (0, 2), (1, 2), (2, 3)] {
@@ -59,7 +59,7 @@ fn bring_up() -> MeshSim {
 
 /// Node `i` serves the Backbone Router service `cfg` (removing it with
 /// `None`) and the Domain Prefix (`dp`).
-fn serve(m: &mut MeshSim, i: usize, cfg: Option<BbrConfig>, dp: bool) {
+pub(crate) fn serve(m: &mut MeshSim, i: usize, cfg: Option<BbrConfig>, dp: bool) {
     m.set_local(i, |l| {
         let _ = l.remove_service(THREAD_ENTERPRISE_NUMBER, &[1]);
         if let Some(c) = cfg {
@@ -84,7 +84,7 @@ fn serve(m: &mut MeshSim, i: usize, cfg: Option<BbrConfig>, dp: bool) {
 }
 
 /// Node `i` serves a Backbone Router with sequence number `seq`.
-fn serve_bbr(m: &mut MeshSim, i: usize, seq: u8, dp: bool) {
+pub(crate) fn serve_bbr(m: &mut MeshSim, i: usize, seq: u8, dp: bool) {
     let r = m.sim.nodes[i].mle.rloc16().0;
     serve(m, i, Some(bbr(r, seq)), dp);
 }

@@ -491,3 +491,20 @@ Reference: `backbone_router/bbr_leader.cpp`, `thread/dua_manager.cpp`,
 | DUA IID | `Slaac::GenerateIid` with the DAD counter; settings `DadInfo` | `slaac::generate_iid` (RFC 7217, same hash input as SLAAC); the DAD counter is exposed with `restore` / `take_dad_counter_update` | Persistence is the caller's | none |
 | DUA prefix length | Any length | Longer than 64 bits is refused (no DUA) | The IID covers the last 64 bits | none |
 | Duplicate DUA in `/a/ae` | `NotifyDuplicateDomainUnicastAddress` | `handle_address_error` returns `DuplicateDomainUnicast` for a domain address; the caller calls `DuaManager::notify_duplicate` | Sans-IO | none |
+
+## Multicast Listener Registration (`opentrust-mesh::mlr`, MLR state in `opentrust-mle::neighbor::Child`)
+
+Reference: `thread/mlr_manager.cpp`, `backbone_router/bbr_leader.cpp`,
+`thread/mle_ftd.cpp` (`ProcessAddressRegistrationTlv`).
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|---|---|---|---|---|
+| MLR state of device groups | `mMlrState` inside each external multicast address of `ThreadNetif` | `MlrManager` keeps a table `(group, MlrState)` synchronised with `Netif::external_multicast_larger_than_realm_local` on every `update` | Keeps `opentrust-net` free of Thread 1.2 state | none |
+| MLR state of child groups | In the child's IPv6 address entries | `Child::multicast_listeners` (separate list of at most `CHILD_MAX_MULTICAST_ADDRESSES` = 4 groups with `MlrState`); only groups larger than realm-local are kept, other multicast addresses of an Address Registration TLV are ignored as before | The unicast list stays unchanged | A child can have fewer groups registered than in OT (OT shares the 6 address slots) |
+| Child groups in Child ID / Child Update Response | All stored addresses incl. multicast | Same: the listeners are echoed as uncompressed entries | | none |
+| Child registering groups | An FTD child checks the parent's Thread version | `MleEnv::registered_multicast_addresses` (default none) lists the groups; they are always included in the Address Registration TLV of a child that registers addresses | The parent's version is not consulted | A Thread 1.1 parent ignores the entries |
+| Promotion without request | `UpdateProxiedSubscriptions` / `UpdateLocalSubscriptions` | `MlrManager::update` marks a group registered if the device or another child registered it | | none |
+| Timers | One-second ticker counters | `Instant` deadlines; renewal in `(T/2+1)..=(T-9)` s with T = max(MLR timeout, 300 s), reregistration in `1..=reregistration delay` s | Sans-IO | none |
+| Commissioner registration | `RegisterMulticastListeners` with Commissioner Session ID and Timeout TLVs | Not implemented | Not needed by a device | none |
+| Thread 1.1 parents | Service ALOC of the Backbone Router service | Not supported (end devices register through their 1.2+ parent) | 1.1 is not a target | A 1.1 parent does not proxy MLR |
+| MLR.req priority | Normal confirmable POST | Same (`Priority::Normal`); DUA.req uses net priority as OT | | none |

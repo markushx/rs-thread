@@ -255,6 +255,7 @@ impl<const C: usize> Mle<C> {
             // Only the ML-EID was registered; register the rest now.
             let mut any = false;
             env.registered_addresses(&mut |_| any = true);
+            env.registered_multicast_addresses(&mut |_| any = true);
             if any {
                 let _ = self.send_child_update_request(env, now);
             }

@@ -449,6 +449,20 @@ impl<const U: usize, const M: usize> Netif<U, M> {
         }
     }
 
+    /// The external (application) subscriptions with a scope larger than
+    /// realm-local: the groups that are registered with the Primary
+    /// Backbone Router (OT `kTypeMulticastLargerThanRealmLocal`).
+    pub fn external_multicast_larger_than_realm_local(
+        &self,
+    ) -> impl Iterator<Item = Ipv6Addr> + '_ {
+        self.multicast
+            .iter()
+            .flatten()
+            .filter(|e| e.kind == MulticastKind::External)
+            .map(|e| e.addr)
+            .filter(addr::is_multicast_larger_than_realm_local)
+    }
+
     /// Remove all external subscriptions.
     pub fn unsubscribe_all_external(&mut self) {
         for s in &mut self.multicast {

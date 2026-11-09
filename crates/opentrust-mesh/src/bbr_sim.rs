@@ -25,6 +25,10 @@ use crate::dua::{
     ChildNotification, DuaContext, DuaManager, DuaResult, USER_DUA_NOTIFY, USER_DUA_REGISTRATION,
     build_dua_status, send_child_notification, send_dua_request,
 };
+use crate::mlr::{
+    MlrContext, MlrManager, MlrResult, USER_MLR, build_mlr_response, parse_mlr_request,
+    send_mlr_request,
+};
 use crate::netdata::backbone::{BackboneRouterLeader, BbrState, DomainPrefixEvent};
 use crate::sim::TmfNode;
 use crate::tlv::ThreadTlvs;
@@ -41,6 +45,9 @@ pub enum Outcome {
 pub struct BbrNode {
     pub bbr: BackboneRouterLeader,
     pub dua: DuaManager<8>,
+    pub mlr: MlrManager<8>,
+    /// MLR.req sent (the groups of each).
+    pub mlr_sent: std::vec::Vec<std::vec::Vec<Ipv6Addr>>,
     nd_seen: std::vec::Vec<u8>,
     last_role: Role,
     /// DAD counter values handed to the settings hook.
@@ -57,9 +64,12 @@ pub struct BbrNode {
     pub duplicate_flag: bool,
     /// Results of requests this node sent: (user, outcome).
     pub results: std::vec::Vec<(u32, Outcome)>,
+    /// Results of MLR.req.
+    pub mlr_results: std::vec::Vec<(u32, Outcome)>,
     /// DUAs that were removed after a duplicate report.
     pub dups_handled: u32,
     extra_dua: Option<Ipv6Addr>,
+    extra_mcast: std::vec::Vec<Ipv6Addr>,
 }
 
 impl BbrNode {
@@ -67,6 +77,8 @@ impl BbrNode {
         Self {
             bbr: BackboneRouterLeader::new(),
             dua: DuaManager::new(),
+            mlr: MlrManager::new(),
+            mlr_sent: std::vec::Vec::new(),
             nd_seen: std::vec::Vec::new(),
             last_role: Role::Disabled,
             dad_stored: std::vec::Vec::new(),
@@ -76,8 +88,10 @@ impl BbrNode {
             ntf_inbox: std::vec::Vec::new(),
             duplicate_flag: false,
             results: std::vec::Vec::new(),
+            mlr_results: std::vec::Vec::new(),
             dups_handled: 0,
             extra_dua: None,
+            extra_mcast: std::vec::Vec::new(),
         }
     }
 }
@@ -107,6 +121,10 @@ pub struct FakeBbr {
     pub dua_seen: std::vec::Vec<SeenDua>,
     /// Do not answer (to test timeouts).
     pub silent: bool,
+    /// Status and failed addresses for the next MLR.req.
+    pub mlr_script: std::collections::VecDeque<(u8, std::vec::Vec<Ipv6Addr>)>,
+    /// MLR.req received: (node, sender, groups).
+    pub mlr_seen: std::vec::Vec<(usize, Ipv6Addr, std::vec::Vec<Ipv6Addr>)>,
 }
 
 impl FakeBbr {
@@ -142,6 +160,30 @@ impl FakeBbr {
         if req.msg.ty() == Type::Con {
             let _ = rsp.respond(Code::CHANGED, &buf[..n]);
         }
+    }
+}
+
+impl FakeBbr {
+    /// Handle a `/n/mr` request on node `idx`.
+    pub fn handle_mlr(&mut self, idx: usize, req: &Request<'_>, rsp: &mut dyn Responder) {
+        if self.node != Some(idx) {
+            return;
+        }
+        let Ok(groups) = parse_mlr_request(req.msg.payload()) else {
+            return;
+        };
+        self.mlr_seen
+            .push((idx, req.ctx.peer.addr, groups.to_vec()));
+        if self.silent {
+            return;
+        }
+        let (status, failed) = self
+            .mlr_script
+            .pop_front()
+            .unwrap_or((0, std::vec::Vec::new()));
+        let mut buf = [0u8; 64];
+        let n = build_mlr_response(status, &failed, &mut buf).unwrap();
+        let _ = rsp.respond(Code::CHANGED, &buf[..n]);
     }
 }
 
@@ -228,6 +270,64 @@ pub fn step(i: usize, now: Instant, mle: &mut Mle<4>, env: &mut TestEnv, t: &mut
         }
     }
 
+    // Multicast Listener Registration.
+    let mctx = MlrContext {
+        now,
+        attached,
+        full_thread_device: mle.is_full_thread_device(),
+        is_child: role == Role::Child,
+        bbr: &b.bbr,
+    };
+    if let Some((st, _)) = nd_event {
+        b.mlr.handle_backbone_router_update(st, &mctx, &mut t.rng);
+    }
+    if role_changed {
+        b.mlr.handle_role_changed(&mctx, &mut t.rng);
+    }
+    b.mlr.update(&mctx, &mut t.rng, netif, mle.children_mut());
+    for (user, r) in core::mem::take(&mut b.mlr_results) {
+        moved = true;
+        let res = match &r {
+            Outcome::Timeout => MlrResult::Timeout,
+            Outcome::Failed => MlrResult::Failed,
+            Outcome::Response(code, p) => MlrResult::Response {
+                code: *code,
+                payload: p,
+            },
+        };
+        let _ = user;
+        b.mlr
+            .handle_result(&mctx, res, &mut t.rng, mle.children_mut());
+    }
+    if let Some(req) = b.mlr.poll(&mctx, &mut t.rng, mle.children_mut()) {
+        moved = true;
+        match send_mlr_request(
+            &mut t.agent,
+            now,
+            &mut t.rng,
+            &mut t.sink,
+            &env.mesh_local_prefix(),
+            mle.rloc16(),
+            &req,
+        ) {
+            Ok(()) => b.mlr_sent.push(req.addresses.to_vec()),
+            Err(_) => b.mlr.request_not_sent(now, mle.children_mut()),
+        }
+    }
+    if !mle.is_full_thread_device() {
+        let groups: std::vec::Vec<Ipv6Addr> =
+            netif.external_multicast_larger_than_realm_local().collect();
+        if groups != b.extra_mcast {
+            env.extra_multicast.clear();
+            for g in &groups {
+                let _ = env.extra_multicast.push(*g);
+            }
+            b.extra_mcast = groups;
+            mle.schedule_child_update_request(env, now);
+            moved = true;
+        }
+    }
+
     // Children: their DUAs are registered by proxy.
     b.dua
         .sync_children(&ctx, mle.children().iter(StateFilter::Valid), &mut t.rng);
@@ -301,7 +401,10 @@ fn child_notification(
 
 /// Earliest deadline of the Backbone Router client of node `t`.
 pub fn next_deadline(t: &TmfNode) -> Option<Instant> {
-    t.bbrn.dua.next_deadline()
+    [t.bbrn.dua.next_deadline(), t.bbrn.mlr.next_deadline()]
+        .into_iter()
+        .flatten()
+        .min()
 }
 
 /// Route a TMF outcome with `user` to the Backbone Router client; returns
@@ -309,6 +412,9 @@ pub fn next_deadline(t: &TmfNode) -> Option<Instant> {
 pub fn queue_outcome(t: &mut TmfNode, user: u32, o: Outcome) -> bool {
     if user == USER_DUA_REGISTRATION || user == USER_DUA_NOTIFY {
         t.bbrn.results.push((user, o));
+        true
+    } else if user == USER_MLR {
+        t.bbrn.mlr_results.push((user, o));
         true
     } else {
         false

@@ -150,6 +150,31 @@ fn child_addresses() {
 }
 
 #[test]
+fn child_multicast_listeners_keep_their_state() {
+    use crate::neighbor::MlrState;
+    let mut c = Child::new(ext(1), t(0));
+    let g: Ipv6Addr = "ff05::1".parse().unwrap();
+    c.add_multicast_listener(g).unwrap();
+    assert_eq!(c.add_multicast_listener(g), Err(Error::Already));
+    assert_eq!(c.multicast_listeners()[0].mlr, MlrState::ToRegister);
+    c.multicast_listeners_mut()[0].mlr = MlrState::Registered;
+    assert!(c.has_mlr_state(MlrState::Registered));
+    assert!(!c.has_mlr_state(MlrState::ToRegister));
+    // Not part of the unicast addresses.
+    assert_eq!(c.addresses().len(), 0);
+    for i in 2..=4u16 {
+        c.add_multicast_listener(Ipv6Addr::new(0xff05, 0, 0, 0, 0, 0, 0, i))
+            .unwrap();
+    }
+    assert_eq!(
+        c.add_multicast_listener("ff05::99".parse().unwrap()),
+        Err(Error::NoBufs)
+    );
+    c.clear_multicast_listeners();
+    assert!(c.multicast_listeners().is_empty());
+}
+
+#[test]
 fn child_request_tlvs_truncate() {
     let mut c = Child::new(ext(1), t(0));
     c.set_request_tlvs(&[1, 2, 3, 4, 5, 6, 7, 8]);

@@ -365,6 +365,7 @@ impl Handler for NodeHandler<'_> {
                 }
             }
             Uri::DuaRegistrationRequest => self.fake_bbr.handle_dua(self.idx, req, rsp),
+            Uri::Mlr => self.fake_bbr.handle_mlr(self.idx, req, rsp),
             Uri::DuaRegistrationNotify => {
                 if req.msg.ty() == Type::Con {
                     let _ = rsp.respond(Code::CHANGED, &[]);
@@ -399,6 +400,7 @@ impl MeshSim {
                     Uri::AnycastLocate,
                     Uri::DuaRegistrationRequest,
                     Uri::DuaRegistrationNotify,
+                    Uri::Mlr,
                 ] {
                     agent.register(u).unwrap();
                 }

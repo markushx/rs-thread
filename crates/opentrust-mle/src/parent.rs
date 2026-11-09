@@ -543,7 +543,13 @@ impl<const C: usize> Mle<C> {
     ) -> Result<()> {
         let reg = rx.tlvs.address_registration()?;
         let ml = env.mesh_local_prefix();
+        // Groups keep their registration state across a re-registration.
+        let old: Vec<
+            crate::neighbor::MulticastListener,
+            { crate::consts::CHILD_MAX_MULTICAST_ADDRESSES },
+        > = Vec::from_slice(child.multicast_listeners()).unwrap_or_default();
         child.clear_addresses();
+        child.clear_multicast_listeners();
         child.set_ml_eid_iid(None);
         let mut stored = 0;
         for e in reg {
@@ -570,7 +576,25 @@ impl<const C: usize> Mle<C> {
                 }
                 continue;
             }
-            if addr.is_unicast_link_local() || addr.is_multicast() || addr.is_unspecified() {
+            if addr.is_multicast() {
+                // Only groups larger than realm-local are registered with
+                // the Primary Backbone Router; the others are not kept.
+                if opentrust_net::addr::is_multicast_larger_than_realm_local(&addr)
+                    && child.add_multicast_listener(addr).is_ok()
+                {
+                    if let Some(o) = old.iter().find(|o| o.addr == addr)
+                        && let Some(m) = child
+                            .multicast_listeners_mut()
+                            .iter_mut()
+                            .find(|m| m.addr == addr)
+                    {
+                        m.mlr = o.mlr;
+                    }
+                    stored += 1;
+                }
+                continue;
+            }
+            if addr.is_unicast_link_local() || addr.is_unspecified() {
                 continue;
             }
             if child.add_address(addr).is_ok() {
@@ -742,7 +766,7 @@ impl<const C: usize> Mle<C> {
         };
         let (ext, mode, requested, sup, addrs) = {
             let c = self.children.get(idx).ok_or(Error::NotFound)?;
-            let mut entries = Vec::<AddressEntry, 8>::new();
+            let mut entries = Vec::<AddressEntry, 10>::new();
             if let Some(iid) = c.ml_eid_iid() {
                 let _ = entries.push(AddressEntry::Compressed {
                     context_id: 0,
@@ -758,6 +782,9 @@ impl<const C: usize> Mle<C> {
                     None => AddressEntry::Uncompressed(*a),
                 };
                 let _ = entries.push(e);
+            }
+            for m in c.multicast_listeners() {
+                let _ = entries.push(AddressEntry::Uncompressed(m.addr));
             }
             let mut req = Vec::<u8, CHILD_MAX_REQUEST_TLVS>::new();
             let _ = req.extend_from_slice(c.request_tlvs());
@@ -1034,7 +1061,7 @@ impl<const C: usize> Mle<C> {
         let noise = env.noise_floor();
         let (mode, margin, timeout, sup, addrs) = match idx.and_then(|i| self.children.get(i)) {
             Some(c) => {
-                let mut entries = Vec::<AddressEntry, 8>::new();
+                let mut entries = Vec::<AddressEntry, 10>::new();
                 if let Some(iid) = c.ml_eid_iid() {
                     let _ = entries.push(AddressEntry::Compressed {
                         context_id: 0,
@@ -1049,6 +1076,9 @@ impl<const C: usize> Mle<C> {
                         },
                         None => AddressEntry::Uncompressed(*a),
                     });
+                }
+                for m in c.multicast_listeners() {
+                    let _ = entries.push(AddressEntry::Uncompressed(m.addr));
                 }
                 (
                     c.neighbor.mode,

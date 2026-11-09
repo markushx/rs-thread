@@ -266,6 +266,9 @@ pub struct RouterIdRequest {
 /// Maximum number of non-ML-EID addresses reported by
 /// [`MleEnv::registered_addresses`].
 pub const MAX_REGISTERED_ADDRESSES: usize = 4;
+/// Maximum number of multicast groups reported by
+/// [`MleEnv::registered_multicast_addresses`].
+pub const MAX_REGISTERED_MULTICAST_ADDRESSES: usize = 4;
 
 /// What the MLE core needs from its surroundings. See the [module
 /// documentation](self).
@@ -357,6 +360,10 @@ pub trait MleEnv {
     /// "all addresses"), at most [`MAX_REGISTERED_ADDRESSES`]; call `f` for
     /// each.
     fn registered_addresses(&self, _f: &mut dyn FnMut(Ipv6Addr)) {}
+    /// Multicast groups larger than realm-local this device listens to,
+    /// registered with the parent for Multicast Listener Registration
+    /// (at most [`MAX_REGISTERED_MULTICAST_ADDRESSES`]); call `f` for each.
+    fn registered_multicast_addresses(&self, _f: &mut dyn FnMut(Ipv6Addr)) {}
     /// 6LoWPAN context prefix for `context_id` (to expand compressed
     /// Address Registration entries; id 0 is the mesh-local prefix, handled
     /// by the core). Default: none known.

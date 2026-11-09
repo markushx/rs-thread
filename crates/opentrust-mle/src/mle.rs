@@ -740,7 +740,13 @@ impl<const C: usize> Mle<C> {
     pub(crate) fn address_entries<E: MleEnv>(
         env: &E,
         mesh_local_only: bool,
-    ) -> Vec<AddressEntry, { 1 + crate::env::MAX_REGISTERED_ADDRESSES }> {
+    ) -> Vec<
+        AddressEntry,
+        {
+            1 + crate::env::MAX_REGISTERED_ADDRESSES
+                + crate::env::MAX_REGISTERED_MULTICAST_ADDRESSES
+        },
+    > {
         let mut v = Vec::new();
         let _ = v.push(AddressEntry::Compressed {
             context_id: 0,
@@ -756,6 +762,9 @@ impl<const C: usize> Mle<C> {
                     None => AddressEntry::Uncompressed(a),
                 };
                 let _ = v.push(e);
+            });
+            env.registered_multicast_addresses(&mut |a| {
+                let _ = v.push(AddressEntry::Uncompressed(a));
             });
         }
         v

@@ -21,6 +21,9 @@
 //!   registration with the Primary Backbone Router, proxy registration for
 //!   children (feature `ftd`); the Backbone Router view is
 //!   [`netdata::backbone`].
+//! - [`mlr`]: Multicast Listener Registration (Thread 1.2): `/n/mr`
+//!   registration of subscribed and children's multicast groups with the
+//!   Primary Backbone Router.
 //! - `forwarder` (feature `ftd`): route lookup, mesh header insertion and
 //!   forwarding, address resolution glue, ICMPv6 unreachable decisions.
 //! - `indirect` (feature `ftd`): per-child queues for sleepy end devices,
@@ -38,6 +41,7 @@ pub mod dua;
 pub mod forwarder;
 #[cfg(feature = "ftd")]
 pub mod indirect;
+pub mod mlr;
 pub mod netdata;
 #[cfg(feature = "ftd")]
 pub mod router_id;
@@ -55,6 +59,8 @@ mod e2e_tests;
 mod forwarder_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod indirect_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod mlr_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod netdata_sim_tests;
 #[cfg(all(test, feature = "ftd"))]

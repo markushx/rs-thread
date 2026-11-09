@@ -99,6 +99,8 @@ pub struct TestEnv {
     pub indirect: Vec<(ExtAddress, Rloc16), 8>,
     pub supervised: Vec<(ExtAddress, Rloc16), 8>,
     pub extra_addrs: Vec<Ipv6Addr, 4>,
+    /// Multicast groups registered with the parent.
+    pub extra_multicast: Vec<Ipv6Addr, 4>,
     pub settings: RamSettings<1024>,
     pub ml_iid: Option<Iid>,
     pub solicits: Vec<crate::env::RouterIdRequest, 4>,
@@ -148,6 +150,7 @@ impl TestEnv {
             indirect: Vec::new(),
             supervised: Vec::new(),
             extra_addrs: Vec::new(),
+            extra_multicast: Vec::new(),
             settings: RamSettings::new(),
             ml_iid: None,
             solicits: Vec::new(),
@@ -354,6 +357,11 @@ impl MleEnv for TestEnv {
     }
     fn registered_addresses(&self, f: &mut dyn FnMut(Ipv6Addr)) {
         for a in &self.extra_addrs {
+            f(*a);
+        }
+    }
+    fn registered_multicast_addresses(&self, f: &mut dyn FnMut(Ipv6Addr)) {
+        for a in &self.extra_multicast {
             f(*a);
         }
     }

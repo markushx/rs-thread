@@ -35,7 +35,9 @@ use opentrust_core::{Error, Result};
 use opentrust_mac::mac::LinkMetricsFlags;
 use opentrust_mac::security::LinkFrameCounters;
 
-use crate::consts::{CHILD_MAX_ADDRESSES, CHILD_MAX_REQUEST_TLVS, THREAD_VERSION_1_1};
+use crate::consts::{
+    CHILD_MAX_ADDRESSES, CHILD_MAX_MULTICAST_ADDRESSES, CHILD_MAX_REQUEST_TLVS, THREAD_VERSION_1_1,
+};
 use crate::link_quality::LinkQualityInfo;
 use crate::security::RxSecurity;
 use crate::tlv::{CslClockAccuracy, DeviceMode};
@@ -362,6 +364,28 @@ impl Neighbor {
 // ---------------------------------------------------------------------------
 // Child
 
+/// Multicast Listener Registration state of a multicast address (OT
+/// `MlrState`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MlrState {
+    /// To be registered with the Primary Backbone Router.
+    ToRegister,
+    /// A registration is in flight.
+    Registering,
+    /// Registered.
+    Registered,
+}
+
+/// A multicast group larger than realm-local a child listens to, with its
+/// registration state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MulticastListener {
+    /// The group.
+    pub addr: Ipv6Addr,
+    /// Registration state.
+    pub mlr: MlrState,
+}
+
 /// A child of this router (OT `Child`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Child {
@@ -378,6 +402,7 @@ pub struct Child {
     pub seconds_since_supervision: u16,
     ml_eid_iid: Option<Iid>,
     addresses: Vec<Ipv6Addr, CHILD_MAX_ADDRESSES>,
+    multicast: Vec<MulticastListener, CHILD_MAX_MULTICAST_ADDRESSES>,
     request_tlvs: Vec<u8, CHILD_MAX_REQUEST_TLVS>,
 }
 
@@ -392,6 +417,7 @@ impl Child {
             seconds_since_supervision: 0,
             ml_eid_iid: None,
             addresses: Vec::new(),
+            multicast: Vec::new(),
             request_tlvs: Vec::new(),
         }
     }
@@ -468,6 +494,41 @@ impl Child {
     /// Remove all registered addresses (the ML-EID is kept).
     pub fn clear_addresses(&mut self) {
         self.addresses.clear();
+    }
+
+    /// The multicast groups larger than realm-local the child registered
+    /// with its parent, with their Multicast Listener Registration state.
+    pub fn multicast_listeners(&self) -> &[MulticastListener] {
+        &self.multicast
+    }
+
+    /// Mutable access to the listeners' registration state.
+    pub fn multicast_listeners_mut(&mut self) -> &mut [MulticastListener] {
+        &mut self.multicast
+    }
+
+    /// Register a multicast group (state `ToRegister`).
+    /// [`Error::Already`] if present, [`Error::NoBufs`] if full.
+    pub fn add_multicast_listener(&mut self, addr: Ipv6Addr) -> Result<()> {
+        if self.multicast.iter().any(|m| m.addr == addr) {
+            return Err(Error::Already);
+        }
+        self.multicast
+            .push(MulticastListener {
+                addr,
+                mlr: MlrState::ToRegister,
+            })
+            .map_err(|_| Error::NoBufs)
+    }
+
+    /// Remove all multicast groups.
+    pub fn clear_multicast_listeners(&mut self) {
+        self.multicast.clear();
+    }
+
+    /// `true` if any group is in `state`.
+    pub fn has_mlr_state(&self, state: MlrState) -> bool {
+        self.multicast.iter().any(|m| m.mlr == state)
     }
 
     /// Whether `addr` is one of the child's addresses: the registered ones
