@@ -70,6 +70,7 @@ use opentrust_net::netif::Netif;
 use opentrust_net::resolver::{AddressResolver, Resolution, ResolverEnv, ResolverEvent};
 
 use crate::indirect::{IndirectQueue, PollOutcome};
+use crate::radio::RadioLink;
 
 /// Largest MAC payload of a frame without mesh header (short addresses,
 /// PAN ID compression, AES-CCM*-32 security).
@@ -122,6 +123,9 @@ pub struct TxFrame<'a> {
     /// the windows are missed), see
     /// [`MeshForwarder::csl_flush`]. Implies `indirect`.
     pub csl: bool,
+    /// The radio link to send the frame on (always the 802.15.4 radio
+    /// without feature `trel`; see `RadioSelector`).
+    pub radio: RadioLink,
 }
 
 /// Where the forwarder puts frames and notifications.
@@ -304,6 +308,9 @@ pub struct MeshForwarder<const HOLD: usize = 2, const SLOTS: usize = 2, const QU
     tags: TagCounter,
     rx_buf: [u8; MTU],
     sent_children: [Option<Rloc16>; SENT_CHILDREN],
+    /// Multi-radio selection (feature `trel`).
+    #[cfg(feature = "trel")]
+    pub radios: crate::trel::RadioSelector,
 }
 
 /// Children whose "message sent" notification is buffered for
@@ -324,7 +331,23 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             tags: TagCounter::new(tag_seed),
             rx_buf: [0; MTU],
             sent_children: [None; SENT_CHILDREN],
+            #[cfg(feature = "trel")]
+            radios: crate::trel::RadioSelector::new(),
         }
+    }
+
+    /// The radio link for a frame to `dst`: with feature `trel` the radio
+    /// selector's choice for a unicast to a neighbor (OT
+    /// `RadioSelector::Select`), otherwise (and for broadcasts, which go out
+    /// on every radio the platform has) the 802.15.4 radio.
+    #[cfg_attr(not(feature = "trel"), allow(clippy::unused_self))]
+    fn select_radio(&self, dst: MacDest) -> RadioLink {
+        #[cfg(feature = "trel")]
+        if let MacDest::Short(n) = dst {
+            return self.radios.select(n);
+        }
+        let _ = dst;
+        RadioLink::Ieee802154
     }
 
     /// Deadline of the reassembly timeout.
@@ -554,6 +577,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 frame_pending: false,
                 indirect: false,
                 csl: false,
+                radio: self.select_radio(dst),
             })?;
         }
         Ok(())
@@ -1058,6 +1082,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             frame_pending: false,
             indirect: false,
             csl: false,
+            radio: self.select_radio(MacDest::Short(hop)),
         }) {
             Ok(()) => Rx::Forwarded,
             Err(_) => Rx::Dropped(DropReason::Link),
@@ -1161,4 +1186,26 @@ pub enum RouteError {
     NoRoute,
     /// An address query is pending: hold the datagram.
     AddressQuery,
+}
+
+#[cfg(all(test, feature = "trel"))]
+mod radio_tests {
+    use super::*;
+    use crate::trel::RadioSelector;
+
+    #[test]
+    fn frames_follow_the_radio_selection() {
+        let mut f = MeshForwarder::<2, 2, 4>::new(1);
+        let n = Rloc16(0x0800);
+        // Unknown neighbors and broadcasts use the 802.15.4 radio.
+        assert_eq!(f.select_radio(MacDest::Short(n)), RadioLink::Ieee802154);
+        assert_eq!(f.select_radio(MacDest::Broadcast), RadioLink::Ieee802154);
+        f.radios.on_receive(n, RadioLink::Ieee802154);
+        f.radios.on_receive(n, RadioLink::Trel);
+        assert_eq!(f.select_radio(MacDest::Short(n)), RadioLink::Trel);
+        // Deferred ack timeouts move the traffic back.
+        f.radios.on_deferred_ack(n, false);
+        assert_eq!(f.select_radio(MacDest::Short(n)), RadioLink::Ieee802154);
+        let _: &RadioSelector = &f.radios;
+    }
 }

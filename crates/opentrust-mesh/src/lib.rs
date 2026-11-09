@@ -28,6 +28,9 @@
 //!   forwarding, address resolution glue, ICMPv6 unreachable decisions.
 //! - `indirect` (feature `ftd`): per-child queues for sleepy end devices,
 //!   Frame Pending and source match bookkeeping, release on data polls.
+//! - [`radio`]: the radio link a frame is sent on; with feature `trel`,
+//!   `trel` is the Thread Radio Encapsulation Link (TREL packets, peer
+//!   table, TREL key security, radio selection).
 //! - `router_id` (feature `ftd`): `/a/as` and `/a/ar`, the leader-side
 //!   handlers and the client side around
 //!   [`MleEnv::request_router_id`](opentrust_mle::MleEnv::request_router_id).
@@ -43,9 +46,12 @@ pub mod forwarder;
 pub mod indirect;
 pub mod mlr;
 pub mod netdata;
+pub mod radio;
 #[cfg(feature = "ftd")]
 pub mod router_id;
 pub mod tlv;
+#[cfg(feature = "trel")]
+pub mod trel;
 
 #[cfg(all(test, feature = "ftd"))]
 mod address_tests;

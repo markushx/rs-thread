@@ -33,6 +33,7 @@ use opentrust_lowpan::iphc::ContextProvider;
 use opentrust_mac::frame::Address;
 
 use crate::forwarder::{FrameSink, MacDest, TxFrame};
+use crate::radio::RadioLink;
 
 /// Largest datagram that is queued (IPv6 minimum MTU).
 pub const MAX_DATAGRAM: usize = 1280;
@@ -402,6 +403,7 @@ impl<const N: usize> IndirectQueue<N> {
                     frame_pending: false,
                     indirect: true,
                     csl: true,
+                    radio: RadioLink::Ieee802154,
                 })
                 .is_ok();
             if f.message {
@@ -435,6 +437,7 @@ impl<const N: usize> IndirectQueue<N> {
                 frame_pending: f.frame_pending,
                 indirect: true,
                 csl: false,
+                radio: RadioLink::Ieee802154,
             })
             .is_ok();
         if f.message {

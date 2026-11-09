@@ -17,6 +17,8 @@ readme = "../../README.md"
 # forwarding of other nodes' traffic, indirect queues for sleepy children.
 default = ["ftd"]
 ftd = ["opentrust-mle/ftd"]
+# Thread Radio Encapsulation Link (Thread 1.3 TREL) and multi-radio selection.
+trel = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-coap/defmt", "opentrust-lowpan/defmt", "opentrust-mac/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-coap/log", "opentrust-lowpan/log", "opentrust-mac/log"]
 

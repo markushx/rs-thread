@@ -107,9 +107,10 @@ pub fn open_psdu<A: Aes128>(cipher: &A, psdu: &mut [u8], nonce_source: &ExtAddre
 }
 
 /// Overwrite frame counter and key identifier of the auxiliary security
-/// header of an already validated `psdu`. The key identifier must have the
-/// mode already present in the frame.
-fn write_aux_header(psdu: &mut [u8], frame_counter: u32, key: &KeyIdentifier) -> Result<()> {
+/// header of an already validated `psdu` (without FCS). The key identifier
+/// must have the mode already present in the frame; [`Error::InvalidArgs`]
+/// otherwise or for a frame without security.
+pub fn write_aux_header(psdu: &mut [u8], frame_counter: u32, key: &KeyIdentifier) -> Result<()> {
     let f = Frame::parse(psdu)?;
     let s = f.security_header().ok_or(Error::InvalidArgs)?;
     if s.frame_counter.is_none() || s.key.mode() != key.mode() {
