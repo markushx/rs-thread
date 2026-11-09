@@ -140,6 +140,11 @@ pub enum CommissionerEvent {
     JoinerRemoved(JoinerKind),
     /// The Leader sent `/c/dc` (the datasets changed).
     DatasetChanged,
+    /// A management request (`USER_COMMISSIONER_SET`,
+    /// `USER_COMMISSIONER_GET`, `USER_MGMT`) completed with this response
+    /// code (`None`: failed or timed out); the payload is in the
+    /// [`MgmtResponse`] returned by [`Commissioner::handle_response`].
+    MgmtResponse(u32, Option<Code>),
 }
 
 /// A management answer handed back by [`Commissioner::handle_response`].
@@ -378,6 +383,15 @@ where
         user: u32,
         result: core::result::Result<(Code, &'a [u8]), Error>,
     ) -> Option<MgmtResponse<'a>> {
+        if matches!(
+            user,
+            USER_COMMISSIONER_SET | USER_COMMISSIONER_GET | USER_MGMT
+        ) {
+            self.event(CommissionerEvent::MgmtResponse(
+                user,
+                result.as_ref().ok().map(|r| r.0),
+            ));
+        }
         match user {
             USER_PETITION => {
                 self.petition_response(now, io, result);

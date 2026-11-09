@@ -410,7 +410,7 @@ Reference: `meshcop/{meshcop_tlvs,meshcop,dataset,dataset_manager,dataset_manage
 | Commissioner petition | `meshcop_leader.cpp` with random initial session ID | `leader::LeaderState` (initial session ID is a parameter), same TIMEOUT_LEAD_PET of 50 s, same Reject rules; `/c/lp` also checks that the peer is a routing locator | | none |
 | Commissioner Set / Get | `network_data_leader_ftd.cpp` | `leader::handle_commissioner_set` / `_get`; the whole request payload (plus the Border Agent Locator) becomes the Commissioning Data and the buffer is 255 bytes | Fixed buffer | none |
 | Leader reset recovery | `RestoreNetworkData` adopts the session ID and clears the Commissioning Data if a Border Agent Locator is present | `LeaderState::restore_leader` = `Leader::restore` + `adopt` (session ID adopted, active commissioner resigned with an incremented session ID); the caller publishes the versions | | none |
-| Discovery Response | Border Agent adds the Commissioner UDP Port when native commissioning is enabled | The Border Agent is not implemented: `ResponseContent::native_commissioner` is an input; `build_response_from_dataset` never sets it | Border Agent is a later batch | scanners see no native commissioner |
+| Discovery Response | Border Agent adds the Commissioner UDP Port when native commissioning is enabled | `build_response_with_border_agent(dataset, cd, Some(port), ..)` does the same; `build_response_from_dataset` (no Border Agent) never sets it | | none |
 | Discovery Request handling | Delay queue of any length | At most two pending Discovery Responses; further requests while two wait are dropped | Fixed capacity | a scanner repeats its request |
 | Discovery Request while detached | `HandleDiscoveryRequest` on any enabled FTD that is router eligible | Additionally requires an enabled (not Disabled) device | A disabled stack has no MLE socket | none |
 | Joiner Advertisement | Optional Joiner Advertisement sub-TLV in the request | Not supported in `build_request_tlv` | Out of scope for the 1.4 core | none |
@@ -432,9 +432,9 @@ Reference: `meshcop/{meshcop_tlvs,meshcop,dataset,dataset_manager,dataset_manage
 | Announce Begin | `AnnounceSenderBase` with jitter | `AnnounceBeginServer` with jitter 0 (the server's default) | | none |
 | Commissioner clients | `EnergyScanClient`, `PanIdQueryClient`, `AnnounceBeginClient` hold callbacks and check `Commissioner::IsActive` | `send_energy_scan_query`, `send_pan_id_query`, `send_announce_begin` build and send; the session ID is a parameter; `parse_energy_report` / `parse_pan_id_conflict` decode and acknowledge | The Commissioner (DTLS side) is not implemented | none |
 
-## MeshCoP commissioning (`opentrust-meshcop`: `pskd`, `secure`, `joiner`, `joiner_router`, `commissioner`)
+## MeshCoP commissioning (`opentrust-meshcop`: `pskd`, `secure`, `joiner`, `joiner_router`, `commissioner`, `border_agent`)
 
-Reference: `meshcop/{joiner,joiner_router,commissioner,meshcop}.cpp`, `thread/mesh_forwarder.cpp` (`kSubTypeJoinerEntrust`),
+Reference: `meshcop/{joiner,joiner_router,commissioner,border_agent,secure_transport,meshcop}.cpp`, `thread/mesh_forwarder.cpp` (`kSubTypeJoinerEntrust`),
 `mac/mac.cpp` (key ID mode 0), Thread 1.4.1 sections 7.2.1.1, 8.2, 8.4.3, 8.4.4.
 
 | Area | OpenThread | OpenTrust | Reason | Interop |
@@ -461,3 +461,12 @@ Reference: `meshcop/{joiner,joiner_router,commissioner,meshcop}.cpp`, `thread/me
 | Joiner session client ID | Peer address of the relayed record (mesh-local EID + Joiner IID, Joiner port) | Joiner IID and Joiner UDP port (cookie binding) | Same identity, no mesh-local address needed | none |
 | Joiner entries | `OPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES` (2) | Const generic `J` (default 2) | | none |
 | Keep-alive response without State TLV | Ignored | Ignored (timer not re-armed; the next keep-alive comes from the Leader timeout path) | | none |
+| Border Agent sessions | Several `CoapDtlsSession`s (`OPENTHREAD_CONFIG_BORDER_AGENT_MAX_SESSIONS`) | One Commissioner session at a time; datagrams from another peer are dropped while it lasts | Fixed memory (one DTLS session is several kB) | a second Candidate must wait |
+| Border Agent I/O | Direct `Tmf::Agent`, `Ip6::Udp`, `ThreadNetif` | `BorderAgentIo` (DTLS datagrams to the Commissioner, TMF post with response tag, UDP proxy send, Commissioner ALOC); the TMF responses are fed back with `handle_tmf_response` (`is_border_agent_user`), Relay Receive with `handle_relay_rx`, UDP to the ALOC with `handle_proxy_rx`; notifications via `pop_event` | Sans-IO | none |
+| UDP proxy for Candidates | `/c/ut` from a Candidate is sent from an unset ALOC | `/c/ut` is only served for the active Commissioner (source = its ALOC); `/c/rx` and `/c/ur` likewise only go to the active Commissioner | No traffic from an unassigned source address | a Candidate cannot use the proxy before petitioning |
+| Local gets | `ProcessGetRequest(kIgnoreSecurityPolicyFlags)`, `ProcessCommissionerGetRequest` | `mgmt::get_payload(.., check_policy = false)` and `leader::commissioner_get_payload` on the node's Commissioning Data; buffers of 300 bytes are wiped after use | | none |
+| Error answers | `CoapCodeFromError` | Same mapping (parse: 4.00, else 5.00); a forward queue (`MAX_FORWARDS` = 4) that is full answers 5.00 | Fixed capacity | none |
+| Guard time / attempts | `kGuardTimeNewConnectionMilli` after a disconnect; `SetMaxConnectionAttempts` (used by ePSKc) | `GUARD_TIME` after any session end; `set_max_connection_attempts` with `AttemptsExhausted` event instead of the auto-close callback | | none |
+| ePSKc, DNS-SD (`_meshcop._udp`), Border Agent counters, state bitmap | Implemented | Not implemented | Later work | no ePSKc / service advertisement |
+| External Commissioner | `ot-commissioner` (separate project) | `BorderAgentClient` + the `Commissioner` core through `ExternalTransport`: COMM_PET / COMM_KA / gets / `/c/tx` over DTLS, other management requests proxied (`/c/ut`, source port `PROXY_PORT` 49191) to the Leader ALOC; the mesh-local prefix is a parameter; CoAP tokens come from a non-cryptographic generator seeded at connect | Spec 8.4.2.2 (SET via the UDP proxy) | none |
+| Border Agent ID | Random, persisted in settings | Supplied by the caller (`BorderAgent::new`) | Persistence is the caller's | none |

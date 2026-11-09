@@ -9,9 +9,13 @@
 //! leader's commissioner session state, Discovery, Energy Scan, PAN ID
 //! Query and Announce Begin, and the commissioning roles that run DTLS
 //! (`opentrust-dtls`, EC-JPAKE): the [`joiner`] and the Joiner Router
-//! relay (`joiner_router`, feature `ftd`) and the Commissioner
-//! (`commissioner`, feature `commissioner`). The Border Agent is not
-//! implemented yet.
+//! relay (`joiner_router`, feature `ftd`), the Commissioner
+//! (`commissioner`, feature `commissioner`) and the Border Agent with the
+//! external Commissioner's client (`border_agent`, feature
+//! `border-agent`). All three features are on by default; a joiner-only
+//! end device builds with `default-features = false`. The ephemeral PSKc
+//! (ePSKc) and the Border Agent's DNS-SD advertisement are not
+//! implemented.
 //!
 //! # Wiring
 //!
@@ -54,10 +58,17 @@
 //!   keep-alive, Joiner list and Steering Data, Joiner DTLS sessions over
 //!   the relay, JOIN_FIN, MGMT_COMMISSIONER_GET / SET; on-mesh transport
 //!   `commissioner::MeshTransport`.
+//! - `border_agent` (feature `border-agent`, default): the Border Agent
+//!   (DTLS server with the PSKc, COMM_PET / COMM_KA forwarding, local
+//!   gets, Relay and UDP proxy, keep-alive timeout, guard time, attempt
+//!   limit) and `BorderAgentClient` / `ExternalTransport` for an external
+//!   Commissioner.
 
 #[cfg(test)]
 extern crate std;
 
+#[cfg(feature = "border-agent")]
+pub mod border_agent;
 #[cfg(feature = "commissioner")]
 pub mod commissioner;
 pub mod dataset;
@@ -78,12 +89,16 @@ pub mod tlv;
 #[cfg(feature = "ftd")]
 pub mod updater;
 
+#[cfg(all(test, feature = "border-agent"))]
+mod border_agent_tests;
 #[cfg(all(test, feature = "commissioner"))]
 mod commissioner_tests;
 #[cfg(test)]
 mod dataset_tests;
 #[cfg(test)]
 mod dataset_vector_tests;
+#[cfg(all(test, feature = "commissioner"))]
+mod joiner_fx;
 #[cfg(all(test, feature = "ftd"))]
 mod joiner_router_tests;
 #[cfg(test)]

@@ -113,6 +113,19 @@ pub fn build_response_from_dataset(
     commissioning_data: Option<&[u8]>,
     out: &mut [u8],
 ) -> Result<usize> {
+    build_response_with_border_agent(dataset, commissioning_data, None, out)
+}
+
+/// [`build_response_from_dataset`] for a device running a Border Agent on
+/// `border_agent_port`: if the Security Policy enables native
+/// commissioning, the response carries the Commissioner UDP Port and the
+/// native commissioner flag (OT `Mle::SendDiscoveryResponse`).
+pub fn build_response_with_border_agent(
+    dataset: &crate::dataset::Dataset,
+    commissioning_data: Option<&[u8]>,
+    border_agent_port: Option<u16>,
+    out: &mut [u8],
+) -> Result<usize> {
     let t = dataset.tlvs();
     let ext_pan_id = t.ext_pan_id()?;
     let network_name = t.network_name()?;
@@ -129,7 +142,7 @@ pub fn build_response_from_dataset(
             network_name: &network_name,
             steering_data: steering.as_ref(),
             joiner_udp_port: port,
-            native_commissioner: None,
+            native_commissioner: border_agent_port.filter(|_| policy.native_commissioning),
             commercial_commissioning: policy.commercial_commissioning,
             domain_name: None,
         },

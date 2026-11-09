@@ -86,7 +86,27 @@ pub fn handle_get(
     req: &Request<'_>,
     rsp: &mut dyn Responder,
 ) {
-    let tlvs = Tlvs(req.msg.payload());
+    let mut buf = [0u8; 300];
+    if let Some(n) = get_payload(ds, now, t, req.msg.payload(), true, &mut buf) {
+        let _ = rsp.respond(Code::CHANGED, &buf[..n]);
+    }
+}
+
+/// The MGMT_ACTIVE_GET / MGMT_PENDING_GET answer for the request TLVs
+/// `request` (OT `DatasetManager::ProcessGetRequest`). With
+/// `check_policy` the Network Key is left out unless the Security Policy
+/// allows obtaining it; the Border Agent answers an authenticated
+/// Commissioner with `check_policy = false` (OT
+/// `kIgnoreSecurityPolicyFlags`). `None` if `out` is too small.
+pub fn get_payload(
+    ds: &Datasets,
+    now: Instant,
+    t: DatasetType,
+    request: &[u8],
+    check_policy: bool,
+    out: &mut [u8],
+) -> Option<usize> {
+    let tlvs = Tlvs(request);
     let mut list = [0u8; 40];
     let mut n = 0;
     if let Ok(g) = tlvs.get_list() {
@@ -103,9 +123,8 @@ pub fn handle_get(
         }
     }
     let list = &list[..n];
-    let obtain_key = ds.security_policy().obtain_network_key;
-    let mut buf = [0u8; 300];
-    let mut w = Writer::new(&mut buf);
+    let obtain_key = !check_policy || ds.security_policy().obtain_network_key;
+    let mut w = Writer::new(out);
     if let Some(d) = ds.read(t, now) {
         for tl in d.tlvs().iter().flatten() {
             let wanted = list.is_empty() || list.contains(&tl.ty());
@@ -113,11 +132,11 @@ pub fn handle_get(
                 && (obtain_key || tl.ty() != ty::NETWORK_KEY)
                 && opentrust_core::tlv::write(&mut w, tl.ty(), tl.value()).is_err()
             {
-                return;
+                return None;
             }
         }
     }
-    let _ = rsp.respond(Code::CHANGED, w.written());
+    Some(w.written().len())
 }
 
 #[cfg(feature = "ftd")]
