@@ -1,0 +1,62 @@
+[package]
+name = "opentrust-instance"
+description = "Thread node integration layer (Instance) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["ftd", "commissioner", "border-agent"]
+ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
+commissioner = ["ftd", "opentrust-meshcop/commissioner"]
+border-agent = ["commissioner", "opentrust-meshcop/border-agent"]
+tcat = ["opentrust-meshcop/tcat"]
+trel = ["opentrust-mesh/trel"]
+defmt = [
+    "dep:defmt",
+    "opentrust-core/defmt",
+    "opentrust-platform/defmt",
+    "opentrust-mac/defmt",
+    "opentrust-net/defmt",
+    "opentrust-mle/defmt",
+    "opentrust-mesh/defmt",
+    "opentrust-meshcop/defmt",
+    "opentrust-dns/defmt",
+]
+log = [
+    "dep:log",
+    "opentrust-core/log",
+    "opentrust-platform/log",
+    "opentrust-mac/log",
+    "opentrust-net/log",
+    "opentrust-mle/log",
+    "opentrust-mesh/log",
+    "opentrust-meshcop/log",
+    "opentrust-dns/log",
+]
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-platform = { workspace = true }
+opentrust-mac = { workspace = true }
+opentrust-lowpan = { workspace = true }
+opentrust-net = { workspace = true }
+opentrust-coap = { workspace = true }
+opentrust-mle = { workspace = true }
+opentrust-mesh = { workspace = true }
+opentrust-meshcop = { workspace = true }
+opentrust-dns = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true
