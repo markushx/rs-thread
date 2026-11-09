@@ -449,6 +449,14 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         }
     }
 
+    fn set_poll_attach_mode(&mut self, fast: bool) {
+        self.mac.set_poll_attach_mode(fast, self.now);
+    }
+
+    fn send_fast_polls(&mut self) {
+        self.mac.send_fast_polls(0, self.now);
+    }
+
     fn set_poll_period(&mut self, period: Option<Duration>) {
         self.poll_period = period;
         self.apply_poll_period();

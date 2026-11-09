@@ -617,3 +617,8 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - `Event::SrpClient(SrpEvent)` replaces the OT `otSrpClientCallback`, the auto-start server is set as the DNS default server.
 - Network Data is fed to `SrpClient::handle_network_data` whenever the Network Data bytes or the mesh-local prefix change (hash comparison), the interface addresses to `on_addresses_changed` when the set of preferred non-link-local non-mesh-local addresses changes.
 - `Instance::publish_dns_srp_service` / `unpublish_dns_srp_service` expose the Network Data Publisher's DNS/SRP entry (`otNetDataPublishDnsSrpService*`).
+
+### Sleepy children attaching and polling (Instance glue)
+
+- The parent sends link-local unicast messages to a sleepy child indirectly only after the child is `Child::confirmed` (it has sent a Child Update Request, or was restored). OT sends the Child ID Response indirectly to the child's extended address; here the response goes out directly while the child still listens, because the indirect path addresses frames by RLOC16, which the child does not know yet.
+- Attach mode of the data poll sender (`Mac::set_poll_attach_mode`, 100 ms) and fast polls after a Data Request (`MleEnv::send_fast_polls`) are implemented; attach-mode polling is not started right after the Child ID Request as in OT (see above).

@@ -410,6 +410,11 @@ pub struct Child {
     pub csl_channel: u8,
     /// When a frame with a CSL IE was last received from the child.
     pub csl_last_heard: Instant,
+    /// The child is known to use its assigned RLOC16: it sent a Child
+    /// Update Request after the Child ID Response (set for restored
+    /// children). Until then frames go to it directly (OT sends the Child
+    /// ID Response to the extended address).
+    pub confirmed: bool,
     ml_eid_iid: Option<Iid>,
     addresses: Vec<Ipv6Addr, CHILD_MAX_ADDRESSES>,
     multicast: Vec<MulticastListener, CHILD_MAX_MULTICAST_ADDRESSES>,
@@ -429,6 +434,7 @@ impl Child {
             csl_timeout_secs: 0,
             csl_channel: 0,
             csl_last_heard: now,
+            confirmed: false,
             ml_eid_iid: None,
             addresses: Vec::new(),
             multicast: Vec::new(),
@@ -445,6 +451,7 @@ impl Child {
         c.neighbor.version = info.version;
         c.timeout_secs = info.timeout;
         c.neighbor.state = NeighborState::Restored;
+        c.confirmed = true;
         c
     }
 

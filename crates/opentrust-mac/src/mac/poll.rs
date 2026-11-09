@@ -6,7 +6,7 @@
 use opentrust_core::time::{Duration, Instant};
 
 use super::consts::{
-    DEFAULT_FAST_POLLS, DEFAULT_POLL_PERIOD, FAST_POLL_PERIOD, MAX_FAST_POLLS,
+    ATTACH_POLL_PERIOD, DEFAULT_FAST_POLLS, DEFAULT_POLL_PERIOD, FAST_POLL_PERIOD, MAX_FAST_POLLS,
     MAX_FRAME_RETRIES_DIRECT, MAX_POLL_RETX_ATTEMPTS, MIN_POLL_PERIOD, QUICK_POLLS_AFTER_TIMEOUT,
     RETX_POLL_PERIOD,
 };
@@ -28,6 +28,8 @@ pub(crate) struct PollSender {
     tx_failures: u8,
     timeouts: u8,
     fast_remaining: u8,
+    /// Attach mode: poll at most every `ATTACH_POLL_PERIOD`.
+    attach_mode: bool,
     /// CSL period (zero: CSL off), the retransmission period never exceeds it.
     csl_period: Duration,
 }
@@ -46,6 +48,7 @@ impl Default for PollSender {
             tx_failures: 0,
             timeouts: 0,
             fast_remaining: 0,
+            attach_mode: false,
             csl_period: Duration::ZERO,
         }
     }
@@ -121,6 +124,16 @@ impl PollSender {
         }
     }
 
+    /// OT `DataPollSender::SetAttachMode`.
+    pub fn set_attach_mode(&mut self, on: bool, now: Instant) {
+        if self.attach_mode != on {
+            self.attach_mode = on;
+            if self.enabled {
+                self.schedule(true, now);
+            }
+        }
+    }
+
     pub fn send_fast_polls(&mut self, n: u8, now: Instant) {
         let recalc = self.fast_remaining == 0;
         let n = if n == 0 { DEFAULT_FAST_POLLS } else { n }.min(MAX_FAST_POLLS);
@@ -132,6 +145,9 @@ impl PollSender {
 
     fn calc_period(&self) -> Duration {
         let mut p = self.default_period;
+        if self.attach_mode {
+            p = p.min(ATTACH_POLL_PERIOD);
+        }
         if self.retx_mode {
             p = p.min(RETX_POLL_PERIOD);
             if !self.csl_period.is_zero() {

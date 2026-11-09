@@ -998,6 +998,9 @@ impl<const C: usize> Mle<C> {
         {
             return Ok(RxClass::Unknown);
         }
+        if let Some(c) = self.children.get_mut(idx) {
+            c.confirmed = true;
+        }
         add_unique(&mut list, ty::MODE);
         add_unique(&mut list, ty::LINK_MARGIN);
         add_unique(&mut list, ty::LEADER_DATA);

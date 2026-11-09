@@ -64,6 +64,9 @@ pub const SUPPORTED_CHANNEL_MASK: u32 = 0x07ff_f800;
 pub const RETX_POLL_PERIOD: Duration = Duration::from_millis(1000);
 
 /// Poll period during fast polls (OpenThread `kFastPollPeriod`).
+/// Poll period while attaching (OT `OPENTHREAD_CONFIG_MAC_ATTACH_DATA_POLL_PERIOD`).
+pub const ATTACH_POLL_PERIOD: Duration = Duration::from_millis(100);
+/// Fast poll period (OT `kFastPollPeriod`).
 pub const FAST_POLL_PERIOD: Duration = Duration::from_millis(188);
 
 /// Minimum poll period (OpenThread `OPENTHREAD_CONFIG_MAC_MINIMUM_POLL_PERIOD`).

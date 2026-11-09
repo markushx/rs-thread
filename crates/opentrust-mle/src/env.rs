@@ -350,6 +350,9 @@ pub trait MleEnv {
     fn set_poll_period(&mut self, period: Option<Duration>);
     /// Poll quickly while attaching (OT `DataPollSender::SetAttachMode`).
     fn set_poll_attach_mode(&mut self, _fast: bool) {}
+    /// Poll the parent a few times at the fast poll period, e.g. after a
+    /// Data Request (OT `DataPollSender::SendFastPolls`). Default: no-op.
+    fn send_fast_polls(&mut self) {}
     /// Configure CSL reception of a synchronized sleepy child: sample the
     /// channel every `period` (units of 10 symbols) on `channel` (0 = the
     /// PAN channel), the parent being `parent` (extended and short address);

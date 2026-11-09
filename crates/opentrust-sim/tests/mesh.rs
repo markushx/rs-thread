@@ -118,3 +118,32 @@ fn leader_loss_elects_a_new_leader_and_the_old_one_rejoins() {
         net.inst(1).partition_id()
     );
 }
+
+#[test]
+fn sleepy_end_device_with_default_poll_period_stays_attached() {
+    let mut net = Network::new(&[Kind::Router, Kind::Sleepy], 11);
+    net.medium.connect(0, 1, -60);
+    let ds = dataset(&mut net);
+    start(&mut net, 0, &ds);
+    assert!(net.run_until(secs(60), |n| role(n, 0) == Role::Leader));
+    start(&mut net, 1, &ds);
+    assert!(net.run_until(secs(120), |n| role(n, 1) == Role::Child));
+    net.take_events(1);
+    // Several child timeouts (default 240 s) without touching the poll period.
+    for t in 0..12 {
+        net.run_for(secs(100));
+        assert_eq!(
+            role(&mut net, 1),
+            Role::Child,
+            "after {} s events {:?}",
+            t * 100 + 100,
+            net.take_events(1)
+        );
+    }
+    let ev = net.take_events(1);
+    assert!(
+        !ev.iter()
+            .any(|e| matches!(e, opentrust_instance::Event::RoleChanged { .. })),
+        "{ev:?}"
+    );
+}

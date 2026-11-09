@@ -351,6 +351,7 @@ impl<const C: usize> Mle<C> {
         let dst = ipv6::link_local(&parent.router.neighbor.ext_address);
         let r = self.send_data_request_to(env, dst);
         if self.role == Role::Child && !self.is_rx_on_when_idle() {
+            env.send_fast_polls();
             self.child.waiting_data_response = true;
             if !self.child.waiting_child_update_response {
                 self.schedule_message_tx_timer(now);

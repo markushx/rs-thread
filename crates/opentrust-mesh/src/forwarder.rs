@@ -462,6 +462,18 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             });
         }
         if ll_unicast {
+            // A valid sleepy child is reached on its data polls (OT
+            // `SendMessage`: `FindNeighbor` + `AddMessageForSleepyChild`).
+            if let Some(c) = mle
+                .children()
+                .find_by_ext(&ext_of_dst(), StateFilter::Valid)
+                && c.confirmed
+                && !c.neighbor.mode.rx_on_when_idle()
+            {
+                return Ok(Route::Indirect {
+                    child: c.neighbor.rloc16,
+                });
+            }
             return Ok(Route::Direct {
                 dst: MacDest::Extended(ext_of_dst()),
             });

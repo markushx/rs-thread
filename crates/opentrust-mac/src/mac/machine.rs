@@ -1218,6 +1218,12 @@ impl<
         self.poll.secure = on;
     }
 
+    /// Attach mode: poll every 100 ms until turned off (OT
+    /// `DataPollSender::SetAttachMode`).
+    pub fn set_poll_attach_mode(&mut self, on: bool, now: Instant) {
+        self.poll.set_attach_mode(on, now);
+    }
+
     /// Poll `n` times at the fast poll period (`0`: default count).
     pub fn send_fast_polls(&mut self, n: u8, now: Instant) {
         self.poll.send_fast_polls(n, now);
