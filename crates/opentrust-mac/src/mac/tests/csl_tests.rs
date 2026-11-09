@@ -719,3 +719,29 @@ fn csl_child_table() {
         Err(opentrust_core::Error::NotImplemented)
     );
 }
+
+#[test]
+fn data_poll_of_csl_receiver_carries_csl_ie_and_is_not_retried() {
+    set_radio(5_000);
+    let mut child = sec_mac(clock_caps(Capabilities::RECEIVE_TIMING), CHILD_EXT);
+    child.set_rx_on_when_idle(false);
+    child
+        .set_csl(PERIOD, 0, PARENT_SHORT, PARENT_EXT, t(0))
+        .unwrap();
+    child.start_polling(Address::Short(PARENT_SHORT), t(0));
+    child.send_data_poll(t(10)).unwrap();
+    set_radio(10_000);
+    let acts = actions_sec(&mut child, t(10));
+    let tx = tx_of(&acts).expect("poll");
+    let fr = Frame::parse(frame_of(&tx)).unwrap();
+    assert_eq!(fr.version(), FrameVersion::V2015);
+    assert_eq!(fr.csl_ie().unwrap().period, PERIOD);
+    // No ACK: no retransmission, the poll fails at once.
+    child.on_tx_done(TxOutcome::AckTimeout, t(12));
+    let _ = actions_sec(&mut child, t(30));
+    assert!(
+        events(&mut child)
+            .iter()
+            .any(|e| matches!(e, Event::DataPollSent(Err(_)))),
+    );
+}

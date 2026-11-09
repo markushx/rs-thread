@@ -350,6 +350,15 @@ pub trait MleEnv {
     fn set_poll_period(&mut self, period: Option<Duration>);
     /// Poll quickly while attaching (OT `DataPollSender::SetAttachMode`).
     fn set_poll_attach_mode(&mut self, _fast: bool) {}
+    /// Configure CSL reception of a synchronized sleepy child: sample the
+    /// channel every `period` (units of 10 symbols) on `channel` (0 = the
+    /// PAN channel), the parent being `parent` (extended and short address);
+    /// `period` 0 (and `None`) turns CSL off. OT `SubMac::SetCslParams`.
+    /// Default: no-op.
+    fn set_csl(&mut self, _period: u16, _channel: u8, _parent: Option<(ExtAddress, Rloc16)>) {}
+    /// The parent's CSL clock accuracy and uncertainty, from its CSL Clock
+    /// Accuracy TLV (sizes the receive window). Default: no-op.
+    fn set_csl_parent_accuracy(&mut self, _accuracy: crate::tlv::CslClockAccuracy) {}
     /// Mesh-local prefix (to build the ML-EID address and expand registered
     /// addresses).
     fn mesh_local_prefix(&self) -> Prefix64;

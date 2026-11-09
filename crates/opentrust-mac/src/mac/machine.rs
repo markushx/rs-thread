@@ -590,6 +590,10 @@ impl<
                 return Err(Error::NotImplemented);
             }
         }
+        self.poll.set_csl_period(
+            Duration::from_micros(u64::from(period) * u64::from(US_PER_TEN_SYMBOLS)),
+            now,
+        );
         let diff_period = period != self.csl.period;
         let diff_peer = parent_short != self.csl.peer_short || parent_ext != self.csl.peer_ext;
         self.csl.channel = channel;
@@ -1969,6 +1973,13 @@ impl<
         let csl_ie = self.csl.enabled() && Self::has_csl_ie(&frame);
         let secured = Frame::parse(&frame).is_ok_and(|f| f.security_enabled());
         let csl_plain = (csl_ie && secured && !self.caps.hw_tx_security()).then(|| frame.clone());
+        // A poll with a CSL IE is not retransmitted: the next poll carries a
+        // fresh phase (OpenThread `DataPollSender::PrepareDataRequest`).
+        let max_frame_retries = if csl_ie && matches!(kind, TxKind::Poll) {
+            0
+        } else {
+            max_frame_retries
+        };
         let max_csma_backoffs = if timed.is_some() {
             0
         } else {
@@ -2074,7 +2085,7 @@ impl<
             Err(e) => {
                 self.finish_operation();
                 let r = Err(e);
-                self.poll.handle_sent(&r, now);
+                self.poll.handle_sent(&r, false, now);
                 self.push_event(Event::DataPollSent(r));
             }
         }
@@ -2178,14 +2189,28 @@ impl<
             return Err(Error::InvalidState);
         }
         let mut buf = [0u8; MAX_FRAME_LEN];
+        // A CSL receiver puts its CSL IE into the poll (a 2015 frame), which
+        // resynchronizes the parent (OpenThread `DataPollSender` CSL rules).
+        let csl = self.csl.enabled();
         let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::MacCmd)
-            .version(FrameVersion::V2006)
+            .version(if csl {
+                FrameVersion::V2015
+            } else {
+                FrameVersion::V2006
+            })
             .pan_id(self.pan_id)
             .dst(parent)
             .src(self.own_src_for(parent))
             .ack_request(true)
             .command(MacCommand::DataRequest);
+        if csl {
+            b = b.header_ie(CslIe {
+                phase: 0,
+                period: self.csl.period,
+                rendezvous_time: None,
+            });
+        }
         if self.poll.secure {
             b = b.security(SecurityHeader::new(
                 SecurityLevel::EncMic32,
@@ -2338,11 +2363,17 @@ impl<
                     self.pending |= P_WAIT_DATA;
                 }
                 self.finish_operation();
-                self.poll.handle_sent(&res, now);
+                self.poll.handle_sent(&res, tx.csl_ie, now);
                 self.push_event(Event::DataPollSent(res));
             }
             TxKind::Direct(handle) => {
                 c.tx_data += 1;
+                if tx.csl_ie && res.is_ok() && tx.ack_request {
+                    // A secure frame with a CSL IE acknowledged by the parent
+                    // resynchronizes it: it replaces the next keep-alive
+                    // poll (OpenThread `Mac::ResetKeepAliveTimer`).
+                    self.poll.reset_keep_alive(now);
+                }
                 if res.is_err() {
                     c.tx_direct_max_retry_expiry += 1;
                 }

@@ -47,6 +47,7 @@ use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_core::{Error, Result};
 use opentrust_mac::security::LinkFrameCounters;
 
+use crate::csl::csl_parent_metric;
 use crate::consts::{PARENT_REQ_SCANMASK_R_TIMEOUT, PARENT_REQ_SCANMASK_RE_TIMEOUT};
 use crate::endpoint::MleRx;
 use crate::env::{MleEnv, MleEvent, Role, StoredDataset};
@@ -55,7 +56,7 @@ use crate::message::Command;
 use crate::mle::{Mle, NbRef, RxClass};
 use crate::neighbor::{MleReplay, Neighbor, NeighborState, Parent, Router};
 use crate::tlv::{
-    Connectivity, DeviceMode, LeaderData, ParentPriority, SCAN_MASK_END_DEVICE, SCAN_MASK_ROUTER,
+    Connectivity, CslClockAccuracy, DeviceMode, LeaderData, ParentPriority, SCAN_MASK_END_DEVICE, SCAN_MASK_ROUTER,
     ty,
 };
 
@@ -546,6 +547,7 @@ impl<const C: usize> Mle<C> {
         two_way_margin: u8,
         conn: &Connectivity,
         version: u16,
+        csl: Option<(u32, CslClockAccuracy)>,
     ) -> bool {
         let new_sed_size = conn.sed_buffer_size.unwrap_or(DEFAULT_SED_BUFFER_SIZE);
         let new_sed_count = conn
@@ -580,8 +582,11 @@ impl<const C: usize> Mle<C> {
             ),
             cmp(i32::from(conn.link_quality_2), i32::from(cand.lq2)),
             cmp(i32::from(conn.link_quality_1), i32::from(cand.lq1)),
-            // CSL accuracy comparison (sleepy children with CSL) is not
-            // implemented; see deviations.
+            // CSL metric: smaller is better (only for a sleepy child).
+            csl.map_or(core::cmp::Ordering::Equal, |(timeout, acc)| {
+                csl_parent_metric(timeout, &cand.parent.csl_accuracy)
+                    .cmp(&csl_parent_metric(timeout, &acc))
+            }),
             cmp(i32::from(two_way_margin), i32::from(cand.link_margin)),
         ];
         for s in steps {
@@ -627,6 +632,12 @@ impl<const C: usize> Mle<C> {
         let rss = rx.meta.link.rss.unwrap_or(INVALID_RSSI);
         let two_way_margin = compute_link_margin(env.noise_floor(), rss).min(margin_out);
         let conn = t.connectivity()?;
+        // Parents that do not report their CSL accuracy count as the worst.
+        let csl_accuracy = t
+            .csl_clock_accuracy()
+            .unwrap_or(CslClockAccuracy::WORST);
+        let csl_metric_input =
+            (!self.is_rx_on_when_idle()).then(|| (self.effective_csl_timeout(), csl_accuracy));
         #[cfg(feature = "ftd")]
         if self.is_full_thread_device() && self.role != Role::Detached {
             let same = leader_data.partition_id == self.leader_data.partition_id;
@@ -676,7 +687,14 @@ impl<const C: usize> Mle<C> {
                     return Ok(RxClass::Authoritative);
                 }
                 if compare == 0
-                    && !Self::is_better_parent(c, source, two_way_margin, &conn, version)
+                    && !Self::is_better_parent(
+                        c,
+                        source,
+                        two_way_margin,
+                        &conn,
+                        version,
+                        csl_metric_input,
+                    )
                 {
                     return Ok(RxClass::Authoritative);
                 }
@@ -713,6 +731,7 @@ impl<const C: usize> Mle<C> {
                 sed_datagram_count: conn
                     .sed_datagram_count
                     .unwrap_or(DEFAULT_SED_DATAGRAM_COUNT),
+                csl_accuracy,
             },
             rx_challenge,
             rx_challenge_len: n,

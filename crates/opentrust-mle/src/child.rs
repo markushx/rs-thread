@@ -100,6 +100,7 @@ impl<const C: usize> Mle<C> {
             )));
         }
         self.apply_rx_mode(env);
+        self.sync_csl(env, now, true);
         self.recalculate_poll_period(env);
         self.schedule_message_tx_timer(now);
         self.restart_supervision(now);
@@ -120,13 +121,18 @@ impl<const C: usize> Mle<C> {
 
     /// Data poll period of a sleepy child: the timeout minus a lead time
     /// (OT `DataPollSender::GetDefaultPollPeriod`).
+    ///
+    /// With CSL the period is bounded by the CSL timeout (a poll with a CSL
+    /// IE then resynchronizes the parent in time) and only one retransmission
+    /// period of lead time is kept.
     pub fn default_poll_period(&self) -> Duration {
-        let p = Duration::from_secs(u64::from(self.cfg.timeout_secs));
-        if p > POLL_AHEAD {
-            p.saturating_sub(POLL_AHEAD)
-        } else {
-            p
+        let mut p = Duration::from_secs(u64::from(self.cfg.timeout_secs));
+        let mut ahead = POLL_AHEAD;
+        if self.is_csl_enabled() {
+            p = p.min(Duration::from_secs(u64::from(self.effective_csl_timeout())));
+            ahead = Duration::from_secs(1);
         }
+        if p > ahead { p.saturating_sub(ahead) } else { p }
     }
 
     pub(crate) fn recalculate_poll_period<E: MleEnv>(&mut self, env: &mut E) {
@@ -156,7 +162,9 @@ impl<const C: usize> Mle<C> {
     pub(crate) fn schedule_message_tx_timer(&mut self, now: Instant) {
         let interval =
             if self.child.waiting_child_update_response || self.child.waiting_data_response {
-                UNICAST_RETX_DELAY
+                // In CSL operation the answer waits for a sample window.
+                self.csl_response_wait()
+                    .map_or(UNICAST_RETX_DELAY, |p| p + UNICAST_RETX_DELAY)
             } else if self.role == Role::Child && self.is_rx_on_when_idle() {
                 Duration::from_secs(u64::from(self.cfg.timeout_secs)).saturating_sub(POLL_AHEAD)
             } else {
@@ -258,6 +266,9 @@ impl<const C: usize> Mle<C> {
         };
         let sup = (dev.is_sleepy() && self.cfg.supervision_interval != 0)
             .then_some(self.cfg.supervision_interval);
+        let csl = self
+            .is_csl_enabled()
+            .then(|| (self.csl_channel_tlv(), self.effective_csl_timeout()));
         let addrs = Self::address_entries(env, detached);
         let rloc = self.rloc16;
         let leader = self.leader_data;
@@ -274,6 +285,10 @@ impl<const C: usize> Mle<C> {
                 if let Some(s) = sup {
                     w.supervision_interval(s)?;
                 }
+                if let Some((ch, csl_timeout)) = csl {
+                    w.csl_channel(ch)?;
+                    w.csl_timeout(csl_timeout)?;
+                }
             }
             if !dev.full_thread_device() {
                 w.address_registration(&addrs)?;
@@ -284,7 +299,9 @@ impl<const C: usize> Mle<C> {
             env.set_rx_on_when_idle(true);
         } else {
             env.set_rx_on_when_idle(false);
-            env.set_poll_attach_mode(true);
+            // A CSL child is reached in its sample windows; no fast attach
+            // polling.
+            env.set_poll_attach_mode(!self.is_csl_enabled());
         }
         Ok(())
     }

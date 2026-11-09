@@ -13,13 +13,23 @@ pub(crate) const SLEEPY: DeviceMode = DeviceMode::new(false, false, false);
 
 /// Child attached to a fake parent (rloc 0x0400, child rloc 0x0401).
 pub(crate) fn attached(mode: DeviceMode) -> (Mle<0>, TestEnv, FakeParent, Instant) {
+    attached_with(MleConfig::new(mode), None)
+}
+
+/// Like [`attached`] with a configuration and the CSL accuracy the parent
+/// reports.
+pub(crate) fn attached_with(
+    cfg: MleConfig,
+    csl_accuracy: Option<crate::tlv::CslClockAccuracy>,
+) -> (Mle<0>, TestEnv, FakeParent, Instant) {
     let mut env = TestEnv::new(1);
-    let mut child: Mle<0> = Mle::new(MleConfig::new(mode));
+    let mut child: Mle<0> = Mle::new(cfg);
     child.start(&mut env, T0).unwrap();
     let t = advance(&mut child, &mut env, T0);
     let req = env.take_out().pop().unwrap();
     let ch = challenge_of(&req, &env);
     let mut p = FakeParent::new(10, 0x0400);
+    p.csl_accuracy = csl_accuracy;
     let r = p.parent_response(&env, &ch);
     TestEnv::deliver(&r, &mut child, &mut env, t, -60).unwrap();
     let t = advance(&mut child, &mut env, t);

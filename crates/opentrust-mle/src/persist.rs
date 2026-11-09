@@ -194,6 +194,7 @@ impl<const C: usize> Mle<C> {
             leader_cost: 0,
             sed_buffer_size: 0,
             sed_datagram_count: 0,
+            csl_accuracy: crate::tlv::CslClockAccuracy::WORST,
         });
         self.set_role(env, Role::Detached);
         self.set_rloc16(env, info.rloc16);

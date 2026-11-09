@@ -7,7 +7,7 @@ use opentrust_core::time::{Duration, Instant};
 
 use super::consts::{
     DEFAULT_FAST_POLLS, DEFAULT_POLL_PERIOD, FAST_POLL_PERIOD, MAX_FAST_POLLS,
-    MAX_POLL_RETX_ATTEMPTS, MIN_POLL_PERIOD, QUICK_POLLS_AFTER_TIMEOUT, RETX_POLL_PERIOD,
+    MAX_FRAME_RETRIES_DIRECT, MAX_POLL_RETX_ATTEMPTS, MIN_POLL_PERIOD, QUICK_POLLS_AFTER_TIMEOUT, RETX_POLL_PERIOD,
 };
 use super::types::{TxError, TxResult};
 use crate::frame::Address;
@@ -27,6 +27,8 @@ pub(crate) struct PollSender {
     tx_failures: u8,
     timeouts: u8,
     fast_remaining: u8,
+    /// CSL period (zero: CSL off), the retransmission period never exceeds it.
+    csl_period: Duration,
 }
 
 impl Default for PollSender {
@@ -43,6 +45,7 @@ impl Default for PollSender {
             tx_failures: 0,
             timeouts: 0,
             fast_remaining: 0,
+            csl_period: Duration::ZERO,
         }
     }
 }
@@ -81,10 +84,12 @@ impl PollSender {
 
     pub fn stop(&mut self) {
         let (parent, secure, default_period) = (self.parent, self.secure, self.default_period);
+        let csl_period = self.csl_period;
         *self = Self {
             parent,
             secure,
             default_period,
+            csl_period,
             ..Self::default()
         };
     }
@@ -93,6 +98,25 @@ impl PollSender {
         self.default_period = p;
         if self.enabled {
             self.schedule(true, now);
+        }
+    }
+
+    /// The CSL period in use (zero when CSL is off).
+    pub fn set_csl_period(&mut self, p: Duration, now: Instant) {
+        if self.csl_period != p {
+            self.csl_period = p;
+            if self.enabled {
+                self.schedule(true, now);
+            }
+        }
+    }
+
+    /// Restart the poll timer: a frame with a CSL IE acknowledged by the
+    /// parent did the keep-alive job (`DataPollSender::ResetKeepAliveTimer`).
+    pub fn reset_keep_alive(&mut self, now: Instant) {
+        if self.enabled && self.deadline.is_some() && !self.retx_mode && self.fast_remaining == 0 {
+            self.timer_start = now;
+            self.deadline = Some(now.saturating_add(self.period));
         }
     }
 
@@ -109,6 +133,9 @@ impl PollSender {
         let mut p = self.default_period;
         if self.retx_mode {
             p = p.min(RETX_POLL_PERIOD);
+            if !self.csl_period.is_zero() {
+                p = p.min(self.csl_period);
+            }
         }
         if self.fast_remaining != 0 {
             p = p.min(FAST_POLL_PERIOD);
@@ -139,7 +166,14 @@ impl PollSender {
     }
 
     /// OpenThread `HandlePollSent`.
-    pub fn handle_sent(&mut self, result: &TxResult, now: Instant) {
+    pub fn handle_sent(&mut self, result: &TxResult, csl: bool, now: Instant) {
+        // A poll with a CSL IE is sent once, so more failures are tolerated
+        // (`kMaxCslPollRetxAttempts`).
+        let max_attempts = if csl {
+            MAX_FRAME_RETRIES_DIRECT
+        } else {
+            MAX_POLL_RETX_ATTEMPTS
+        };
         if !self.enabled {
             return;
         }
@@ -162,7 +196,7 @@ impl PollSender {
             }
             Err(_) => {
                 self.tx_failures += 1;
-                if self.tx_failures < MAX_POLL_RETX_ATTEMPTS {
+                if self.tx_failures < max_attempts {
                     if !self.retx_mode {
                         self.retx_mode = true;
                         recalc = true;

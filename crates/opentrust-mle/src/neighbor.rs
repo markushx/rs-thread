@@ -623,6 +623,9 @@ pub struct Parent {
     pub sed_buffer_size: u16,
     /// SED datagram count the parent offers.
     pub sed_datagram_count: u8,
+    /// CSL clock accuracy and uncertainty of the parent (CSL Clock Accuracy
+    /// TLV; [`CslClockAccuracy::WORST`] until it reports).
+    pub csl_accuracy: crate::tlv::CslClockAccuracy,
 }
 
 // ---------------------------------------------------------------------------

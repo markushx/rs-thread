@@ -345,6 +345,9 @@ impl<const C: usize> Mle<C> {
         }
         self.apply_rx_mode(env);
         self.set_parent_link_margin(t.link_margin())?;
+        if let Ok(acc) = t.csl_clock_accuracy() {
+            self.set_parent_csl_accuracy(env, now, acc);
+        }
         if self.child.waiting_child_update_response {
             self.child.child_update_attempts = 0;
             self.child.waiting_child_update_response = false;

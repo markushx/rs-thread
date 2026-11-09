@@ -57,6 +57,8 @@ pub(crate) struct FakeParent {
     pub(crate) rloc: Rloc16,
     pub(crate) prio: ParentPriority,
     pub(crate) margin_out: u8,
+    /// CSL Clock Accuracy TLV to include in Parent Responses.
+    pub(crate) csl_accuracy: Option<crate::tlv::CslClockAccuracy>,
 }
 
 impl FakeParent {
@@ -67,6 +69,7 @@ impl FakeParent {
             rloc: Rloc16(rloc),
             prio: ParentPriority::Medium,
             margin_out: 40,
+            csl_accuracy: None,
         }
     }
 
@@ -82,6 +85,7 @@ impl FakeParent {
 
     pub(crate) fn parent_response(&mut self, to: &TestEnv, challenge: &[u8]) -> Out {
         let (rloc, prio, margin) = (self.rloc, self.prio, self.margin_out);
+        let csl = self.csl_accuracy;
         let link_fc = self.env.keys.frame_counter();
         let mle_fc = self.counter.current();
         let mut mine = [0u8; 8];
@@ -111,6 +115,9 @@ impl FakeParent {
                 w.challenge(&mine)?;
                 w.link_margin(margin)?;
                 w.connectivity(&conn)?;
+                if let Some(a) = csl {
+                    w.csl_clock_accuracy(a)?;
+                }
                 w.version(5)
             },
         )

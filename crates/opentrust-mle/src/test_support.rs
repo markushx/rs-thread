@@ -88,6 +88,9 @@ pub struct TestEnv {
     pub short: Rloc16,
     pub rx_on: bool,
     pub poll: Option<Duration>,
+    /// CSL parameters set by the core: period, channel, parent.
+    pub csl: Option<(u16, u8, ExtAddress, Rloc16)>,
+    pub csl_accuracy: Option<crate::tlv::CslClockAccuracy>,
     pub parent: Option<(ExtAddress, Rloc16)>,
     pub events: Vec<MleEvent, 256>,
     pub nd: Vec<u8, 512>,
@@ -141,6 +144,8 @@ impl TestEnv {
             short: Rloc16::INVALID,
             rx_on: true,
             poll: None,
+            csl: None,
+            csl_accuracy: None,
             parent: None,
             events: Vec::new(),
             nd: Vec::new(),
@@ -348,6 +353,14 @@ impl MleEnv for TestEnv {
     }
     fn set_poll_period(&mut self, period: Option<Duration>) {
         self.poll = period;
+    }
+    fn set_csl(&mut self, period: u16, channel: u8, parent: Option<(ExtAddress, Rloc16)>) {
+        self.csl = parent
+            .filter(|_| period != 0)
+            .map(|(e, r)| (period, channel, e, r));
+    }
+    fn set_csl_parent_accuracy(&mut self, accuracy: crate::tlv::CslClockAccuracy) {
+        self.csl_accuracy = Some(accuracy);
     }
     fn mesh_local_prefix(&self) -> Prefix64 {
         MLP

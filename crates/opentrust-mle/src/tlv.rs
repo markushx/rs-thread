@@ -732,6 +732,20 @@ pub struct CslClockAccuracy {
     pub uncertainty_10us: u8,
 }
 
+impl CslClockAccuracy {
+    /// Worst case, assumed for a parent that reports nothing (OT
+    /// `CslAccuracy::Init`).
+    pub const WORST: Self = Self {
+        accuracy_ppm: 255,
+        uncertainty_10us: 255,
+    };
+
+    /// The uncertainty in microseconds.
+    pub const fn uncertainty_us(&self) -> u32 {
+        self.uncertainty_10us as u32 * 10
+    }
+}
+
 /// Thread Time Parameter TLV value (OT time-sync extension).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

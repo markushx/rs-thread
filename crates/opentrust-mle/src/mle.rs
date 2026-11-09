@@ -71,6 +71,14 @@ pub struct MleConfig {
     /// Seconds without a secure frame from the parent after which a sleepy
     /// child probes it (OT default 190, 0 = disabled).
     pub supervision_check_timeout: u16,
+    /// CSL period of a sleepy child in units of 10 symbols (160 microseconds;
+    /// 0 = no CSL, the default).
+    pub csl_period: u16,
+    /// CSL channel of a sleepy child (0 = the PAN channel).
+    pub csl_channel: u8,
+    /// CSL synchronized timeout in seconds (OT default 100; 0 = use the child
+    /// timeout).
+    pub csl_timeout_secs: u32,
     /// Router role configuration (eligibility, thresholds, leader weight).
     pub router: RouterConfig,
 }
@@ -87,6 +95,9 @@ impl MleConfig {
             timeout_secs: crate::consts::END_DEVICE_TIMEOUT_SECS,
             supervision_interval: 129,
             supervision_check_timeout: 190,
+            csl_period: 0,
+            csl_channel: 0,
+            csl_timeout_secs: crate::csl::DEFAULT_CSL_TIMEOUT_SECS,
             router: RouterConfig::new(),
         }
     }
@@ -130,6 +141,7 @@ pub struct Mle<const C: usize> {
     pub(crate) announce_sender: crate::announce_sender::AnnounceSender,
     pub(crate) link_metrics: crate::link_metrics::SeriesTable<{ crate::link_metrics::MAX_SERIES }>,
     pub(crate) child: ChildCtx,
+    pub(crate) csl_applied: Option<crate::csl::CslApplied>,
     pub(crate) children: ChildTable<C>,
     pub(crate) previous_partition_id: u32,
     pub(crate) store_pending: bool,
@@ -162,6 +174,7 @@ impl<const C: usize> Mle<C> {
             announce_sender: crate::announce_sender::AnnounceSender::new(),
             link_metrics: crate::link_metrics::SeriesTable::new(),
             child: ChildCtx::new(),
+            csl_applied: None,
             children: ChildTable::new(),
             previous_partition_id: 0,
             store_pending: false,
@@ -344,6 +357,7 @@ impl<const C: usize> Mle<C> {
         }
         if self.role == Role::Child {
             self.apply_rx_mode(env);
+            self.sync_csl(env, now, false);
             self.recalculate_poll_period(env);
             let _ = self.send_child_update_request(env, now);
         }
@@ -357,6 +371,10 @@ impl<const C: usize> Mle<C> {
             let old = self.role;
             self.role = role;
             self.store_pending |= role.is_attached();
+            if role != Role::Child && self.csl_applied.is_some() {
+                self.csl_applied = None;
+                env.set_csl(0, 0, None);
+            }
             env.event(MleEvent::RoleChanged { old, new: role });
         }
     }
