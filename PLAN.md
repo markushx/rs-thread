@@ -129,7 +129,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] Fuzz the record/handshake parsers and the EC-JPAKE readers (Phase 11)
   - [ ] Security review of the EC-JPAKE/DTLS code before M4 (ADR 0001); include the commissioning decisions listed under Phase 8b
   - [x] Wire into MeshCoP Joiner / Commissioner / Border Agent (relay, connection-attempt limits, guard times) (Phase 8b; the roles own `opentrust_dtls::Session` directly via `opentrust_meshcop::secure`)
-    - [ ] ePSKc (Thread 1.4 ephemeral PSKc on the Border Agent) (Phase 9)
+    - [x] ePSKc (Thread 1.4 ephemeral PSKc on the Border Agent) (Phase 9: `epskc`, second Border Agent listener)
 
 ## Phase 6 – MLE (§4)
 
@@ -204,7 +204,8 @@ Phase 8b (security part; features `ftd`, `commissioner`, `border-agent`, all def
 - [x] Commissioner (`commissioner`): petition / keep-alive / resign, session ID, Commissioner ALOC, Joiner list (any / EUI-64 / discerner, PSKd, expiry), Steering Data and `/c/cs`, `/c/rx` -> DTLS server per Joiner with that Joiner's PSKd, JOIN_FIN, `/c/tx` with the KEK, session timeout, Joiner removal, MGMT_COMMISSIONER_GET / SET, generic management requests; on-mesh `MeshTransport`
 - [x] Border Agent (`border_agent`): DTLS server keyed with the PSKc, COMM_PET / COMM_KA forwarding, local `/c/cg` `/c/ag` `/c/pg` (`kIgnoreSecurityPolicyFlags`), `/c/tx`, `/c/rx`, UDP proxy `/c/ut` `/c/ur`, Border Agent ID, native commissioner flag in Discovery Responses (`discovery::build_response_with_border_agent`), keep-alive timeout, guard time, connection-attempt limit; external Commissioner client (`BorderAgentClient`, `ExternalTransport`)
 - [x] Tests: unit tests per role (real Joiner against Commissioner / Border Agent through relay TLVs), end-to-end in the meshcop simulator (`net_sim_commissioning`, `commissioning_sim_tests`)
-- [ ] ePSKc, DNS-SD `_meshcop._udp` advertisement and state bitmap, several concurrent Border Agent sessions, Border Agent counters
+- [x] ePSKc on the Border Agent (Phase 9): separate listener, single use, timeout, attempt limit, `_meshcop-e._udp` hook
+- [ ] DNS-SD `_meshcop._udp` advertisement and state bitmap, several concurrent Border Agent sessions, Border Agent counters
 - [ ] Wire the roles into a full stack (MAC key ID mode 0 selection in the mesh forwarder, unsecure-port filter, KEK frames routed to `handle_kek_datagram`) once the integration layer exists (Phase 10)
 - [ ] Interop of Joiner / Commissioner / Border Agent against OpenThread (`openthread-sys`) nodes (Phase 11)
 
@@ -219,6 +220,9 @@ Security-relevant decisions for the review before M4:
 - Commissioner: one Joiner DTLS session at a time, bound to the Joiner IID (others get `Busy`), PSKd chosen by OT's best-match rule, 30 s session timeout; confirmable Relay Receive is dropped.
 - Border Agent: one session; sessions keyed with the PSKc; 2 s guard time after every session end; optional connection-attempt limit; keep-alive timeout 50 s; Relay Receive / UDP proxy only for a petitioned (active) Commissioner, proxied UDP always from its ALOC; local Active / Pending gets include the Network Key for the PSKc-authenticated Commissioner (OT behaviour, worth a review).
 - External Commissioner CoAP tokens come from a non-cryptographic generator seeded from the caller's RNG (tokens match responses only; the DTLS layer authenticates).
+- ePSKc: the key octets are the EC-JPAKE password (OT); `EphemeralKey` is wiped on drop and when discarded, redacted, constant-time compared, never logged; single use (discarded when its connected session ends for any reason, including `disconnect()`), discarded at its timeout (2 min default, clamped to 10 min; the session is closed with close_notify) and after 10 connection attempts; at most one ePSKc session; 2 s guard time after each ePSKc session end. Every new peer that gets a DTLS session consumes an attempt before the cookie exchange (as OT), so an off-path attacker spoofing ClientHellos can exhaust the attempts (denial of service, not key recovery) — worth a review. The passcode generator uses rejection sampling for uniform digits.
+- ePSKc sessions are served like PSKc sessions: Active / Pending gets include the Network Key without petitioning (spec 8.4.9.4.1.4 exceptions 1-2), keep-alive timeout 50 s; the PSKc listener stays usable in parallel (OT).
+- TCAT engine (feature `tcat`): authorization re-evaluated for every command (13.12.1), reserved methods fail, proof-of-possession hashes compared in constant time; the challenge is kept for the link (spec) and hash presentations are not rate-limited beyond the TLS session (OT likewise) — online PSKd guessing needs a valid Commissioner certificate; Set Active Dataset refused when a complete dataset existed at link start; buffers holding datasets are wiped. Chain validation, validity dates and the 60 s handshake timeout are the TLS layer's job.
 - The meshcop simulator emulates key ID mode 0 by comparing KEKs; the real MAC path (`KeyManager` mode 0) is unit-tested with an independent CCM reference, but end-to-end MAC framing of commissioning traffic awaits the integration layer.
 
 - [x] Reload of the leader's commissioner state after a reset (`LeaderState::restore_leader`; leader Network Data wait-for-sync: `Leader::start_restoring` / `restore` / `sync_timed_out`)
@@ -235,9 +239,10 @@ Security-relevant decisions for the review before M4:
 - [x] SRP client (RFC 9665) & DNS-SD client (1.3) — **pulled forward**: required by Matter for operational discovery (`_matter._tcp`); target M4 (`opentrust-dns`: `wire` / `rdata` DNS codec with name compression, TXT, KEY / SIG(0), OPT Update Lease; `client` DNS / DNS-SD client: AAAA, browse, SRV+TXT resolve; `srp` SRP client with SIG(0) ECDSA P-256 signing (`opentrust_core::crypto::ecdsa`), lease refresh, OT retry backoff, Network Data auto-start with unicast / anycast selection and server switching; tests against a scripted fake server, no simulator end-to-end test yet)
   - [ ] SRP server (advertising proxy), DNS-SD discovery proxy, mDNS, DNS over TCP, NAT64 (A record) queries, SRP client end-to-end test in the mesh simulator (a node acting as SRP server), Network Data adapter feeding `SrpClient::handle_network_data` from `opentrust_mesh::netdata::view::ServiceEntry`
 - [ ] TREL hooks (optional, 1.3)
-- [ ] Thread 1.4 additions: ephemeral key / ePSKc Border Agent
+- [x] Thread 1.4 additions: ephemeral key / ePSKc Border Agent (`opentrust_meshcop::epskc`, `BorderAgent::start_ephemeral_key` / `stop_ephemeral_key` / `handle_ephemeral_udp`, `BorderAgentClient::connect_ephemeral`; OT `EphemeralKeyManager` semantics: 6..32-octet key used directly as the EC-JPAKE password, 2 min default / 10 min max timeout, 10 connection attempts, single use, independent of the PSKc listener; passcode generation with Verhoeff check digit; DNS-SD `_meshcop-e._udp` through `BorderAgentIo::ephemeral_service`)
+  - [ ] Border Agent counters and history events for ePSKc; ePSKc end-to-end in the meshcop simulator
 - [ ] TCAT (Thread Commissioning over Authenticated TLS, BLE commissioning) — **optional**; scope review done (ADR 0002, option (b)):
-  - [ ] Transport- and TLS-agnostic TCAT engine in `opentrust-meshcop` (feature `tcat`, default off): command TLVs, command classes, section 13.12.1 authorization over certificate claims, `TcatSecureTransport` seam
+  - [x] Transport- and TLS-agnostic TCAT engine in `opentrust-meshcop` (feature `tcat`, default off): command TLVs, command classes, section 13.12.1 authorization over certificate claims, `TcatSecureTransport` seam (`opentrust_meshcop::tcat`, tests with a fake transport)
   - [ ] TLS 1.3 server with mutual certificate authentication (`TLS_AES_128_GCM_SHA256`, secp256r1, ECDSA) and a no-alloc X.509 chain validator on RustCrypto `p256` / `aes-gcm` / `der` (own crate, separate security review; ~2.5-3.5 kLOC)
   - [ ] Thin BLE GATT adapter (TCAT service 0xFFFB, C1/C2, advertisement TLVs) on a BLE host such as `trouble-host`; TMF `/c/te` (TCAT_ENABLE)
 - [ ] Border Router role (feature `border-router`, `std`/Linux only initially): RA/RIO, OMR prefix, NAT64 hooks — likely defer
