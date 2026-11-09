@@ -6,6 +6,7 @@ use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Deque;
 use opentrust_core::crypto::CryptoBackend;
+use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::Instant;
 use opentrust_core::types::{
@@ -25,9 +26,9 @@ use opentrust_net::ip6::{Delivery, SendInfo};
 use opentrust_net::netif::UnicastAddress;
 use opentrust_net::udp::{RecvInfo, SocketHandle, UdpSendOpts};
 use opentrust_platform::SettingsStore;
-use rand_core::Rng;
+use rand_core::{CryptoRng, Rng};
 
-use crate::{Event, Instance};
+use crate::{DnsSrpService, Event, Instance};
 
 /// A UDP socket of the application (OT `otUdpSocket`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +60,7 @@ pub(crate) fn placeholder_key() -> NetworkKey {
     NetworkKey([0; 16])
 }
 
-impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
+impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ link
 
     /// Enable or disable the IPv6 interface (OT `otIp6SetEnabled`).
@@ -337,6 +338,42 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         self.notifier
             .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
         Ok(())
+    }
+
+    /// Publish this device as the DNS/SRP server in the Network Data (OT
+    /// `otNetDataPublishDnsSrpService*`).
+    pub fn publish_dns_srp_service(&mut self, service: DnsSrpService, now: Instant) {
+        let attached = self.mle.role().is_attached();
+        let ctx = opentrust_mesh::netdata::publisher::PublishContext {
+            attached,
+            router_or_leader: self.mle.role().is_router_or_leader(),
+            rloc16: self.mle.rloc16(),
+            leader: self.core.netdata.view(),
+            ml_eid: self.core.ml_eid_addr(),
+        };
+        let mut pe: heapless::Vec<_, 4> = heapless::Vec::new();
+        self.publisher
+            .publish_dns_srp(service, &ctx, &mut self.local, now, &mut |e| {
+                let _ = pe.push(e);
+            });
+        for e in pe {
+            self.core.push_event(Event::Publisher(e));
+        }
+        self.poll(now);
+    }
+
+    /// Stop publishing the DNS/SRP service.
+    pub fn unpublish_dns_srp_service(&mut self, now: Instant) {
+        let mut pe: heapless::Vec<_, 4> = heapless::Vec::new();
+        self.publisher.unpublish_dns_srp(&mut self.local, &mut |e| {
+            let _ = pe.push(e);
+        });
+        for e in pe {
+            self.core.push_event(Event::Publisher(e));
+        }
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        self.poll(now);
     }
 
     /// The local Network Data (what this device registers).

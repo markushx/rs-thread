@@ -4,6 +4,7 @@
 
 use heapless::Vec;
 use opentrust_core::Result;
+use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::crypto::{CryptoBackend, SecurityLevel};
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Rloc16, ShortAddress};
@@ -23,7 +24,7 @@ use opentrust_net::ip6::{Ctx, Delivery, RxMeta, RxOutcome, Scratch, SendInfo};
 use opentrust_net::resolver::ResolverEvent;
 use opentrust_net::udp::{ReceiverId, UdpMeta, UdpRx, UdpRxInfo};
 use opentrust_platform::SettingsStore;
-use rand_core::Rng;
+use rand_core::{CryptoRng, Rng};
 
 use crate::stack::{MacTx, StackMac};
 use crate::{Event, Instance, UdpSocket};
@@ -142,7 +143,7 @@ macro_rules! with_routing {
 }
 pub(crate) use with_routing;
 
-impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
+impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ MAC events
 
     /// Handle the MAC's events (received frames, data polls, results).
@@ -404,7 +405,11 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
                 UdpRx::Receiver { id, meta, payload } => {
                     self.dispatch_receiver(now, id, &meta, payload);
                 }
-                UdpRx::Queued(h) => self.core.push_event(Event::UdpReadable(UdpSocket(h))),
+                UdpRx::Queued(h) => {
+                    if !self.dns_srp_rx(now, h) {
+                        self.core.push_event(Event::UdpReadable(UdpSocket(h)));
+                    }
+                }
                 UdpRx::Dropped(_) => {}
             },
             PROTO_ICMP6 => self.handle_icmp(now, d, bytes),

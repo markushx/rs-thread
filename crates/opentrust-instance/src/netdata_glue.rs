@@ -4,6 +4,7 @@
 
 use heapless::Vec;
 use opentrust_core::crypto::CryptoBackend;
+use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_mesh::address;
@@ -21,7 +22,7 @@ use opentrust_mle::neighbor::StateFilter;
 use opentrust_net::resolver::ResolverEvent;
 use opentrust_net::slaac::IidParams;
 use opentrust_platform::SettingsStore;
-use rand_core::Rng;
+use rand_core::{CryptoRng, Rng};
 
 use crate::stack::ChildChange;
 use crate::{Event, Instance};
@@ -52,7 +53,7 @@ fn hash_bytes(h: &mut u64, b: &[u8]) {
     }
 }
 
-impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
+impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ timers
 
     /// Run the timers of the layers.

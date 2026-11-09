@@ -43,7 +43,7 @@ log = [
 ]
 
 [dependencies]
-opentrust-core = { workspace = true }
+opentrust-core = { workspace = true, features = ["ecdsa"] }
 opentrust-platform = { workspace = true }
 opentrust-mac = { workspace = true }
 opentrust-lowpan = { workspace = true }

@@ -111,7 +111,7 @@ impl<'a> NetworkDataView<'a> {
     }
 
     /// Service TLVs.
-    pub fn service_tlvs(&self) -> impl Iterator<Item = ServiceTlv<'a>> + 'a {
+    pub fn service_tlvs(&self) -> impl Iterator<Item = ServiceTlv<'a>> + Clone + 'a {
         self.tlvs()
             .filter(|t| t.ty == ty::SERVICE)
             .filter_map(|t| ServiceTlv::parse(&t).ok())
@@ -187,7 +187,7 @@ impl<'a> NetworkDataView<'a> {
     }
 
     /// All (service, server) pairs.
-    pub fn services(&self) -> impl Iterator<Item = ServiceEntry<'a>> + 'a {
+    pub fn services(&self) -> impl Iterator<Item = ServiceEntry<'a>> + Clone + 'a {
         self.service_tlvs().flat_map(|s| {
             RawIter::new(s.subs)
                 .filter(|t| t.ty == ty::SERVER)

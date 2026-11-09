@@ -40,13 +40,21 @@
 
 mod api;
 mod datapath;
+mod dns_srp;
 mod netdata_glue;
 mod stack;
 mod tmf;
 
 pub use api::{PingReply, UdpSocket};
+pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES};
 pub use opentrust_core::types::{ExtAddress, Rloc16};
+pub use opentrust_dns::client::{
+    DnsError, QueryConfig, QueryId, ResolvedAddresses, ResolvedService,
+};
+pub use opentrust_dns::rdata::TxtEntry;
+pub use opentrust_dns::srp::{ItemState, ServiceConfig, ServiceId, SrpError, SrpEvent};
 pub use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig};
+pub use opentrust_mesh::netdata::publisher::DnsSrpService;
 pub use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
 pub use opentrust_meshcop::dataset::Dataset;
 pub use opentrust_mle::tlv::DeviceMode;
@@ -60,6 +68,7 @@ pub use opentrust_mac::mac::{RadioAction, TxOutcome};
 use heapless::Deque;
 use opentrust_coap::tmf::Agent;
 use opentrust_core::crypto::CryptoBackend;
+use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::time::Instant;
 use opentrust_core::types::Iid;
 use opentrust_mac::mac::Mac;
@@ -81,7 +90,7 @@ use opentrust_net::resolver::AddressResolver;
 use opentrust_net::slaac::Slaac;
 use opentrust_net::udp::{ReceiverId, UdpSockets};
 use opentrust_platform::SettingsStore;
-use rand_core::Rng;
+use rand_core::{CryptoRng, Rng};
 
 use crate::stack::{Core, MacRng, NetConfig, Outbox};
 
@@ -150,6 +159,10 @@ pub enum Event {
     PingReply,
     /// A Network Data Publisher entry changed state.
     Publisher(PublisherEvent),
+    /// The SRP client selected or lost a server, registered, or failed.
+    SrpClient(SrpEvent),
+    /// A DNS query completed ([`Instance::dns_take_result`]).
+    DnsResult(QueryId),
 }
 
 /// Configuration of an [`Instance`].
@@ -219,6 +232,7 @@ pub struct Instance<S, C: CryptoBackend, R> {
     pub(crate) alocs: AlocSet,
     pub(crate) slaac: Slaac<4>,
     pub(crate) glue: netdata_glue::GlueState,
+    pub(crate) dnssrp: dns_srp::DnsSrp,
     pub(crate) ping: api::PingState,
     pub(crate) ip6_enabled: bool,
     pub(crate) started: bool,
@@ -233,7 +247,7 @@ impl<S, C: CryptoBackend, R> core::fmt::Debug for Instance<S, C, R> {
     }
 }
 
-impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
+impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
     /// Create an instance. Nothing is sent and the radio is not touched
     /// until [`thread_start`](Self::thread_start) /
     /// [`become_leader`](Self::become_leader).
@@ -320,6 +334,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             alocs: AlocSet::new(),
             slaac: Slaac::new(),
             glue: netdata_glue::GlueState::default(),
+            dnssrp: dns_srp::DnsSrp::new(),
             ping: api::PingState::default(),
             ip6_enabled: false,
             started: false,
@@ -374,6 +389,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             busy |= self.service_mle_events(now);
             busy |= self.service_netdata(now);
             busy |= self.service_tmf(now);
+            busy |= self.service_dns_srp(now);
             busy |= self.service_outbox(now);
             if !busy {
                 break;
@@ -398,6 +414,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             self.core.datasets.next_deadline(),
             self.leader_deadline(),
             self.glue.next_deadline(),
+            self.dnssrp.next_deadline(),
         ]
         .into_iter()
         .flatten()
@@ -440,6 +457,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             || self.solicit_pending()
             || !self.core.cfg.ds_events.is_empty()
             || self.core.cfg.applied
+            || self.dnssrp.has_pending_work()
     }
 
     /// The next application event.

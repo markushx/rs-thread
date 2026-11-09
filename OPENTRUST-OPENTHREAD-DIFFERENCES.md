@@ -607,3 +607,13 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - `opentrust-mesh::forwarder` / `indirect` are compiled without `ftd` (OT `mesh_forwarder.cpp` + `mesh_forwarder_mtd.cpp`); the MLE offers a parent-only `next_hop_and_path_cost` in that build. Mesh header frames are dropped on receive without `ftd` (OT `HandleReceivedFrame`: `HandleMesh` is FTD only). The `MeshForwarder` struct still contains the (empty) indirect queue instead of being a separate type; OT has no queue object in MTD builds. An end device sends everything except link-local to its parent, as in OT `UpdateIp6RouteMtd`.
 - The `Instance` of such a build serves only Address Notify / Address Error / Anycast Locate / dataset Get on TMF and has no `become_leader`.
 - Deviation in test coverage: the sim harness cannot mix `ftd` and non-`ftd` instances in one binary (feature unification), so the end-device build is tested at the instance level (start, Parent Request on the dataset channel); full attach of mode-MTD nodes is covered by the existing sim tests.
+
+### SRP and DNS client in the `Instance` (`opentrust-instance::dns_srp`)
+
+- Always compiled (no `srp` feature): Matter needs it and the conventions of the other layers make `opentrust-dns` an unconditional dependency of the instance. The price is the `EcdsaP256` bound on the crypto backend and a `CryptoRng` bound on the RNG of `Instance` (the SRP key is generated from it); `SoftCrypto` provides both.
+- UDP goes through two internal instance sockets (ephemeral ports, opened on first use) instead of one socket per client; they take two of the `UDP_SOCKETS` slots (now 5). Datagrams queued on them never reach the application.
+- DNS results are owned (`DnsOutcome`; a browse result keeps at most 4 instances with their additional-section data) and fetched with `dns_take_result` after `Event::DnsResult`; OT calls a callback with a borrowed response. Two results can be pending; the oldest is dropped.
+- The SRP client key is stored as the raw 32-byte scalar under `SrpEcdsaKey` (OT: DER), the server as 16-byte address + 2-byte port under `SrpClientInfo` (as OT).
+- `Event::SrpClient(SrpEvent)` replaces the OT `otSrpClientCallback`, the auto-start server is set as the DNS default server.
+- Network Data is fed to `SrpClient::handle_network_data` whenever the Network Data bytes or the mesh-local prefix change (hash comparison), the interface addresses to `on_addresses_changed` when the set of preferred non-link-local non-mesh-local addresses changes.
+- `Instance::publish_dns_srp_service` / `unpublish_dns_srp_service` expose the Network Data Publisher's DNS/SRP entry (`otNetDataPublishDnsSrpService*`).

@@ -7,6 +7,7 @@ use opentrust_coap::message::Code;
 use opentrust_coap::tmf::{Handler, Responder, TmfEnv, TmfRx};
 use opentrust_coap::uri::Uri;
 use opentrust_core::crypto::CryptoBackend;
+use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::time::Instant;
 use opentrust_core::types::Prefix64;
 use opentrust_mesh::address::{self, AddressAction, AddressErrorOutcome};
@@ -27,7 +28,7 @@ use opentrust_mle::Mle;
 use opentrust_net::resolver::{AddressResolver, ResolverEvent};
 use opentrust_net::udp::UdpMeta;
 use opentrust_platform::SettingsStore;
-use rand_core::Rng;
+use rand_core::{CryptoRng, Rng};
 
 use crate::stack::{CHILDREN, Core};
 #[cfg(feature = "ftd")]
@@ -91,7 +92,9 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     out: Deferred,
 }
 
-impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Handler for NodeHandler<'_, S, C, R> {
+impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Handler
+    for NodeHandler<'_, S, C, R>
+{
     fn handle(&mut self, uri: Uri, req: &Request<'_>, rsp: &mut dyn Responder) {
         let now = self.now;
         let iid = self.core.ml_iid;
@@ -177,7 +180,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Handler for NodeHandler
     }
 }
 
-impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
+impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
     /// A datagram for the TMF port.
     pub(crate) fn handle_tmf(&mut self, now: Instant, meta: &UdpMeta, payload: &[u8]) {
         let env = MlTmfEnv(self.core.cfg.cur.mesh_local_prefix);

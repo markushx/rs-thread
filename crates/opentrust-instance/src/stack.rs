@@ -40,7 +40,7 @@ use crate::MAX_UDP_PAYLOAD;
 pub const CHILDREN: usize = 8;
 
 /// UDP sockets of the application.
-pub const UDP_SOCKETS: usize = 3;
+pub const UDP_SOCKETS: usize = 5;
 
 /// Network Data capacity in bytes.
 pub const NETDATA_LEN: usize = 512;
@@ -58,6 +58,10 @@ impl MacRng {
         Self(seed | 1)
     }
 }
+
+/// Unit tests of this crate use it as the instance RNG.
+#[cfg(test)]
+impl rand_core::TryCryptoRng for MacRng {}
 
 impl rand_core::TryRng for MacRng {
     type Error = core::convert::Infallible;
