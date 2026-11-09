@@ -23,11 +23,25 @@
 //!   `/c/ur` (UDP_RX). Management SET requests travel this way to the
 //!   Leader ALOC (Thread 1.4.1 section 8.4.2.2).
 //!
-//! One Commissioner session at a time; the session is closed after
-//! [`KEEP_ALIVE_TIMEOUT`] without COMM_KA, and a new one is accepted only
-//! [`GUARD_TIME`] after the previous one ended (OT
+//! One Commissioner session at a time per listener; the session is closed
+//! after [`KEEP_ALIVE_TIMEOUT`] without COMM_KA, and a new one is accepted
+//! only [`GUARD_TIME`] after the previous one ended (OT
 //! `kGuardTimeNewConnectionMilli`). The number of connection attempts can
 //! be limited ([`BorderAgent::set_max_connection_attempts`]).
+//!
+//! # Ephemeral key (ePSKc)
+//!
+//! Besides the PSKc listener, a second, independent DTLS listener accepts
+//! one Candidate authenticated with an ephemeral key
+//! ([`BorderAgent::start_ephemeral_key`], [`epskc`], Thread 1.4.1
+//! sections 8.4.1.2.3 and 8.4.9.4, OT `EphemeralKeyManager`). The key
+//! octets are the EC-JPAKE password. The key is single-use and
+//! short-lived: it is discarded when its session ends, when its timeout
+//! expires (the session is closed), or after
+//! [`epskc::MAX_CONNECTION_ATTEMPTS`] connection attempts. Its session is
+//! served like a PSKc session (petition, keep-alive, gets with the Network
+//! Key). While a key is set, the MeshCoP-ePSKc DNS-SD service is
+//! advertised through [`BorderAgentIo::ephemeral_service`].
 //!
 //! [`BorderAgentClient`] is the external Commissioner's end: the DTLS
 //! client to a Border Agent and a [`CommissionerIo`] for the
@@ -51,11 +65,12 @@ use opentrust_core::crypto::ecjpake::P256;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{Prefix64, Pskc, Rloc16};
 use opentrust_core::{Error, Result};
-use opentrust_dtls::{Config, Session, State as DtlsState};
+use opentrust_dtls::{CloseReason, Config, Session, State as DtlsState};
 use rand_core::CryptoRng;
 
 use crate::commissioner::{Commissioner, CommissionerIo, LEADER_ALOC16, commissioner_aloc16};
 use crate::dataset::DatasetType;
+use crate::epskc::{self, EphemeralKey};
 use crate::leader::commissioner_get_payload;
 use crate::manager::Datasets;
 use crate::mgmt::get_payload;
@@ -89,11 +104,34 @@ const RESOURCES: [Uri; 7] = [
     Uri::ProxyTx,
 ];
 
+/// The DTLS listener (UDP port) a Border Agent session belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Listener {
+    /// The Border Agent port (PSKc; DNS-SD `_meshcop._udp`).
+    Pskc,
+    /// The ePSKc port (DNS-SD `_meshcop-e._udp`), open while an ephemeral
+    /// key is set ([`BorderAgent::start_ephemeral_key`]).
+    Ephemeral,
+}
+
+impl Listener {
+    const fn idx(self) -> usize {
+        match self {
+            Listener::Pskc => 0,
+            Listener::Ephemeral => 1,
+        }
+    }
+}
+
+const LISTENERS: [Listener; 2] = [Listener::Pskc, Listener::Ephemeral];
+
 /// What the Border Agent needs from the stack.
 pub trait BorderAgentIo {
     /// Send a DTLS datagram to the Commissioner on the external interface
-    /// (from the Border Agent UDP port).
-    fn send_to_commissioner(&mut self, peer: &Peer, data: &[u8]) -> Result<()>;
+    /// from the UDP port of `listener` (the Border Agent port, or the
+    /// ePSKc port given to [`BorderAgent::start_ephemeral_key`]).
+    fn send_to_commissioner(&mut self, listener: Listener, peer: &Peer, data: &[u8]) -> Result<()>;
     /// Send a TMF POST for `uri` to `dst` from our RLOC; `confirmable`
     /// selects CON / NON; the response to a CON is fed back through
     /// [`BorderAgent::handle_tmf_response`] with `user`.
@@ -113,6 +151,14 @@ pub trait BorderAgentIo {
     /// Thread interface; while set, UDP datagrams to it go to
     /// [`BorderAgent::handle_proxy_rx`].
     fn set_commissioner_aloc(&mut self, aloc16: Option<u16>);
+    /// Register (`Some(port)`) or unregister (`None`) the MeshCoP-ePSKc
+    /// DNS-SD service ([`epskc::SERVICE_TYPE`], same instance name as the
+    /// MeshCoP service, SRV port `port`); OT
+    /// `EphemeralKeyManager::RegisterOrUnregisterService`. The default
+    /// does nothing (no DNS-SD on this device).
+    fn ephemeral_service(&mut self, port: Option<u16>) {
+        let _ = port;
+    }
 }
 
 /// The local state the Border Agent answers from.
@@ -126,26 +172,77 @@ pub struct BorderAgentView<'a> {
     pub mesh_local_prefix: Prefix64,
 }
 
+/// State of the ephemeral key (OT `EphemeralKeyManager::State`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum EphemeralKeyState {
+    /// The ePSKc feature is disabled.
+    Disabled,
+    /// Enabled, no key set.
+    Stopped,
+    /// A key is set; the ePSKc port accepts a connection.
+    Started,
+    /// A Candidate is connected with the key (not petitioned).
+    Connected,
+    /// The connected Candidate is the active Commissioner.
+    Accepted,
+}
+
+impl EphemeralKeyState {
+    /// Is the MeshCoP-ePSKc service advertised in this state (OT
+    /// `ShouldRegisterService`)?
+    pub const fn is_active(self) -> bool {
+        matches!(self, Self::Started | Self::Connected | Self::Accepted)
+    }
+}
+
+/// Why the ephemeral key was discarded (OT `DeactivationReason`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum EphemeralKeyStopReason {
+    /// [`BorderAgent::stop_ephemeral_key`], the feature was disabled, or
+    /// the Border Agent closed the session.
+    Local,
+    /// The Candidate closed the session.
+    PeerDisconnect,
+    /// The session failed (fatal alert).
+    SessionError,
+    /// The session ended for lack of keep-alives.
+    SessionTimeout,
+    /// The connection attempts are used up
+    /// ([`epskc::MAX_CONNECTION_ATTEMPTS`]).
+    MaxAttempts,
+    /// The key's timeout expired.
+    Timeout,
+}
+
 /// Notification of the Border Agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorderAgentEvent {
     /// A Commissioner Candidate completed the DTLS handshake.
-    Connected(Peer),
+    Connected(Listener, Peer),
     /// The session ended (closed by either side, failed or timed out).
-    Disconnected(Peer),
+    Disconnected(Listener, Peer),
     /// The Leader accepted the Candidate's petition (session ID).
     PetitionAccepted(u16),
-    /// The connection attempts are used up; the Border Agent refuses new
-    /// sessions until [`BorderAgent::set_max_connection_attempts`].
+    /// The PSKc connection attempts are used up; the Border Agent refuses
+    /// new PSKc sessions until [`BorderAgent::set_max_connection_attempts`].
     AttemptsExhausted,
+    /// The ephemeral key state changed (OT ephemeral key callback).
+    EphemeralKeyState(EphemeralKeyState),
+    /// The ephemeral key was discarded.
+    EphemeralKeyStopped(EphemeralKeyStopReason),
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Forward {
     user: u32,
+    listener: Listener,
     ctx: RequestCtx,
     petition: bool,
 }
+
+type BaCoap = Endpoint<2, 7, 2, MAX_CONTENT_LEN>;
 
 struct BaSession<B: CryptoBackend, C: P256> {
     dtls: Session<B, C>,
@@ -153,6 +250,24 @@ struct BaSession<B: CryptoBackend, C: P256> {
     connected: bool,
     aloc16: Option<u16>,
     keep_alive_deadline: Option<Instant>,
+    coap: BaCoap,
+}
+
+/// Why a session ends.
+#[derive(Debug, Clone, Copy)]
+enum End {
+    Dtls(CloseReason),
+    KeepAlive,
+    Local,
+}
+
+/// The ephemeral key and its listener's bookkeeping.
+struct Ephemeral {
+    state: EphemeralKeyState,
+    key: Option<EphemeralKey>,
+    port: u16,
+    deadline: Option<Instant>,
+    remaining_attempts: u16,
 }
 
 /// The Border Agent (OT `MeshCoP::BorderAgent`).
@@ -161,23 +276,36 @@ pub struct BorderAgent<B: CryptoBackend, C: P256> {
     curve: C,
     id: [u8; 16],
     pskc: Option<Pskc>,
-    session: Option<BaSession<B, C>>,
-    guard_until: Option<Instant>,
+    sessions: [Option<BaSession<B, C>>; 2],
+    guard_until: [Option<Instant>; 2],
     max_attempts: u16,
     remaining_attempts: u16,
-    coap: Endpoint<2, 7, 2, MAX_CONTENT_LEN>,
+    eph: Ephemeral,
     forwards: Vec<Forward, MAX_FORWARDS>,
     next_user: u16,
-    events: Deque<BorderAgentEvent, 4>,
+    events: Deque<BorderAgentEvent, 8>,
 }
 
 impl<B: CryptoBackend, C: P256> core::fmt::Debug for BorderAgent<B, C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("BorderAgent")
             .field("id", &self.id)
-            .field("session", &self.session.as_ref().map(|s| s.peer))
+            .field("session", &self.sessions[0].as_ref().map(|s| s.peer))
+            .field(
+                "ephemeral_session",
+                &self.sessions[1].as_ref().map(|s| s.peer),
+            )
+            .field("ephemeral_key_state", &self.eph.state)
             .finish_non_exhaustive()
     }
+}
+
+fn new_coap(mid: u16) -> BaCoap {
+    let mut coap = Endpoint::new(mid, Default::default());
+    for u in RESOURCES {
+        let _ = coap.add_resource(u.path(), ResourceId(u.id()));
+    }
+    coap
 }
 
 impl<B, C> BorderAgent<B, C>
@@ -187,22 +315,27 @@ where
     C: P256 + Clone,
 {
     /// A Border Agent with the Border Agent ID `id` (OT generates it
-    /// randomly once and stores it). No PSKc yet: sessions are refused.
+    /// randomly once and stores it). No PSKc yet: PSKc sessions are
+    /// refused. The ephemeral key feature is enabled (Thread 1.4, OT
+    /// `OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_FEATURE_ENABLED_BY_DEFAULT`)
+    /// with no key set.
     pub fn new(crypto: B, curve: C, id: [u8; 16]) -> Self {
-        let mut coap = Endpoint::new(0, Default::default());
-        for u in RESOURCES {
-            let _ = coap.add_resource(u.path(), ResourceId(u.id()));
-        }
         Self {
             crypto,
             curve,
             id,
             pskc: None,
-            session: None,
-            guard_until: None,
+            sessions: [None, None],
+            guard_until: [None, None],
             max_attempts: 0,
             remaining_attempts: 0,
-            coap,
+            eph: Ephemeral {
+                state: EphemeralKeyState::Stopped,
+                key: None,
+                port: 0,
+                deadline: None,
+                remaining_attempts: 0,
+            },
             forwards: Vec::new(),
             next_user: 0,
             events: Deque::new(),
@@ -219,21 +352,30 @@ where
         self.pskc = pskc;
     }
 
-    /// Limit the number of DTLS connection attempts (`0`: unlimited; OT
-    /// `SetMaxConnectionAttempts`); resets the remaining count.
+    /// Limit the number of PSKc DTLS connection attempts (`0`: unlimited;
+    /// OT `SetMaxConnectionAttempts`); resets the remaining count. The
+    /// ePSKc listener has its own fixed limit
+    /// ([`epskc::MAX_CONNECTION_ATTEMPTS`]).
     pub fn set_max_connection_attempts(&mut self, n: u16) {
         self.max_attempts = n;
         self.remaining_attempts = n;
     }
 
-    /// A Commissioner session is connected.
+    /// A Commissioner session (on either listener) is connected.
     pub fn is_connected(&self) -> bool {
-        self.session.as_ref().is_some_and(|s| s.connected)
+        self.sessions.iter().flatten().any(|s| s.connected)
+    }
+
+    /// The session of `listener` is connected.
+    pub fn is_connected_on(&self, listener: Listener) -> bool {
+        self.sessions[listener.idx()]
+            .as_ref()
+            .is_some_and(|s| s.connected)
     }
 
     /// The active Commissioner's ALOC16, if its petition was accepted.
     pub fn commissioner_aloc16(&self) -> Option<u16> {
-        self.session.as_ref().and_then(|s| s.aloc16)
+        self.sessions.iter().flatten().find_map(|s| s.aloc16)
     }
 
     /// The next notification.
@@ -248,8 +390,125 @@ where
         let _ = self.events.push_back(e);
     }
 
+    // ------------------------------------------------------- ephemeral key
+
+    /// State of the ephemeral key (OT `GetState`).
+    pub fn ephemeral_key_state(&self) -> EphemeralKeyState {
+        self.eph.state
+    }
+
+    /// Is the ePSKc feature enabled? The MeshCoP service's State Bitmap
+    /// then carries [`epskc::STATE_BITMAP_EPSKC_SUPPORTED`].
+    pub fn ephemeral_key_supported(&self) -> bool {
+        self.eph.state != EphemeralKeyState::Disabled
+    }
+
+    /// The ePSKc UDP port while the MeshCoP-ePSKc service is advertised
+    /// (a key is set).
+    pub fn ephemeral_port(&self) -> Option<u16> {
+        self.eph.state.is_active().then_some(self.eph.port)
+    }
+
+    /// Enable or disable the ePSKc feature (OT `SetEnabled`); disabling
+    /// discards a key in use and closes its session.
+    pub fn set_ephemeral_key_enabled<I: BorderAgentIo + ?Sized>(
+        &mut self,
+        now: Instant,
+        io: &mut I,
+        enabled: bool,
+    ) {
+        match (enabled, self.eph.state) {
+            (true, EphemeralKeyState::Disabled) => {
+                self.set_eph_state(io, EphemeralKeyState::Stopped);
+            }
+            (false, s) if s != EphemeralKeyState::Disabled => {
+                self.stop_ephemeral(now, io, EphemeralKeyStopReason::Local);
+                self.set_eph_state(io, EphemeralKeyState::Disabled);
+            }
+            _ => {}
+        }
+    }
+
+    /// Accept `key` on the ePSKc listener at UDP `port` for `timeout`
+    /// (zero: [`epskc::DEFAULT_TIMEOUT`], clamped to
+    /// [`epskc::MAX_TIMEOUT`]); returns the effective timeout (OT
+    /// `EphemeralKeyManager::Start`).
+    ///
+    /// The key is single-use: it is discarded when its session ends, when
+    /// the timeout expires (closing its session), after
+    /// [`epskc::MAX_CONNECTION_ATTEMPTS`] connection attempts, or by
+    /// [`stop_ephemeral_key`](Self::stop_ephemeral_key). The caller binds
+    /// the UDP socket (a port other than the Border Agent's) and passes
+    /// the bound, non-zero `port`; datagrams to it go to
+    /// [`handle_ephemeral_udp`](Self::handle_ephemeral_udp). The PSKc
+    /// listener is unaffected (both can be used in parallel, as in OT).
+    ///
+    /// [`Error::InvalidState`] if a key is already in use or the feature is
+    /// disabled, [`Error::InvalidArgs`] for port `0`.
+    pub fn start_ephemeral_key<I: BorderAgentIo + ?Sized>(
+        &mut self,
+        now: Instant,
+        io: &mut I,
+        key: EphemeralKey,
+        timeout: Duration,
+        port: u16,
+    ) -> Result<Duration> {
+        if self.eph.state != EphemeralKeyState::Stopped {
+            return Err(Error::InvalidState);
+        }
+        if port == 0 {
+            return Err(Error::InvalidArgs);
+        }
+        let timeout = epskc::effective_timeout(timeout);
+        self.eph.key = Some(key);
+        self.eph.port = port;
+        self.eph.deadline = Some(now.saturating_add(timeout));
+        self.eph.remaining_attempts = epskc::MAX_CONNECTION_ATTEMPTS;
+        self.guard_until[Listener::Ephemeral.idx()] = None;
+        self.set_eph_state(io, EphemeralKeyState::Started);
+        Ok(timeout)
+    }
+
+    /// Discard the ephemeral key and close its session (OT `Stop`); no
+    /// effect without a key.
+    pub fn stop_ephemeral_key<I: BorderAgentIo + ?Sized>(&mut self, now: Instant, io: &mut I) {
+        self.stop_ephemeral(now, io, EphemeralKeyStopReason::Local);
+    }
+
+    fn stop_ephemeral<I: BorderAgentIo + ?Sized>(
+        &mut self,
+        now: Instant,
+        io: &mut I,
+        reason: EphemeralKeyStopReason,
+    ) {
+        if !self.eph.state.is_active() {
+            return;
+        }
+        // State first: ending the session below must not recurse.
+        self.set_eph_state(io, EphemeralKeyState::Stopped);
+        self.eph.key = None;
+        self.eph.deadline = None;
+        self.eph.remaining_attempts = 0;
+        self.end_session(Listener::Ephemeral, now, io, End::Local);
+        self.event(BorderAgentEvent::EphemeralKeyStopped(reason));
+    }
+
+    fn set_eph_state<I: BorderAgentIo + ?Sized>(&mut self, io: &mut I, state: EphemeralKeyState) {
+        let old = self.eph.state;
+        if old == state {
+            return;
+        }
+        self.eph.state = state;
+        self.event(BorderAgentEvent::EphemeralKeyState(state));
+        if old.is_active() != state.is_active() {
+            io.ephemeral_service(state.is_active().then_some(self.eph.port));
+        }
+    }
+
+    // ------------------------------------------------------------ sessions
+
     /// A UDP datagram from the external interface to the Border Agent
-    /// port.
+    /// port (PSKc).
     pub fn handle_udp<R: CryptoRng + ?Sized, I: BorderAgentIo + ?Sized>(
         &mut self,
         now: Instant,
@@ -259,73 +518,145 @@ where
         peer: &Peer,
         datagram: &[u8],
     ) {
-        if self.session.is_none() && !self.accept_session(now, rng, peer) {
+        self.handle_listener_udp(Listener::Pskc, now, rng, io, view, peer, datagram);
+    }
+
+    /// A UDP datagram from the external interface to the ePSKc port
+    /// ([`ephemeral_port`](Self::ephemeral_port)); ignored while no
+    /// ephemeral key is set.
+    pub fn handle_ephemeral_udp<R: CryptoRng + ?Sized, I: BorderAgentIo + ?Sized>(
+        &mut self,
+        now: Instant,
+        rng: &mut R,
+        io: &mut I,
+        view: &BorderAgentView<'_>,
+        peer: &Peer,
+        datagram: &[u8],
+    ) {
+        if !self.eph.state.is_active() {
             return;
         }
-        if self.session.as_ref().is_some_and(|s| s.peer != *peer) {
-            // One Commissioner session at a time.
+        self.handle_listener_udp(Listener::Ephemeral, now, rng, io, view, peer, datagram);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn handle_listener_udp<R: CryptoRng + ?Sized, I: BorderAgentIo + ?Sized>(
+        &mut self,
+        l: Listener,
+        now: Instant,
+        rng: &mut R,
+        io: &mut I,
+        view: &BorderAgentView<'_>,
+        peer: &Peer,
+        datagram: &[u8],
+    ) {
+        let i = l.idx();
+        if self.sessions[i].is_none() && !self.accept_session(l, now, rng, io, peer) {
+            return;
+        }
+        if self.sessions[i].as_ref().is_some_and(|s| s.peer != *peer) {
+            // One session per listener at a time (at most one ePSKc
+            // session, Thread 1.4.1 section 8.4.9.4.1.4).
             return;
         }
         let mut rest = datagram;
         let mut app = [0u8; MAX_CONTENT_LEN];
-        while let Some(s) = self.session.as_mut() {
+        while let Some(s) = self.sessions[i].as_mut() {
             let got = secure::next_app_data(&mut s.dtls, now, rng, &mut rest, &mut app);
             let p = s.peer;
-            let _ = secure::flush(&mut s.dtls, |d| io.send_to_commissioner(&p, d));
-            self.check_session(now, io);
+            let _ = secure::flush(&mut s.dtls, |d| io.send_to_commissioner(l, &p, d));
+            self.check_session(l, now, io);
             let Some(n) = got else { break };
-            self.handle_coap(now, io, view, &app[..n]);
+            self.handle_coap(l, now, io, view, &app[..n]);
         }
+        // Decrypted requests may hold the Network Key (`/c/as`, ...).
+        zeroize::Zeroize::zeroize(&mut app);
     }
 
-    fn accept_session<R: CryptoRng + ?Sized>(
+    fn accept_session<R: CryptoRng + ?Sized, I: BorderAgentIo + ?Sized>(
         &mut self,
+        l: Listener,
         now: Instant,
         rng: &mut R,
+        io: &mut I,
         peer: &Peer,
     ) -> bool {
-        if self.guard_until.is_some_and(|g| now < g) {
+        if self.guard_until[l.idx()].is_some_and(|g| now < g) {
             return false;
         }
-        let Some(pskc) = self.pskc.as_ref() else {
-            return false;
-        };
-        if self.max_attempts > 0 {
-            if self.remaining_attempts == 0 {
-                return false;
+        match l {
+            Listener::Pskc => {
+                if self.pskc.is_none() {
+                    return false;
+                }
+                if self.max_attempts > 0 {
+                    if self.remaining_attempts == 0 {
+                        return false;
+                    }
+                    self.remaining_attempts -= 1;
+                }
             }
-            self.remaining_attempts -= 1;
+            Listener::Ephemeral => {
+                if self.eph.state != EphemeralKeyState::Started
+                    || self.eph.key.is_none()
+                    || self.eph.remaining_attempts == 0
+                {
+                    return false;
+                }
+                // Every new session counts (OT `SecureSession::Setup`);
+                // a successful one ends the key's use anyway.
+                self.eph.remaining_attempts -= 1;
+            }
         }
+        let password: &[u8] = match l {
+            Listener::Pskc => self.pskc.as_ref().map_or(&[], |p| &p.0),
+            Listener::Ephemeral => self.eph.key.as_ref().map_or(&[], |k| k.as_bytes()),
+        };
         let mut id = [0u8; 18];
         id[..16].copy_from_slice(&peer.addr.octets());
         id[16..].copy_from_slice(&peer.port.to_be_bytes());
-        let Ok(dtls) = Session::server(
+        let dtls = Session::server(
             self.crypto.clone(),
             self.curve.clone(),
-            &pskc.0,
+            password,
             Config::default(),
             &id,
             rng,
-        ) else {
+        );
+        let Ok(dtls) = dtls else {
+            self.check_ephemeral_attempts(now, io, l);
             return false;
         };
-        self.coap.clear();
-        self.coap = Endpoint::new(rng.next_u32() as u16, Default::default());
-        for u in RESOURCES {
-            let _ = self.coap.add_resource(u.path(), ResourceId(u.id()));
-        }
-        self.session = Some(BaSession {
+        self.sessions[l.idx()] = Some(BaSession {
             dtls,
             peer: *peer,
             connected: false,
             aloc16: None,
             keep_alive_deadline: None,
+            coap: new_coap(rng.next_u32() as u16),
         });
         true
     }
 
-    fn check_session<I: BorderAgentIo + ?Sized>(&mut self, now: Instant, io: &mut I) {
-        let Some(s) = self.session.as_mut() else {
+    /// The ePSKc listener closes once its attempts are used up and no
+    /// session is left (OT `HandleUpdateTask` auto-close).
+    fn check_ephemeral_attempts<I: BorderAgentIo + ?Sized>(
+        &mut self,
+        now: Instant,
+        io: &mut I,
+        l: Listener,
+    ) {
+        if l == Listener::Ephemeral
+            && self.eph.state == EphemeralKeyState::Started
+            && self.eph.remaining_attempts == 0
+            && self.sessions[l.idx()].is_none()
+        {
+            self.stop_ephemeral(now, io, EphemeralKeyStopReason::MaxAttempts);
+        }
+    }
+
+    fn check_session<I: BorderAgentIo + ?Sized>(&mut self, l: Listener, now: Instant, io: &mut I) {
+        let Some(s) = self.sessions[l.idx()].as_mut() else {
             return;
         };
         match s.dtls.state() {
@@ -333,43 +664,69 @@ where
                 s.connected = true;
                 s.keep_alive_deadline = Some(now.saturating_add(KEEP_ALIVE_TIMEOUT));
                 let p = s.peer;
-                self.event(BorderAgentEvent::Connected(p));
+                self.event(BorderAgentEvent::Connected(l, p));
+                if l == Listener::Ephemeral {
+                    self.set_eph_state(io, EphemeralKeyState::Connected);
+                }
             }
-            DtlsState::Closed(_) => self.end_session(now, io),
+            DtlsState::Closed(r) => self.end_session(l, now, io, End::Dtls(r)),
             _ => {}
         }
     }
 
-    /// Drop the session: ALOC removed, forwards forgotten, guard time.
-    fn end_session<I: BorderAgentIo + ?Sized>(&mut self, now: Instant, io: &mut I) {
-        let Some(mut s) = self.session.take() else {
+    /// Drop the session of `l`: ALOC removed, forwards forgotten, guard
+    /// time; an ePSKc session that was connected discards the key.
+    fn end_session<I: BorderAgentIo + ?Sized>(
+        &mut self,
+        l: Listener,
+        now: Instant,
+        io: &mut I,
+        end: End,
+    ) {
+        let Some(mut s) = self.sessions[l.idx()].take() else {
             return;
         };
         if !matches!(s.dtls.state(), DtlsState::Closed(_)) {
             s.dtls.close();
             let p = s.peer;
-            let _ = secure::flush(&mut s.dtls, |d| io.send_to_commissioner(&p, d));
+            let _ = secure::flush(&mut s.dtls, |d| io.send_to_commissioner(l, &p, d));
         }
         if s.aloc16.is_some() {
             io.set_commissioner_aloc(None);
         }
-        self.forwards.clear();
-        self.coap.clear();
-        self.guard_until = Some(now.saturating_add(GUARD_TIME));
-        self.event(BorderAgentEvent::Disconnected(s.peer));
-        if self.max_attempts > 0 && self.remaining_attempts == 0 {
-            self.event(BorderAgentEvent::AttemptsExhausted);
+        self.forwards.retain(|f| f.listener != l);
+        s.coap.clear();
+        self.guard_until[l.idx()] = Some(now.saturating_add(GUARD_TIME));
+        self.event(BorderAgentEvent::Disconnected(l, s.peer));
+        match l {
+            Listener::Pskc => {
+                if self.max_attempts > 0 && self.remaining_attempts == 0 {
+                    self.event(BorderAgentEvent::AttemptsExhausted);
+                }
+            }
+            Listener::Ephemeral if s.connected => {
+                // Single use (Thread 1.4.1 sections 8.4.1.2.3, 8.4.9.4.1.5).
+                let reason = match end {
+                    End::Dtls(CloseReason::Peer) => EphemeralKeyStopReason::PeerDisconnect,
+                    End::Dtls(CloseReason::Local) | End::Local => EphemeralKeyStopReason::Local,
+                    End::Dtls(_) => EphemeralKeyStopReason::SessionError,
+                    End::KeepAlive => EphemeralKeyStopReason::SessionTimeout,
+                };
+                self.stop_ephemeral(now, io, reason);
+            }
+            Listener::Ephemeral => self.check_ephemeral_attempts(now, io, l),
         }
     }
 
     fn handle_coap<I: BorderAgentIo + ?Sized>(
         &mut self,
+        l: Listener,
         now: Instant,
         io: &mut I,
         view: &BorderAgentView<'_>,
         data: &[u8],
     ) {
-        let Some(s) = self.session.as_mut() else {
+        let Some(s) = self.sessions[l.idx()].as_mut() else {
             return;
         };
         let p = s.peer;
@@ -380,13 +737,14 @@ where
         let req = {
             let mut tx = DtlsTx {
                 session: &mut s.dtls,
-                out: |d: &[u8]| io.send_to_commissioner(&p, d),
+                out: |d: &[u8]| io.send_to_commissioner(l, &p, d),
             };
-            match self.coap.handle_datagram(now, &mut tx, &info, data) {
+            match s.coap.handle_datagram(now, &mut tx, &info, data) {
                 Rx::Request(r) => r,
                 _ => return,
             }
         };
+        let active = s.aloc16.is_some();
         let Some(uri) = Uri::from_id(req.resource.0) else {
             return;
         };
@@ -394,13 +752,23 @@ where
         let mlp = view.mesh_local_prefix;
         match uri {
             Uri::CommissionerPetition => {
-                self.forward_to_leader(now, io, &mlp, &req.ctx, Uri::LeaderPetition, payload, true);
+                self.forward_to_leader(
+                    l,
+                    now,
+                    io,
+                    &mlp,
+                    &req.ctx,
+                    Uri::LeaderPetition,
+                    payload,
+                    true,
+                );
             }
-            Uri::CommissionerKeepAlive if s_active(&self.session) => {
-                if let Some(s) = self.session.as_mut() {
+            Uri::CommissionerKeepAlive if active => {
+                if let Some(s) = self.sessions[l.idx()].as_mut() {
                     s.keep_alive_deadline = Some(now.saturating_add(KEEP_ALIVE_TIMEOUT));
                 }
                 self.forward_to_leader(
+                    l,
                     now,
                     io,
                     &mlp,
@@ -427,6 +795,9 @@ where
                 }
             }
             Uri::CommissionerGet | Uri::ActiveGet | Uri::PendingGet => {
+                // Also for an ePSKc Candidate that did not petition, with
+                // the Network Key regardless of the Security Policy O-bit
+                // (Thread 1.4.1 section 8.4.9.4.1.4).
                 let mut buf = [0u8; 300];
                 let n = match uri {
                     Uri::CommissionerGet => {
@@ -454,14 +825,14 @@ where
                 } else {
                     Code::BAD_REQUEST
                 };
-                self.respond(now, io, &req.ctx, code, &buf[..n.unwrap_or(0)]);
+                self.respond(l, now, io, &req.ctx, code, &buf[..n.unwrap_or(0)]);
                 // The answer may hold the Network Key.
                 zeroize::Zeroize::zeroize(&mut buf);
             }
             Uri::ProxyTx => {
                 // OT `HandleTmfProxyTx`, only for the active Commissioner
                 // (the source is its ALOC).
-                let Some(aloc16) = self.session.as_ref().and_then(|s| s.aloc16) else {
+                let Some(aloc16) = self.sessions[l.idx()].as_ref().and_then(|s| s.aloc16) else {
                     return;
                 };
                 let t = Tlvs(payload);
@@ -485,21 +856,22 @@ where
 
     fn respond<I: BorderAgentIo + ?Sized>(
         &mut self,
+        l: Listener,
         now: Instant,
         io: &mut I,
         ctx: &RequestCtx,
         code: Code,
         payload: &[u8],
     ) {
-        let Some(s) = self.session.as_mut() else {
+        let Some(s) = self.sessions[l.idx()].as_mut() else {
             return;
         };
         let p = s.peer;
         let mut tx = DtlsTx {
             session: &mut s.dtls,
-            out: |d: &[u8]| io.send_to_commissioner(&p, d),
+            out: |d: &[u8]| io.send_to_commissioner(l, &p, d),
         };
-        let _ = self
+        let _ = s
             .coap
             .respond_payload(now, &mut tx, ctx, &SendOpts::default(), code, payload);
     }
@@ -508,6 +880,7 @@ where
     #[allow(clippy::too_many_arguments)]
     fn forward_to_leader<I: BorderAgentIo + ?Sized>(
         &mut self,
+        l: Listener,
         now: Instant,
         io: &mut I,
         mlp: &Prefix64,
@@ -516,14 +889,14 @@ where
         payload: &[u8],
         petition: bool,
     ) {
-        if let Some(s) = self.session.as_mut() {
+        if let Some(s) = self.sessions[l.idx()].as_mut() {
             let p = s.peer;
             let mut tx = DtlsTx {
                 session: &mut s.dtls,
-                out: |d: &[u8]| io.send_to_commissioner(&p, d),
+                out: |d: &[u8]| io.send_to_commissioner(l, &p, d),
             };
             if ctx.ty == Type::Con {
-                let _ = self.coap.ack_empty(&mut tx, ctx);
+                let _ = s.coap.ack_empty(&mut tx, ctx);
             }
         }
         self.next_user = self.next_user.wrapping_add(1);
@@ -540,11 +913,12 @@ where
             Ok(()) => {
                 let _ = self.forwards.push(Forward {
                     user,
+                    listener: l,
                     ctx: sep,
                     petition,
                 });
             }
-            Err(e) => self.respond(now, io, &sep, error_code(e), &[]),
+            Err(e) => self.respond(l, now, io, &sep, error_code(e), &[]),
         }
     }
 
@@ -562,10 +936,11 @@ where
             return;
         };
         let f = self.forwards.swap_remove(i);
+        let l = f.listener;
         let (code, payload) = match result {
             Ok(r) => r,
             Err(e) => {
-                self.respond(now, io, &f.ctx, error_code(e), &[]);
+                self.respond(l, now, io, &f.ctx, error_code(e), &[]);
                 return;
             }
         };
@@ -573,15 +948,18 @@ where
             let t = Tlvs(payload);
             if t.state() == Ok(State::Accept)
                 && let Ok(sid) = t.commissioner_session_id()
-                && let Some(s) = self.session.as_mut()
+                && let Some(s) = self.sessions[l.idx()].as_mut()
             {
                 let aloc = commissioner_aloc16(sid);
                 s.aloc16 = Some(aloc);
                 io.set_commissioner_aloc(Some(aloc));
                 self.event(BorderAgentEvent::PetitionAccepted(sid));
+                if l == Listener::Ephemeral {
+                    self.set_eph_state(io, EphemeralKeyState::Accepted);
+                }
             }
         }
-        self.respond(now, io, &f.ctx, code, payload);
+        self.respond(l, now, io, &f.ctx, code, payload);
     }
 
     /// `/c/rx` from a Joiner Router (OT `HandleTmf<kUriRelayRx>`): to the
@@ -633,17 +1011,21 @@ where
         I: BorderAgentIo + ?Sized,
         F: FnOnce(&mut Writer<'_>) -> Result<()>,
     {
-        let s = self
-            .session
-            .as_mut()
-            .filter(|s| s.aloc16.is_some())
+        let l = LISTENERS
+            .into_iter()
+            .find(|l| {
+                self.sessions[l.idx()]
+                    .as_ref()
+                    .is_some_and(|s| s.aloc16.is_some())
+            })
             .ok_or(Error::InvalidState)?;
+        let s = self.sessions[l.idx()].as_mut().ok_or(Error::InvalidState)?;
         let p = s.peer;
         let mut tx = DtlsTx {
             session: &mut s.dtls,
-            out: |d: &[u8]| io.send_to_commissioner(&p, d),
+            out: |d: &[u8]| io.send_to_commissioner(l, &p, d),
         };
-        self.coap.send_request(
+        s.coap.send_request(
             now,
             rng,
             &mut tx,
@@ -661,44 +1043,57 @@ where
 
     /// When [`poll`](Self::poll) must be called next.
     pub fn next_deadline(&self) -> Option<Instant> {
-        let s = self.session.as_ref().and_then(|s| {
-            [s.dtls.next_timeout(), s.keep_alive_deadline]
-                .into_iter()
-                .flatten()
-                .min()
-        });
-        [s, self.coap.next_deadline()].into_iter().flatten().min()
+        self.sessions
+            .iter()
+            .flatten()
+            .flat_map(|s| {
+                [
+                    s.dtls.next_timeout(),
+                    s.keep_alive_deadline,
+                    s.coap.next_deadline(),
+                ]
+            })
+            .chain([self.eph.deadline])
+            .flatten()
+            .min()
     }
 
-    /// Run timers: DTLS / CoAP retransmissions and the keep-alive timeout.
+    /// Run timers: DTLS / CoAP retransmissions, the keep-alive timeout and
+    /// the ephemeral key's timeout.
     pub fn poll<I: BorderAgentIo + ?Sized>(&mut self, now: Instant, io: &mut I) {
-        let Some(s) = self.session.as_mut() else {
-            return;
-        };
-        if s.keep_alive_deadline.is_some_and(|d| d <= now) {
-            self.end_session(now, io);
-            return;
+        if self.eph.deadline.is_some_and(|d| d <= now) {
+            // Closes a session using the key (Thread 1.4.1 section
+            // 8.4.9.4.1.5).
+            self.stop_ephemeral(now, io, EphemeralKeyStopReason::Timeout);
         }
-        s.dtls.handle_timeout(now);
-        let p = s.peer;
-        let _ = secure::flush(&mut s.dtls, |d| io.send_to_commissioner(&p, d));
-        let mut tx = DtlsTx {
-            session: &mut s.dtls,
-            out: |d: &[u8]| io.send_to_commissioner(&p, d),
-        };
-        while let Some(Event::Timeout { .. }) = self.coap.poll(now, &mut tx) {}
-        self.check_session(now, io);
+        for l in LISTENERS {
+            let Some(s) = self.sessions[l.idx()].as_mut() else {
+                continue;
+            };
+            if s.keep_alive_deadline.is_some_and(|d| d <= now) {
+                self.end_session(l, now, io, End::KeepAlive);
+                continue;
+            }
+            s.dtls.handle_timeout(now);
+            let p = s.peer;
+            let _ = secure::flush(&mut s.dtls, |d| io.send_to_commissioner(l, &p, d));
+            let mut tx = DtlsTx {
+                session: &mut s.dtls,
+                out: |d: &[u8]| io.send_to_commissioner(l, &p, d),
+            };
+            while let Some(Event::Timeout { .. }) = s.coap.poll(now, &mut tx) {}
+            self.check_session(l, now, io);
+        }
     }
 
-    /// Close the Commissioner session (e.g. the partition changed, Thread
-    /// 1.4.1 section 8.4.1.4).
+    /// Close the Commissioner sessions of both listeners (e.g. the
+    /// partition changed, Thread 1.4.1 section 8.4.1.4); a connected ePSKc
+    /// session discards its key.
     pub fn disconnect<I: BorderAgentIo + ?Sized>(&mut self, now: Instant, io: &mut I) {
-        self.end_session(now, io);
+        for l in LISTENERS {
+            self.end_session(l, now, io, End::Local);
+        }
     }
-}
-
-fn s_active<B: CryptoBackend, C: P256>(s: &Option<BaSession<B, C>>) -> bool {
-    s.as_ref().is_some_and(|s| s.aloc16.is_some())
 }
 
 /// OT `CoapCodeFromError`.
@@ -782,7 +1177,38 @@ where
         rng: &mut R,
         out: &mut dyn FnMut(&[u8]) -> Result<()>,
     ) -> Result<Self> {
-        let mut dtls = Session::client(crypto, curve, &pskc.0, Config::default(), now, rng)?;
+        Self::connect_with(crypto, curve, &pskc.0, peer, mlp, now, rng, out)
+    }
+
+    /// Like [`connect`](Self::connect), with an ephemeral key (ePSKc) to
+    /// the Border Agent's ePSKc port (Thread 1.4.1 section 8.4.9.3): the
+    /// key octets are the EC-JPAKE password.
+    #[allow(clippy::too_many_arguments)]
+    pub fn connect_ephemeral<R: CryptoRng + ?Sized>(
+        crypto: B,
+        curve: C,
+        key: &EphemeralKey,
+        peer: Peer,
+        mlp: Prefix64,
+        now: Instant,
+        rng: &mut R,
+        out: &mut dyn FnMut(&[u8]) -> Result<()>,
+    ) -> Result<Self> {
+        Self::connect_with(crypto, curve, key.as_bytes(), peer, mlp, now, rng, out)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn connect_with<R: CryptoRng + ?Sized>(
+        crypto: B,
+        curve: C,
+        password: &[u8],
+        peer: Peer,
+        mlp: Prefix64,
+        now: Instant,
+        rng: &mut R,
+        out: &mut dyn FnMut(&[u8]) -> Result<()>,
+    ) -> Result<Self> {
+        let mut dtls = Session::client(crypto, curve, password, Config::default(), now, rng)?;
         secure::flush(&mut dtls, &mut *out)?;
         let mut coap = Endpoint::new(rng.next_u32() as u16, Default::default());
         coap.add_resource(Uri::RelayRx.path(), RES_RELAY_RX)?;

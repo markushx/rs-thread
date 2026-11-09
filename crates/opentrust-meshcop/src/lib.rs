@@ -13,9 +13,10 @@
 //! (`commissioner`, feature `commissioner`) and the Border Agent with the
 //! external Commissioner's client (`border_agent`, feature
 //! `border-agent`). All three features are on by default; a joiner-only
-//! end device builds with `default-features = false`. The ephemeral PSKc
-//! (ePSKc) and the Border Agent's DNS-SD advertisement are not
-//! implemented.
+//! end device builds with `default-features = false`. The Border Agent
+//! also accepts an ephemeral PSKc ([`epskc`]) on a second listener; its
+//! DNS-SD services are published by the platform through a hook (the TXT
+//! record contents of the MeshCoP service are not built here).
 //!
 //! # Wiring
 //!
@@ -48,6 +49,8 @@
 //! - [`steering`]: the Steering Data bloom filter, Joiner ID derivation and
 //!   Joiner Discerner.
 //! - [`pskd`]: the Joiner PSKd (validation, secret handling).
+//! - [`epskc`]: the ephemeral PSKc (validation, timeouts, Thread
+//!   Administration One-Time Passcode with Verhoeff check digit).
 //! - [`secure`]: link-layer security classes of commissioning traffic and
 //!   the DTLS / CoAP glue.
 //! - [`joiner`]: the Joiner (discovery, DTLS with the PSKd, JOIN_FIN,
@@ -61,8 +64,8 @@
 //! - `border_agent` (feature `border-agent`, default): the Border Agent
 //!   (DTLS server with the PSKc, COMM_PET / COMM_KA forwarding, local
 //!   gets, Relay and UDP proxy, keep-alive timeout, guard time, attempt
-//!   limit) and `BorderAgentClient` / `ExternalTransport` for an external
-//!   Commissioner.
+//!   limit, ephemeral key listener) and `BorderAgentClient` /
+//!   `ExternalTransport` for an external Commissioner (PSKc or ePSKc).
 
 #[cfg(test)]
 extern crate std;
@@ -73,6 +76,7 @@ pub mod border_agent;
 pub mod commissioner;
 pub mod dataset;
 pub mod discovery;
+pub mod epskc;
 pub mod joiner;
 #[cfg(feature = "ftd")]
 pub mod joiner_router;

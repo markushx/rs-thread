@@ -29,7 +29,7 @@ use opentrust_net::ip6::SendInfo;
 
 use crate::border_agent::{
     BorderAgent, BorderAgentClient, BorderAgentEvent, BorderAgentIo, BorderAgentView,
-    ExternalTransport, is_border_agent_user,
+    ExternalTransport, Listener, is_border_agent_user,
 };
 use crate::commissioner::{Commissioner, MeshTransport, is_commissioner_user};
 use crate::dataset::{Dataset, DatasetType};
@@ -246,7 +246,7 @@ struct BaIoSim<'a> {
 }
 
 impl BorderAgentIo for BaIoSim<'_> {
-    fn send_to_commissioner(&mut self, _peer: &Peer, data: &[u8]) -> Result<()> {
+    fn send_to_commissioner(&mut self, _l: Listener, _peer: &Peer, data: &[u8]) -> Result<()> {
         self.down.push(data.to_vec());
         Ok(())
     }
