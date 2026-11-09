@@ -17,31 +17,41 @@ use opentrust_mle::test_support::MLP;
 
 use crate::border_agent::{
     BorderAgent, BorderAgentClient, BorderAgentEvent, BorderAgentIo, BorderAgentView, GUARD_TIME,
-    KEEP_ALIVE_TIMEOUT, PROXY_PORT, is_border_agent_user,
+    KEEP_ALIVE_TIMEOUT, Listener, PROXY_PORT, is_border_agent_user,
 };
+use crate::border_agent::{EphemeralKeyState, EphemeralKeyStopReason};
 use crate::commissioner::{
     Commissioner, CommissionerEvent, CommissionerState, JoinerKind, USER_COMMISSIONER_SET,
 };
+use crate::epskc::{self, EphemeralKey};
 use crate::manager::Datasets;
 use crate::test_rng::TestRng;
 use crate::tlv::{State, Tlvs, WriterExt, ty};
 
 const PSKC: Pskc = Pskc([0x3a; 16]);
+const EPSKC: &[u8] = b"903723159";
+const EPSKC_PORT: u16 = 49155;
 
 type Tmf = (Ipv6Addr, Uri, Vec<u8>, bool, Option<u32>);
 
 #[derive(Default)]
 struct BaIo {
     to_comm: Vec<Vec<u8>>,
+    listeners: Vec<Listener>,
+    eph_service: Vec<Option<u16>>,
     tmf: Vec<Tmf>,
     udp: Vec<(SocketAddrV6, SocketAddrV6, Vec<u8>)>,
     aloc: Option<u16>,
 }
 
 impl BorderAgentIo for BaIo {
-    fn send_to_commissioner(&mut self, _peer: &Peer, data: &[u8]) -> Result<()> {
+    fn send_to_commissioner(&mut self, l: Listener, _peer: &Peer, data: &[u8]) -> Result<()> {
         self.to_comm.push(data.to_vec());
+        self.listeners.push(l);
         Ok(())
+    }
+    fn ephemeral_service(&mut self, port: Option<u16>) {
+        self.eph_service.push(port);
     }
     fn tmf_post(
         &mut self,
@@ -81,6 +91,7 @@ struct Fx {
     rng: TestRng,
     crng: TestRng,
     peer: Peer,
+    listener: Listener,
 }
 
 impl Fx {
@@ -103,10 +114,12 @@ impl Fx {
             rng: TestRng(11),
             crng: TestRng(22),
             peer: Peer::new("fd00:aa::5".parse().unwrap(), 49200),
+            listener: Listener::Pskc,
         }
     }
 
     fn connect(&mut self, pskc: &Pskc) {
+        self.listener = Listener::Pskc;
         let up = &mut self.up;
         let c = BorderAgentClient::connect(
             SoftCrypto,
@@ -126,11 +139,36 @@ impl Fx {
         self.pump();
     }
 
+    /// Connect a new client to the ePSKc port with `key`.
+    fn connect_ephemeral(&mut self, key: &[u8]) {
+        self.listener = Listener::Ephemeral;
+        let up = &mut self.up;
+        let c = BorderAgentClient::connect_ephemeral(
+            SoftCrypto,
+            SoftP256,
+            &EphemeralKey::new(key).unwrap(),
+            Peer::new("fd00:aa::1".parse().unwrap(), EPSKC_PORT),
+            MLP,
+            self.now,
+            &mut self.crng,
+            &mut |d: &[u8]| {
+                up.push(d.to_vec());
+                Ok(())
+            },
+        )
+        .unwrap();
+        self.client = Some(c);
+        self.pump();
+    }
+
     /// Move datagrams between client and Border Agent until quiet.
     fn pump(&mut self) {
         for _ in 0..30 {
             let up = core::mem::take(&mut self.up);
             let down = core::mem::take(&mut self.io.to_comm);
+            for l in core::mem::take(&mut self.io.listeners) {
+                assert_eq!(l, self.listener, "sent from the session's port");
+            }
             if up.is_empty() && down.is_empty() {
                 return;
             }
@@ -140,8 +178,13 @@ impl Fx {
                 mesh_local_prefix: MLP,
             };
             for d in up {
-                self.ba
-                    .handle_udp(self.now, &mut self.rng, &mut self.io, &view, &self.peer, &d);
+                let (now, rng, io, peer) = (self.now, &mut self.rng, &mut self.io, &self.peer);
+                match self.listener {
+                    Listener::Pskc => self.ba.handle_udp(now, rng, io, &view, peer, &d),
+                    Listener::Ephemeral => {
+                        self.ba.handle_ephemeral_udp(now, rng, io, &view, peer, &d);
+                    }
+                }
             }
             if let Some(c) = self.client.as_mut() {
                 let upq = &mut self.up;
@@ -365,10 +408,8 @@ fn joiner_through_border_agent() {
     assert!(kek.is_some());
 }
 
-/// Local MGMT_ACTIVE_GET includes the Network Key regardless of the
-/// Security Policy (authenticated with the PSKc).
-#[test]
-fn active_get_ignores_policy() {
+/// Datasets with an Active Dataset whose Security Policy O-bit is 0.
+fn datasets_without_obit() -> Datasets {
     use crate::dataset::{Dataset, DatasetType};
     use crate::manager::{Configuration, CurrentConfig, DatasetEnv};
     struct E;
@@ -408,6 +449,15 @@ fn active_get_ignores_policy() {
     .unwrap();
     ds.save_local(&mut E, Instant::ZERO, DatasetType::Active, &d)
         .unwrap();
+    ds
+}
+
+/// Local MGMT_ACTIVE_GET includes the Network Key regardless of the
+/// Security Policy (authenticated with the PSKc).
+#[test]
+fn active_get_ignores_policy() {
+    use crate::dataset::DatasetType;
+    let ds = datasets_without_obit();
     let mut b = [0u8; 100];
     let n = crate::mgmt::get_payload(&ds, Instant::ZERO, DatasetType::Active, &[], true, &mut b)
         .unwrap();
@@ -431,7 +481,7 @@ fn keep_alive_timeout_and_guard_time() {
     assert!(
         fx.ba_events()
             .iter()
-            .any(|e| matches!(e, BorderAgentEvent::Disconnected(_)))
+            .any(|e| matches!(e, BorderAgentEvent::Disconnected(..)))
     );
     // Guard time: a ClientHello is ignored.
     fx.io.to_comm.clear();
@@ -495,4 +545,282 @@ fn candidate_restrictions() {
         Err(Error::InvalidState)
     );
     let _ = ipv6::LINK_LOCAL_PREFIX;
+}
+
+// ------------------------------------------------------------------ ePSKc
+
+impl Fx {
+    fn start_ephemeral(&mut self, timeout: Duration) -> Duration {
+        let key = EphemeralKey::new(EPSKC).unwrap();
+        self.ba
+            .start_ephemeral_key(self.now, &mut self.io, key, timeout, EPSKC_PORT)
+            .unwrap()
+    }
+
+    fn eph_stopped(&mut self) -> Option<EphemeralKeyStopReason> {
+        self.ba_events().into_iter().find_map(|e| match e {
+            BorderAgentEvent::EphemeralKeyStopped(r) => Some(r),
+            _ => None,
+        })
+    }
+
+    fn client_closed(&self) -> bool {
+        matches!(
+            self.client.as_ref().unwrap().state(),
+            opentrust_dtls::State::Closed(_)
+        )
+    }
+}
+
+/// A Candidate connects with the ephemeral key, reads the Active Dataset
+/// without petitioning (Network Key included although the O-bit is 0),
+/// petitions, and disconnects: the key is gone, a second use fails.
+#[test]
+fn ephemeral_session_end_to_end() {
+    let mut fx = Fx::new();
+    fx.ds = datasets_without_obit();
+    assert!(fx.ba.ephemeral_key_supported());
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Stopped);
+    assert_eq!(fx.ba.ephemeral_port(), None);
+    // Nothing is accepted on the ePSKc port without a key.
+    fx.connect_ephemeral(EPSKC);
+    assert!(!fx.ba.is_connected());
+    assert_eq!(fx.start_ephemeral(Duration::ZERO), epskc::DEFAULT_TIMEOUT);
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Started);
+    assert_eq!(fx.ba.ephemeral_port(), Some(EPSKC_PORT));
+    assert_eq!(fx.io.eph_service, [Some(EPSKC_PORT)]);
+    // A second key while one is in use is refused.
+    assert_eq!(
+        fx.ba.start_ephemeral_key(
+            fx.now,
+            &mut fx.io,
+            EphemeralKey::new(b"123456").unwrap(),
+            Duration::ZERO,
+            EPSKC_PORT
+        ),
+        Err(Error::InvalidState)
+    );
+
+    fx.client = None;
+    fx.up.clear();
+    fx.connect_ephemeral(EPSKC);
+    assert!(fx.ba.is_connected_on(Listener::Ephemeral));
+    assert!(!fx.ba.is_connected_on(Listener::Pskc));
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Connected);
+    assert!(
+        fx.ba_events()
+            .contains(&BorderAgentEvent::EphemeralKeyState(
+                EphemeralKeyState::Connected
+            ))
+    );
+
+    // MGMT_ACTIVE_GET as a Candidate, answered locally.
+    fx.with_transport(|c, t, now, _| c.send_mgmt(now, t, Uri::ActiveGet, &[]).unwrap());
+    assert!(fx.io.tmf.is_empty());
+    assert!(fx.comm_events().contains(&CommissionerEvent::MgmtResponse(
+        crate::commissioner::USER_MGMT,
+        Some(Code::CHANGED)
+    )));
+
+    // Petition: accepted.
+    fx.with_transport(|c, t, now, rng| c.start(now, rng, t).unwrap());
+    let (_, uri, _, _, _) = &fx.io.tmf[0];
+    assert_eq!(*uri, Uri::LeaderPetition);
+    let mut b = [0u8; 16];
+    let mut w = Writer::new(&mut b);
+    w.state(State::Accept).unwrap();
+    w.commissioner_session_id(9).unwrap();
+    let a = w.written().to_vec();
+    fx.leader_answers(&a);
+    assert_eq!(fx.comm.state(), CommissionerState::Active);
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Accepted);
+    assert_eq!(fx.io.aloc, Some(0xfc31));
+
+    // The Candidate closes the session: the key is discarded.
+    let up = &mut fx.up;
+    fx.client.as_mut().unwrap().close(&mut |d: &[u8]| {
+        up.push(d.to_vec());
+        Ok(())
+    });
+    fx.pump();
+    assert!(!fx.ba.is_connected());
+    assert_eq!(fx.io.aloc, None);
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Stopped);
+    assert_eq!(fx.ba.ephemeral_port(), None);
+    assert_eq!(fx.io.eph_service, [Some(EPSKC_PORT), None]);
+    assert_eq!(
+        fx.eph_stopped(),
+        Some(EphemeralKeyStopReason::PeerDisconnect)
+    );
+
+    // Not usable twice.
+    fx.now += GUARD_TIME;
+    fx.client = None;
+    fx.connect_ephemeral(EPSKC);
+    assert!(!fx.ba.is_connected());
+    assert_eq!(
+        fx.client.as_ref().unwrap().state(),
+        opentrust_dtls::State::Handshaking,
+        "no answer on the ePSKc port"
+    );
+}
+
+/// The key's timeout closes its session and discards it; a key that is
+/// never used is discarded at its timeout too.
+#[test]
+fn ephemeral_timeout_clears_key() {
+    let mut fx = Fx::new();
+    assert_eq!(
+        fx.start_ephemeral(Duration::from_secs(3600)),
+        epskc::MAX_TIMEOUT
+    );
+    fx.ba.stop_ephemeral_key(fx.now, &mut fx.io);
+    assert_eq!(fx.eph_stopped(), Some(EphemeralKeyStopReason::Local));
+
+    fx.start_ephemeral(Duration::from_secs(30));
+    fx.connect_ephemeral(EPSKC);
+    assert!(fx.ba.is_connected());
+    fx.advance(Duration::from_secs(29));
+    assert!(fx.ba.is_connected());
+    assert!(
+        fx.ba
+            .next_deadline()
+            .is_some_and(|d| d <= fx.now + Duration::from_secs(1))
+    );
+    fx.advance(Duration::from_secs(1));
+    assert!(!fx.ba.is_connected());
+    assert!(fx.client_closed(), "close_notify sent");
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Stopped);
+    assert_eq!(fx.eph_stopped(), Some(EphemeralKeyStopReason::Timeout));
+
+    // Unused key.
+    fx.start_ephemeral(Duration::ZERO);
+    fx.client = None;
+    fx.advance(epskc::DEFAULT_TIMEOUT);
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Stopped);
+    assert_eq!(fx.eph_stopped(), Some(EphemeralKeyStopReason::Timeout));
+    assert_eq!(fx.ba.next_deadline(), None);
+    fx.connect_ephemeral(EPSKC);
+    assert!(!fx.ba.is_connected());
+}
+
+/// A wrong key fails without discarding the key; the right one then
+/// connects. The ePSKc does not open the PSKc port.
+#[test]
+fn ephemeral_wrong_key() {
+    let mut fx = Fx::new();
+    fx.start_ephemeral(Duration::ZERO);
+    fx.connect_ephemeral(b"903723158");
+    assert!(!fx.ba.is_connected());
+    assert!(fx.client_closed());
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Started);
+    assert_eq!(fx.eph_stopped(), None);
+    // The ePSKc on the PSKc port.
+    fx.now += GUARD_TIME;
+    let up = &mut fx.up;
+    let c = BorderAgentClient::connect_ephemeral(
+        SoftCrypto,
+        SoftP256,
+        &EphemeralKey::new(EPSKC).unwrap(),
+        Peer::new("fd00:aa::1".parse().unwrap(), 49191),
+        MLP,
+        fx.now,
+        &mut fx.crng,
+        &mut |d: &[u8]| {
+            up.push(d.to_vec());
+            Ok(())
+        },
+    )
+    .unwrap();
+    fx.client = Some(c);
+    fx.listener = Listener::Pskc;
+    fx.pump();
+    assert!(!fx.ba.is_connected());
+    fx.connect_ephemeral(EPSKC);
+    assert!(fx.ba.is_connected_on(Listener::Ephemeral));
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Connected);
+}
+
+/// After `MAX_CONNECTION_ATTEMPTS` failed attempts the key is discarded;
+/// the right key no longer connects.
+#[test]
+fn ephemeral_attempt_limit_clears_key() {
+    let mut fx = Fx::new();
+    fx.start_ephemeral(Duration::ZERO);
+    for i in 0..epskc::MAX_CONNECTION_ATTEMPTS {
+        assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Started);
+        fx.connect_ephemeral(b"000000000");
+        assert!(!fx.ba.is_connected());
+        if i + 1 < epskc::MAX_CONNECTION_ATTEMPTS {
+            assert_eq!(fx.eph_stopped(), None);
+        }
+        fx.now += GUARD_TIME;
+    }
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Stopped);
+    assert_eq!(fx.eph_stopped(), Some(EphemeralKeyStopReason::MaxAttempts));
+    assert_eq!(fx.io.eph_service.last(), Some(&None));
+    fx.connect_ephemeral(EPSKC);
+    assert!(!fx.ba.is_connected());
+}
+
+/// Start rules, disabling, and the keep-alive timeout of an ePSKc session.
+#[test]
+fn ephemeral_start_rules_and_disable() {
+    let mut fx = Fx::new();
+    let key = || EphemeralKey::new(EPSKC).unwrap();
+    assert_eq!(
+        fx.ba
+            .start_ephemeral_key(fx.now, &mut fx.io, key(), Duration::ZERO, 0),
+        Err(Error::InvalidArgs)
+    );
+    fx.ba.set_ephemeral_key_enabled(fx.now, &mut fx.io, false);
+    assert!(!fx.ba.ephemeral_key_supported());
+    assert_eq!(
+        fx.ba
+            .start_ephemeral_key(fx.now, &mut fx.io, key(), Duration::ZERO, EPSKC_PORT),
+        Err(Error::InvalidState)
+    );
+    fx.ba.set_ephemeral_key_enabled(fx.now, &mut fx.io, true);
+    fx.start_ephemeral(Duration::ZERO);
+    fx.connect_ephemeral(EPSKC);
+    assert!(fx.ba.is_connected());
+    // Disabling closes the session and discards the key.
+    fx.ba.set_ephemeral_key_enabled(fx.now, &mut fx.io, false);
+    fx.pump();
+    assert!(!fx.ba.is_connected());
+    assert!(fx.client_closed());
+    assert_eq!(fx.ba.ephemeral_key_state(), EphemeralKeyState::Disabled);
+    assert_eq!(fx.eph_stopped(), Some(EphemeralKeyStopReason::Local));
+
+    // No keep-alive: the session (and the key) end after 50 s.
+    fx.ba.set_ephemeral_key_enabled(fx.now, &mut fx.io, true);
+    fx.now += GUARD_TIME;
+    fx.start_ephemeral(Duration::ZERO);
+    fx.connect_ephemeral(EPSKC);
+    assert!(fx.ba.is_connected());
+    fx.client = None;
+    fx.now += KEEP_ALIVE_TIMEOUT;
+    fx.ba.poll(fx.now, &mut fx.io);
+    assert!(!fx.ba.is_connected());
+    assert_eq!(
+        fx.eph_stopped(),
+        Some(EphemeralKeyStopReason::SessionTimeout)
+    );
+}
+
+/// The PSKc and ePSKc listeners are independent: an active PSKc
+/// Commissioner stays while an ePSKc Candidate connects and leaves.
+#[test]
+fn ephemeral_parallel_to_pskc_session() {
+    let mut fx = Fx::active();
+    fx.start_ephemeral(Duration::ZERO);
+    fx.connect_ephemeral(EPSKC);
+    assert!(fx.ba.is_connected_on(Listener::Pskc));
+    assert!(fx.ba.is_connected_on(Listener::Ephemeral));
+    fx.ba.stop_ephemeral_key(fx.now, &mut fx.io);
+    fx.pump();
+    assert!(fx.client_closed());
+    assert!(!fx.ba.is_connected_on(Listener::Ephemeral));
+    assert!(fx.ba.is_connected_on(Listener::Pskc));
+    assert_eq!(fx.ba.commissioner_aloc16(), Some(0xfc31));
 }

@@ -13,9 +13,10 @@
 //! (`commissioner`, feature `commissioner`) and the Border Agent with the
 //! external Commissioner's client (`border_agent`, feature
 //! `border-agent`). All three features are on by default; a joiner-only
-//! end device builds with `default-features = false`. The ephemeral PSKc
-//! (ePSKc) and the Border Agent's DNS-SD advertisement are not
-//! implemented.
+//! end device builds with `default-features = false`. The Border Agent
+//! also accepts an ephemeral PSKc ([`epskc`]) on a second listener; its
+//! DNS-SD services are published by the platform through a hook (the TXT
+//! record contents of the MeshCoP service are not built here).
 //!
 //! # Wiring
 //!
@@ -48,6 +49,13 @@
 //! - [`steering`]: the Steering Data bloom filter, Joiner ID derivation and
 //!   Joiner Discerner.
 //! - [`pskd`]: the Joiner PSKd (validation, secret handling).
+//! - `tcat` (feature `tcat`, default off): the TCAT Device's
+//!   transport- and TLS-agnostic command engine (Thread 1.4.1 chapter 13,
+//!   ADR 0002): command TLVs, command-class authorization from certificate
+//!   claims, proof-of-possession hashes; the TLS layer implements
+//!   `tcat::TcatSecureTransport`.
+//! - [`epskc`]: the ephemeral PSKc (validation, timeouts, Thread
+//!   Administration One-Time Passcode with Verhoeff check digit).
 //! - [`secure`]: link-layer security classes of commissioning traffic and
 //!   the DTLS / CoAP glue.
 //! - [`joiner`]: the Joiner (discovery, DTLS with the PSKd, JOIN_FIN,
@@ -61,8 +69,8 @@
 //! - `border_agent` (feature `border-agent`, default): the Border Agent
 //!   (DTLS server with the PSKc, COMM_PET / COMM_KA forwarding, local
 //!   gets, Relay and UDP proxy, keep-alive timeout, guard time, attempt
-//!   limit) and `BorderAgentClient` / `ExternalTransport` for an external
-//!   Commissioner.
+//!   limit, ephemeral key listener) and `BorderAgentClient` /
+//!   `ExternalTransport` for an external Commissioner (PSKc or ePSKc).
 
 #[cfg(test)]
 extern crate std;
@@ -73,6 +81,7 @@ pub mod border_agent;
 pub mod commissioner;
 pub mod dataset;
 pub mod discovery;
+pub mod epskc;
 pub mod joiner;
 #[cfg(feature = "ftd")]
 pub mod joiner_router;
@@ -84,6 +93,8 @@ pub mod pskd;
 pub mod scan;
 pub mod secure;
 pub mod steering;
+#[cfg(feature = "tcat")]
+pub mod tcat;
 pub mod timestamp;
 pub mod tlv;
 #[cfg(feature = "ftd")]
@@ -117,6 +128,8 @@ mod sim_scan_tests;
 mod sim_tests;
 #[cfg(test)]
 mod steering_tests;
+#[cfg(all(test, feature = "tcat"))]
+mod tcat_tests;
 #[cfg(test)]
 mod test_rng;
 #[cfg(test)]
