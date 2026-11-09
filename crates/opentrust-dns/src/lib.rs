@@ -10,6 +10,7 @@
 //! | module | contents |
 //! |--------|----------|
 //! | [`wire`] | DNS header, names with compression (encode and decode, loop-safe), message [`wire::Writer`] and [`wire::Parser`] |
+//! | [`client`] | DNS / DNS-SD client: AAAA, browse (PTR), service resolution (SRV + TXT) over UDP |
 //! | [`rdata`] | TXT entries, KEY / SIG(0), EDNS(0) OPT with the Update Lease option (RFC 9664) |
 //!
 //! Deviations from OpenThread are listed in
@@ -18,8 +19,13 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod client;
 pub mod rdata;
 pub mod wire;
 
+#[cfg(test)]
+mod client_tests;
+#[cfg(test)]
+mod test_util;
 #[cfg(test)]
 mod tests;

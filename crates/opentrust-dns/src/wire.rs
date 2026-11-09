@@ -252,6 +252,41 @@ impl<'a> Name<'a> {
         it.next().is_none()
     }
 
+    /// Does this name equal `other` (ASCII case-insensitive; the two may
+    /// live in different messages)?
+    pub fn eq_name(&self, other: &Name<'_>) -> bool {
+        let mut a = self.labels();
+        let mut b = other.labels();
+        loop {
+            match (a.next(), b.next()) {
+                (None, None) => return true,
+                (Some(Ok(x)), Some(Ok(y))) if x.eq_ignore_ascii_case(y) => {}
+                _ => return false,
+            }
+        }
+    }
+
+    /// Does this name equal the name made of `parts` (as written by
+    /// [`Writer::write_name_parts`])?
+    pub fn eq_parts(&self, parts: &[Part<'_>]) -> bool {
+        let mut it = self.labels();
+        for p in parts {
+            let (single, dotted) = match *p {
+                Part::Label(l) => (Some(l), ""),
+                Part::Dotted(d) => (None, d.strip_suffix('.').unwrap_or(d)),
+            };
+            let mut it_single = single.into_iter();
+            let mut it_dotted = dotted.split('.').filter(|_| !dotted.is_empty());
+            while let Some(want) = it_single.next().or_else(|| it_dotted.next()) {
+                match it.next() {
+                    Some(Ok(l)) if l.eq_ignore_ascii_case(want.as_bytes()) => {}
+                    _ => return false,
+                }
+            }
+        }
+        it.next().is_none()
+    }
+
     /// Does this name equal the dotted name `s` (trailing dot optional,
     /// no escapes)?
     pub fn eq_dotted(&self, s: &str) -> bool {
