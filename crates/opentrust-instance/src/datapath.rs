@@ -4,7 +4,6 @@
 
 use heapless::Vec;
 use opentrust_core::Result;
-use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::crypto::{CryptoBackend, SecurityLevel};
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Rloc16, ShortAddress};
@@ -25,6 +24,8 @@ use opentrust_net::resolver::ResolverEvent;
 use opentrust_net::udp::{ReceiverId, UdpMeta, UdpRx, UdpRxInfo};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
+
+use crate::InstanceCrypto;
 
 use crate::stack::{MacTx, StackMac};
 use crate::{Event, Instance, UdpSocket};
@@ -173,7 +174,7 @@ macro_rules! with_routing {
 }
 pub(crate) use with_routing;
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ MAC events
 
     /// Handle the MAC's events (received frames, data polls, results).

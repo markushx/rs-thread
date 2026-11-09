@@ -5,8 +5,6 @@
 
 use heapless::{Deque, Vec};
 use opentrust_coap::message::Code;
-use opentrust_core::crypto::CryptoBackend;
-use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::Instant;
 #[cfg(feature = "ftd")]
@@ -20,6 +18,8 @@ use opentrust_mle::Role;
 use opentrust_net::slaac::IidParams;
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
+
+use crate::InstanceCrypto;
 
 use crate::Instance;
 
@@ -103,7 +103,7 @@ fn fnv(bytes: &[u8]) -> u64 {
     h
 }
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     /// Load the persisted DAD counter (OT settings key `DadInfo`).
     pub(crate) fn load_dad_counter(&mut self) {
         let mut b = [0u8; 1];

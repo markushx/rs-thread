@@ -7,8 +7,7 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::{Deque, String, Vec};
-use opentrust_core::crypto::CryptoBackend;
-use opentrust_core::crypto::ecdsa::{EcdsaP256, SecretKey};
+use opentrust_core::crypto::ecdsa::SecretKey;
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::Instant;
 use opentrust_core::{Error, Result};
@@ -26,6 +25,8 @@ use opentrust_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
 use opentrust_net::udp::{SocketHandle, UdpSendOpts};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
+
+use crate::InstanceCrypto;
 
 use crate::{Event, Instance, MAX_UDP_PAYLOAD};
 
@@ -258,7 +259,7 @@ fn fnv(h: &mut u64, b: &[u8]) {
     }
 }
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     fn auto_addrs(&self) -> Vec<Ipv6Addr, MAX_HOST_ADDRS> {
         let mut v = Vec::new();
         let mlp = self.core.cfg.cur.mesh_local_prefix;

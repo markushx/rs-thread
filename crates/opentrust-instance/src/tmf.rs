@@ -7,7 +7,6 @@ use opentrust_coap::message::Code;
 use opentrust_coap::tmf::{Handler, Responder, TmfEnv, TmfRx};
 use opentrust_coap::uri::Uri;
 use opentrust_core::crypto::CryptoBackend;
-use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Prefix64, Rloc16};
 use opentrust_mesh::address::{self, AddressAction, AddressErrorOutcome};
@@ -28,6 +27,8 @@ use opentrust_net::resolver::{AddressResolver, ResolverEvent};
 use opentrust_net::udp::UdpMeta;
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
+
+use crate::InstanceCrypto;
 
 use crate::stack::{CHILDREN, Core};
 #[cfg(feature = "ftd")]
@@ -61,6 +62,11 @@ pub(crate) fn register_uris(agent: &mut TmfAgent) {
         Uri::ActiveSet,
         Uri::PendingSet,
         Uri::ActiveReplace,
+        // The leader's commissioner session.
+        Uri::LeaderPetition,
+        Uri::LeaderKeepAlive,
+        Uri::CommissionerSet,
+        Uri::CommissionerGet,
     ] {
         let _ = agent.register(u);
     }
@@ -94,6 +100,8 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     core: &'a mut Core<S, C, R>,
     #[cfg(feature = "ftd")]
     leader: &'a mut Leader<NETDATA_LEN>,
+    #[cfg(feature = "ftd")]
+    ls: &'a mut opentrust_meshcop::leader::LeaderState,
     resolver: &'a mut AddressResolver<8>,
     bbrg: &'a mut crate::bbr::BbrGlue,
     diag_in: &'a mut heapless::Deque<Vec<u8, { crate::diag::MAX_RESPONSE }>, 2>,
@@ -102,9 +110,7 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     out: Deferred,
 }
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Handler
-    for NodeHandler<'_, S, C, R>
-{
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHandler<'_, S, C, R> {
     fn handle(&mut self, uri: Uri, req: &Request<'_>, rsp: &mut dyn Responder) {
         let now = self.now;
         let iid = self.core.ml_iid;
@@ -217,6 +223,40 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 let o = mgmt::handle_set(ds, &mut env, now, t, cmd, req, rsp);
                 let _ = self.out.outcomes.push(o);
             }
+            #[cfg(feature = "ftd")]
+            Uri::LeaderPetition | Uri::LeaderKeepAlive | Uri::CommissionerSet => {
+                use opentrust_meshcop::leader;
+                let is_leader = self.mle.role() == opentrust_mle::Role::Leader;
+                let changed = match uri {
+                    Uri::LeaderPetition => {
+                        let mlp = self.core.cfg.cur.mesh_local_prefix;
+                        leader::handle_petition(
+                            self.ls,
+                            self.leader,
+                            is_leader,
+                            &mlp,
+                            now,
+                            req,
+                            rsp,
+                        )
+                    }
+                    Uri::LeaderKeepAlive => {
+                        leader::handle_keep_alive(self.ls, self.leader, is_leader, now, req, rsp)
+                    }
+                    _ => leader::handle_commissioner_set(self.leader, is_leader, req, rsp),
+                };
+                self.out.sd_changed.any |= changed;
+            }
+            #[cfg(feature = "ftd")]
+            Uri::CommissionerGet => {
+                let is_leader = self.mle.role() == opentrust_mle::Role::Leader;
+                opentrust_meshcop::leader::handle_commissioner_get(
+                    self.leader,
+                    is_leader,
+                    req,
+                    rsp,
+                );
+            }
             Uri::DatasetChanged => {
                 let _ = rsp.respond(Code::CHANGED, &[]);
             }
@@ -231,7 +271,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
     }
 }
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     /// A datagram for the TMF port.
     pub(crate) fn handle_tmf(&mut self, now: Instant, meta: &UdpMeta, payload: &[u8]) {
         let env = MlTmfEnv(self.core.cfg.cur.mesh_local_prefix);
@@ -240,6 +280,8 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             core: &mut self.core,
             #[cfg(feature = "ftd")]
             leader: &mut self.leader,
+            #[cfg(feature = "ftd")]
+            ls: &mut self.cm.leader,
             resolver: &mut self.resolver,
             bbrg: &mut self.bbrg,
             diag_in: &mut self.diag_in,

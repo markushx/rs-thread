@@ -71,6 +71,7 @@
 
 mod api;
 mod bbr;
+mod commissioning;
 mod datapath;
 mod diag;
 mod dns_srp;
@@ -79,6 +80,7 @@ mod stack;
 mod tmf;
 
 pub use api::{PingReply, UdpSocket};
+pub use commissioning::InstanceCrypto;
 #[cfg(feature = "ftd")]
 pub use diag::RouteInfo;
 pub use diag::{ChildInfo, NeighborInfo, tlv as diag_tlv};
@@ -107,8 +109,6 @@ pub use opentrust_mac::mac::{RadioAction, TxOutcome};
 
 use heapless::{Deque, Vec};
 use opentrust_coap::tmf::Agent;
-use opentrust_core::crypto::CryptoBackend;
-use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::time::Instant;
 use opentrust_core::types::Iid;
 use opentrust_mac::mac::Mac;
@@ -275,7 +275,7 @@ impl Config {
 /// Type parameters: `S` the persistent [`SettingsStore`], `C` the crypto
 /// backend, `R` the entropy source (a CSPRNG: MLE challenges, SLAAC secrets,
 /// ML-EID).
-pub struct Instance<S, C: CryptoBackend, R> {
+pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) mle: Mle<{ CHILDREN }>,
     pub(crate) core: Core<S, C, R>,
     pub(crate) agent: TmfAgent,
@@ -299,13 +299,14 @@ pub struct Instance<S, C: CryptoBackend, R> {
     pub(crate) dnssrp: dns_srp::DnsSrp,
     pub(crate) bbrg: bbr::BbrGlue,
     pub(crate) diag_in: Deque<Vec<u8, { diag::MAX_RESPONSE }>, 2>,
+    pub(crate) cm: commissioning::Commissioning<C>,
     pub(crate) tmf_ext: Option<TmfExtension>,
     pub(crate) ping: api::PingState,
     pub(crate) ip6_enabled: bool,
     pub(crate) started: bool,
 }
 
-impl<S, C: CryptoBackend, R> core::fmt::Debug for Instance<S, C, R> {
+impl<S, C: InstanceCrypto, R> core::fmt::Debug for Instance<S, C, R> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Instance")
             .field("role", &self.mle.role())
@@ -314,7 +315,7 @@ impl<S, C: CryptoBackend, R> core::fmt::Debug for Instance<S, C, R> {
     }
 }
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     /// Create an instance. Nothing is sent and the radio is not touched
     /// until [`thread_start`](Self::thread_start) /
     /// [`become_leader`](Self::become_leader).
@@ -326,6 +327,10 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
         let msg_seed = rng.next_u32() as u16;
         let mut iid_secret = [0u8; 32];
         rng.fill_bytes(&mut iid_secret);
+        let leader_session_id = rng.next_u32() as u16;
+        let mut ba_id = [0u8; 16];
+        rng.fill_bytes(&mut ba_id);
+        let cm = commissioning::Commissioning::new(&crypto, leader_session_id, ba_id);
 
         let keys = KeyManager::new(crypto.clone(), api::placeholder_key());
         let mac = Mac::new(
@@ -404,6 +409,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             dnssrp: dns_srp::DnsSrp::new(),
             bbrg: bbr::BbrGlue::new(),
             diag_in: Deque::new(),
+            cm,
             tmf_ext: None,
             ping: api::PingState::default(),
             ip6_enabled: false,
@@ -487,6 +493,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             self.glue.next_deadline(),
             self.dnssrp.next_deadline(),
             self.bbrg.next_deadline(),
+            self.cm.next_deadline(),
         ]
         .into_iter()
         .flatten()
@@ -499,7 +506,10 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
 
     #[cfg(feature = "ftd")]
     fn leader_deadline(&self) -> Option<Instant> {
-        self.leader.next_deadline()
+        [self.leader.next_deadline(), self.cm.leader.next_deadline()]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     #[cfg(not(feature = "ftd"))]

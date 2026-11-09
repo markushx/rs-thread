@@ -3,8 +3,6 @@
 //! `Notifier` and the per-module `HandleNotifierEvents`.
 
 use heapless::Vec;
-use opentrust_core::crypto::CryptoBackend;
-use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_mesh::address;
@@ -23,6 +21,8 @@ use opentrust_net::resolver::ResolverEvent;
 use opentrust_net::slaac::IidParams;
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
+
+use crate::InstanceCrypto;
 
 use crate::stack::ChildChange;
 use crate::{Event, Instance};
@@ -54,7 +54,7 @@ fn hash_bytes(h: &mut u64, b: &[u8]) {
     }
 }
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ timers
 
     /// Run the timers of the layers.
@@ -285,6 +285,8 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 .remove_stale_router_ids(|id| mask.contains(id), now);
             let c2 = self.leader.handle_timer(now);
             ch.any |= c2.any;
+            // The commissioner session times out without keep-alives.
+            ch.any |= self.cm.leader.poll(now, true, &mut self.leader);
             if ch.any {
                 busy = true;
                 self.leader_changed(now);
@@ -302,6 +304,9 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 {
                     busy = true;
                     let _ = c;
+                    // OT `HandleNetworkDataRestoredAfterReset`: the old
+                    // commissioner session is gone.
+                    let _ = self.cm.leader.adopt(&mut self.leader);
                     self.leader_changed(now);
                 }
             }
@@ -309,6 +314,10 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 busy = true;
                 self.leader_changed(now);
             }
+        }
+        #[cfg(feature = "ftd")]
+        if !leader_handled && self.cm.leader.is_active() {
+            self.cm.leader.reset();
         }
         if !leader_handled && let Some((_ld, data)) = self.core.nd_rx.take() {
             busy = true;

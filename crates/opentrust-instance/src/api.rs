@@ -5,8 +5,6 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Deque;
-use opentrust_core::crypto::CryptoBackend;
-use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::Instant;
 use opentrust_core::types::{
@@ -27,6 +25,8 @@ use opentrust_net::netif::UnicastAddress;
 use opentrust_net::udp::{RecvInfo, SocketHandle, UdpSendOpts};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
+
+use crate::InstanceCrypto;
 
 use crate::{DnsSrpService, Event, Instance};
 
@@ -60,7 +60,7 @@ pub(crate) fn placeholder_key() -> NetworkKey {
     NetworkKey([0; 16])
 }
 
-impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng> Instance<S, C, R> {
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ link
 
     /// Enable or disable the IPv6 interface (OT `otIp6SetEnabled`).

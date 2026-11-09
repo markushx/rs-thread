@@ -328,7 +328,7 @@ pub(crate) fn build_answer<S, C: CryptoBackend, R>(
     out
 }
 
-impl<S: opentrust_platform::SettingsStore, C: CryptoBackend, R> crate::Instance<S, C, R>
+impl<S: opentrust_platform::SettingsStore, C: crate::InstanceCrypto, R> crate::Instance<S, C, R>
 where
     C: opentrust_core::crypto::ecdsa::EcdsaP256 + Clone,
     R: rand_core::Rng + rand_core::CryptoRng,
