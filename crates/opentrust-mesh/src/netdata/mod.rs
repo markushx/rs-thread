@@ -9,11 +9,14 @@
 //!   context and service ID allocation, versions.
 //! - [`local`], [`notifier`], [`server_data`]: the Network Data a device
 //!   serves itself, when to register it and the `/a/sd` messages.
+//! - [`backbone`]: the Primary Backbone Router (BBR service in Network Data)
+//!   and the Domain Prefix, client side.
 //! - [`publisher`]: publishing prefixes, routes and the DNS/SRP service
 //!   only as often as the partition needs them.
 
 pub mod aloc;
 pub mod anycast;
+pub mod backbone;
 pub mod consumers;
 mod data;
 #[cfg(feature = "ftd")]
@@ -31,6 +34,9 @@ pub use view::{
     CONTEXT_ALOC_BASE, ContextEntry, NetworkDataView, OnMeshEntry, RouteEntry, SERVICE_ALOC_BASE,
     ServiceEntry,
 };
+
+#[cfg(test)]
+mod backbone_tests;
 
 #[cfg(test)]
 mod tests;
