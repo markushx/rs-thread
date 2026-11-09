@@ -17,6 +17,10 @@
 //!   copy for sleepy children, the leader store and `/a/sd` registration
 //!   (feature `ftd`), local data and the notifier, route / anycast lookup,
 //!   SLAAC and 6LoWPAN context adapters, ALOCs and the anycast locator.
+//! - [`dua`]: Domain Unicast Address (Thread 1.2): DUA generation, `/n/dr`
+//!   registration with the Primary Backbone Router, proxy registration for
+//!   children (feature `ftd`); the Backbone Router view is
+//!   [`netdata::backbone`].
 //! - `forwarder` (feature `ftd`): route lookup, mesh header insertion and
 //!   forwarding, address resolution glue, ICMPv6 unreachable decisions.
 //! - `indirect` (feature `ftd`): per-child queues for sleepy end devices,
@@ -29,6 +33,7 @@
 extern crate std;
 
 pub mod address;
+pub mod dua;
 #[cfg(feature = "ftd")]
 pub mod forwarder;
 #[cfg(feature = "ftd")]
@@ -40,6 +45,10 @@ pub mod tlv;
 
 #[cfg(all(test, feature = "ftd"))]
 mod address_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod bbr_sim;
+#[cfg(all(test, feature = "ftd"))]
+mod dua_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
 #[cfg(all(test, feature = "ftd"))]

@@ -13,6 +13,7 @@ use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Vec;
 use opentrust_coap::endpoint::Request;
+use opentrust_coap::message::{Code, Type};
 use opentrust_coap::tmf::{Agent, Handler, Responder, TmfEnv, TmfRx, UdpSink};
 use opentrust_coap::uri::Uri;
 use opentrust_core::Result;
@@ -44,6 +45,7 @@ use crate::netdata::server_data::{self, USER_SERVER_DATA};
 use crate::netdata::{NetworkData as NetData, NetworkDataView};
 
 use crate::address::{self, AddressAction};
+use crate::bbr_sim::{self, BbrNode, FakeBbr, Outcome};
 use crate::forwarder::{
     DropReason, FrameSink, MacDest, MeshForwarder, NetworkData, Routing, Rx, SendResult, TxFrame,
 };
@@ -175,6 +177,8 @@ pub struct TmfNode {
     pub egress: std::vec::Vec<std::vec::Vec<u8>>,
     /// Located devices (`/a/yl` answers).
     pub located: std::vec::Vec<anycast::Located>,
+    /// Backbone Router client state (DUA).
+    pub bbrn: BbrNode,
 }
 
 /// The simulator-wide on-mesh prefix plus the node's Network Data.
@@ -276,6 +280,8 @@ pub struct MeshSim {
     /// Drop datagrams from node `a` to node `b` (indices), for tests.
     pub blocked: std::vec::Vec<(usize, usize)>,
     pub nd: SimNd,
+    /// Answers `/n/dr` as the Primary Backbone Router.
+    pub fake_bbr: FakeBbr,
     /// Every frame on the air: sender, receiver, payload.
     pub frame_log: std::vec::Vec<(usize, usize, std::vec::Vec<u8>)>,
     next_mid: u16,
@@ -294,6 +300,9 @@ struct NodeHandler<'a> {
     errors_seen: &'a mut u32,
     leader: &'a mut Leader<512>,
     sd_changed: Changed,
+    idx: usize,
+    fake_bbr: &'a mut FakeBbr,
+    bbrn: &'a mut BbrNode,
 }
 
 impl Handler for NodeHandler<'_> {
@@ -326,8 +335,18 @@ impl Handler for NodeHandler<'_> {
                 });
             }
             Uri::AddressError => {
-                match address::handle_address_error(self.netif, self.mle, &iid, req, rsp) {
+                match address::handle_address_error(
+                    self.netif,
+                    self.mle,
+                    &iid,
+                    &self.bbrn.bbr,
+                    req,
+                    rsp,
+                ) {
                     address::AddressErrorOutcome::Ignored => {}
+                    address::AddressErrorOutcome::DuplicateDomainUnicast => {
+                        self.bbrn.duplicate_flag = true
+                    }
                     address::AddressErrorOutcome::AddressRemoved => *self.errors_seen += 1,
                     address::AddressErrorOutcome::ChildAddressRemoved(a) => self.actions.push(a),
                 }
@@ -344,6 +363,13 @@ impl Handler for NodeHandler<'_> {
                     self.sd_changed.any |= c.any;
                     self.sd_changed.stable |= c.stable;
                 }
+            }
+            Uri::DuaRegistrationRequest => self.fake_bbr.handle_dua(self.idx, req, rsp),
+            Uri::DuaRegistrationNotify => {
+                if req.msg.ty() == Type::Con {
+                    let _ = rsp.respond(Code::CHANGED, &[]);
+                }
+                self.bbrn.ntf_inbox.push(req.msg.payload().to_vec());
             }
             Uri::AnycastLocate => {
                 anycast::handle_anycast_locate(iid, self.mle.rloc16(), req, rsp);
@@ -371,6 +397,8 @@ impl MeshSim {
                     Uri::AddressError,
                     Uri::ServerData,
                     Uri::AnycastLocate,
+                    Uri::DuaRegistrationRequest,
+                    Uri::DuaRegistrationNotify,
                 ] {
                     agent.register(u).unwrap();
                 }
@@ -405,6 +433,7 @@ impl MeshSim {
                     server_data_sent: 0,
                     egress: std::vec::Vec::new(),
                     located: std::vec::Vec::new(),
+                    bbrn: BbrNode::new(),
                 }
             })
             .collect();
@@ -413,6 +442,7 @@ impl MeshSim {
             tmf,
             blocked: std::vec::Vec::new(),
             nd: SimNd::default(),
+            fake_bbr: FakeBbr::default(),
             frame_log: std::vec::Vec::new(),
             next_mid: 0x7000,
         }
@@ -948,6 +978,10 @@ impl MeshSim {
             let now = self.sim.now;
             for i in 0..self.tmf.len() {
                 moved |= self.netdata_step(i);
+                {
+                    let n = &mut self.sim.nodes[i];
+                    moved |= bbr_sim::step(i, now, &mut n.mle, &mut n.env, &mut self.tmf[i]);
+                }
                 let n = &mut self.sim.nodes[i];
                 while let Some(r) = n.env.solicits.pop() {
                     moved = true;
@@ -1017,6 +1051,8 @@ impl MeshSim {
                         n.mle.address_solicit_reply(&mut n.env, now, r);
                     } else if user == USER_SERVER_DATA {
                         t.notifier.response(now, false);
+                    } else {
+                        bbr_sim::queue_outcome(t, user, Outcome::Timeout);
                     }
                 }
                 // Address cache timers.
@@ -1085,6 +1121,9 @@ impl MeshSim {
             errors_seen: &mut t.errors_seen,
             leader: &mut t.leader,
             sd_changed: Changed::default(),
+            idx: to,
+            fake_bbr: &mut self.fake_bbr,
+            bbrn: &mut t.bbrn,
         };
         let r = t
             .agent
@@ -1108,6 +1147,12 @@ impl MeshSim {
                     && let Ok(l) = anycast::parse_response(&msg, n.env.mesh_local_prefix())
                 {
                     t.located.push(l);
+                } else {
+                    bbr_sim::queue_outcome(
+                        t,
+                        user,
+                        Outcome::Response(msg.code(), msg.payload().to_vec()),
+                    );
                 }
             }
             TmfRx::Failed { user, .. } => {
@@ -1115,6 +1160,8 @@ impl MeshSim {
                     n.mle.address_solicit_reply(&mut n.env, now, rep);
                 } else if user == USER_SERVER_DATA {
                     t.notifier.response(now, false);
+                } else {
+                    bbr_sim::queue_outcome(t, user, Outcome::Failed);
                 }
             }
             _ => {}
@@ -1203,6 +1250,7 @@ impl MeshSim {
                     t.agent.next_deadline(),
                     t.resolver.next_deadline(),
                     t.publisher.next_deadline(),
+                    bbr_sim::next_deadline(t),
                 ]
             })
             .flatten()

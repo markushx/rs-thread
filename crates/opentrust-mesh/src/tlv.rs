@@ -64,6 +64,41 @@ pub mod status {
     pub const UNRECOGNIZED_STATUS: u8 = 6;
 }
 
+/// Status TLV values of a DUA registration (OT `ThreadStatusTlv::DuaStatus`).
+pub mod dua_status {
+    /// Successful registration.
+    pub const SUCCESS: u8 = 0;
+    /// Accepted, but an immediate reregistration is required.
+    pub const RE_REGISTER: u8 = 1;
+    /// Rejected (fatal): the Target EID is not a valid DUA.
+    pub const INVALID: u8 = 2;
+    /// Rejected (fatal): the DUA is in use by another device.
+    pub const DUPLICATE: u8 = 3;
+    /// Rejected (non-fatal): Backbone Router resource shortage.
+    pub const NO_RESOURCES: u8 = 4;
+    /// Rejected (non-fatal): the Backbone Router is not primary now.
+    pub const NOT_PRIMARY: u8 = 5;
+    /// Failure, reason not specified (non-fatal).
+    pub const GENERAL_FAILURE: u8 = 6;
+}
+
+/// Status TLV values of a multicast listener registration (OT
+/// `ThreadStatusTlv::MlrStatus`).
+pub mod mlr_status {
+    /// All addresses were (de)registered.
+    pub const SUCCESS: u8 = 0;
+    /// Invalid IPv6 address(es) in the request.
+    pub const INVALID: u8 = 2;
+    /// The device does not support persistent registrations.
+    pub const NO_PERSISTENT: u8 = 3;
+    /// Backbone Router resource shortage.
+    pub const NO_RESOURCES: u8 = 4;
+    /// The Backbone Router is not primary now.
+    pub const BBR_NOT_PRIMARY: u8 = 5;
+    /// Failure, reason not specified.
+    pub const GENERAL_FAILURE: u8 = 6;
+}
+
 /// Length of the Router Mask TLV value (ID sequence + 64-bit mask).
 pub const ROUTER_MASK_LEN: usize = 9;
 
@@ -236,6 +271,30 @@ impl<'a> ThreadTlvs<'a> {
     pub fn last_transaction_time(&self) -> Result<u32> {
         match self.find(ty::LAST_TRANSACTION_TIME)? {
             ThreadTlv::LastTransactionTime(a) => Ok(a),
+            _ => Err(Error::Parse),
+        }
+    }
+
+    /// The IPv6 Addresses TLV value (a sequence of 16-byte addresses).
+    pub fn ip6_addresses(&self) -> Result<&'a [u8]> {
+        match self.find(ty::IP6_ADDRESSES)? {
+            ThreadTlv::Ip6Addresses(a) => Ok(a),
+            _ => Err(Error::Parse),
+        }
+    }
+
+    /// The Timeout TLV.
+    pub fn timeout(&self) -> Result<u32> {
+        match self.find(ty::TIMEOUT)? {
+            ThreadTlv::Timeout(a) => Ok(a),
+            _ => Err(Error::Parse),
+        }
+    }
+
+    /// The Commissioner Session ID TLV.
+    pub fn commissioner_session_id(&self) -> Result<u16> {
+        match self.find(ty::COMMISSIONER_SESSION_ID)? {
+            ThreadTlv::CommissionerSessionId(a) => Ok(a),
             _ => Err(Error::Parse),
         }
     }

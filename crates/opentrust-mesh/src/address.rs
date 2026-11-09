@@ -341,6 +341,10 @@ pub enum AddressErrorOutcome {
     /// The address is ours and the reporter's ML-EID differs: it was
     /// removed from the interface.
     AddressRemoved,
+    /// The address is our Domain Unicast Address and the reporter's ML-EID
+    /// differs: the DUA is a duplicate. The caller calls
+    /// [`DuaManager::notify_duplicate`](crate::dua::DuaManager::notify_duplicate).
+    DuplicateDomainUnicast,
     /// A sleepy child registered the address with another ML-EID: it was
     /// removed from the child and an Address Error to the child's RLOC16
     /// follows (the contained action).
@@ -349,11 +353,14 @@ pub enum AddressErrorOutcome {
 
 /// `/a/ae` (OT `HandleTmf<kUriAddressError>`). A confirmable request
 /// that was not multicast is acknowledged first. `own_ml_eid_iid` is this
-/// device's ML-EID IID.
+/// device's ML-EID IID. A duplicate address in the Domain Prefix of `bbr` is
+/// reported as [`AddressErrorOutcome::DuplicateDomainUnicast`] instead of
+/// being removed (OT: `DuaManager::NotifyDuplicateDomainUnicastAddress`).
 pub fn handle_address_error<const U: usize, const M: usize, const C: usize>(
     netif: &mut Netif<U, M>,
     mle: &mut opentrust_mle::Mle<C>,
     own_ml_eid_iid: &Iid,
+    bbr: &crate::netdata::backbone::BackboneRouterLeader,
     req: &Request<'_>,
     rsp: &mut dyn Responder,
 ) -> AddressErrorOutcome {
@@ -367,6 +374,9 @@ pub fn handle_address_error<const U: usize, const M: usize, const C: usize>(
         return AddressErrorOutcome::Ignored;
     };
     if opentrust_net::resolver::address_error_conflict(netif, &target, &iid, own_ml_eid_iid) {
+        if bbr.is_domain_unicast(&target) {
+            return AddressErrorOutcome::DuplicateDomainUnicast;
+        }
         let _ = netif.remove_unicast(&target);
         return AddressErrorOutcome::AddressRemoved;
     }

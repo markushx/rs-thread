@@ -470,3 +470,24 @@ Reference: `meshcop/{joiner,joiner_router,commissioner,border_agent,secure_trans
 | ePSKc, DNS-SD (`_meshcop._udp`), Border Agent counters, state bitmap | Implemented | Not implemented | Later work | no ePSKc / service advertisement |
 | External Commissioner | `ot-commissioner` (separate project) | `BorderAgentClient` + the `Commissioner` core through `ExternalTransport`: COMM_PET / COMM_KA / gets / `/c/tx` over DTLS, other management requests proxied (`/c/ut`, source port `PROXY_PORT` 49191) to the Leader ALOC; the mesh-local prefix is a parameter; CoAP tokens come from a non-cryptographic generator seeded at connect | Spec 8.4.2.2 (SET via the UDP proxy) | none |
 | Border Agent ID | Random, persisted in settings | Supplied by the caller (`BorderAgent::new`) | Persistence is the caller's | none |
+
+## Domain Unicast Address and Backbone Router client (`opentrust-mesh::dua`, `netdata::backbone`)
+
+Reference: `backbone_router/bbr_leader.cpp`, `thread/dua_manager.cpp`,
+`thread/network_data_service.cpp` (`GetBackboneRouterPrimary`),
+`thread/address_resolver.cpp` (`/a/ae`).
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|---|---|---|---|---|
+| Backbone Router role | `BackboneRouter::Local` / `Manager` (BBR server, `/b/bq`, `/b/ba`, `/b/bmr`, ND proxy) | Client side only: `BackboneRouterLeader` reads the BBR service and the Domain Prefix from Network Data | Out of scope for an embedded Thread device | A device cannot act as Primary BBR; the `/a/aq` Backbone Query extension is part of the server and is not implemented |
+| Event delivery | Notifier events call `HandleBackboneRouterPrimaryUpdate` / `HandleDomainPrefixUpdate` on the managers | `BackboneRouterLeader::update` returns `(BbrState, DomainPrefixEvent)`; the caller passes them to the managers | Sans-IO | none |
+| Timers | One-second `TimeTicker` counters for registration, reregistration and check delay | `Instant` deadlines (`next_deadline`), same durations | Sans-IO | none |
+| DUA registered on address add | `kEventIp6AddressAdded` (any address) arms the 1 s registration delay | Armed when the manager adds its DUA to the interface | The manager owns the address | none |
+| Delays after sending a request | `PerformNextRegistration` clears all delays, also while registering a child | Registering the own DUA clears all delays; registering a child clears only the check delay, so a pending retry of the own DUA survives | OT drops the retry of the own DUA when a child is registered right after a non-fatal answer | none |
+| DUA.req timeout | The state stays `Registering`; only a later reregistration trigger registers again | The state returns to `ToRegister` and the request is repeated after `RESPONSE_TIMEOUT_DELAY` | A lost answer must not stall registration | none |
+| Aborting a pending DUA.req | `AbortTransaction` when the DUA is removed | The late answer is ignored (target no longer on the interface or not a child) | The CoAP endpoint has no per-handler abort | none |
+| Thread 1.1 parents | An MTD with a Thread 1.1 parent registers itself through the Backbone Router service ALOC | Not supported: an end device registers through its parent (Thread 1.2+) | 1.1 is not a target | A 1.1 parent does not proxy DUA |
+| Children tracking | Bit masks over the child table index, event `HandleChildDuaAddressEvent` | `DuaManager::sync_children` compares the DUAs of the valid children (by extended address) with its table on every call | No event for child address changes in the MLE core | none |
+| DUA IID | `Slaac::GenerateIid` with the DAD counter; settings `DadInfo` | `slaac::generate_iid` (RFC 7217, same hash input as SLAAC); the DAD counter is exposed with `restore` / `take_dad_counter_update` | Persistence is the caller's | none |
+| DUA prefix length | Any length | Longer than 64 bits is refused (no DUA) | The IID covers the last 64 bits | none |
+| Duplicate DUA in `/a/ae` | `NotifyDuplicateDomainUnicastAddress` | `handle_address_error` returns `DuplicateDomainUnicast` for a domain address; the caller calls `DuaManager::notify_duplicate` | Sans-IO | none |
