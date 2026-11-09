@@ -52,6 +52,7 @@ simulator in `opentrust-sim` does exactly that for N nodes
 (`crates/opentrust-sim/tests/` has more):
 
 ```rust
+use opentrust_core::time::Duration;
 use opentrust_instance::Role;
 use opentrust_sim::Network;
 
