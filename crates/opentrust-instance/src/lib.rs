@@ -32,6 +32,37 @@
 //! table changes) and the instance loop in [`Instance::poll`] drains the
 //! queues until nothing is left to do.
 //!
+//! # End-device builds
+//!
+//! `default-features = false` is a real end-device build: no router,
+//! leader, Router ID, indirect queue or commissioner code. The forwarder
+//! sends everything except link-local traffic to the parent and drops mesh
+//! header frames (OT `mesh_forwarder_mtd.cpp`); `become_leader` does not
+//! exist.
+//!
+//! # SRP and DNS clients
+//!
+//! The instance owns an SRP client and a DNS client (`srp_*`, `dns_*`,
+//! [`Event::SrpClient`], [`Event::DnsResult`]). They use two internal UDP
+//! sockets, take the server from the Network Data (`srp_enable_auto_start`),
+//! persist the SRP key and server in the settings and register the
+//! interface addresses. This needs [`EcdsaP256`](opentrust_core::crypto::ecdsa::EcdsaP256)
+//! on the crypto backend and a `CryptoRng` as the RNG.
+//!
+//! # Backbone Router client
+//!
+//! The Primary Backbone Router in the Network Data drives the Domain Unicast
+//! Address (also registered for sleepy children) and the Multicast Listener
+//! Registration ([`Instance::domain_unicast_address`]). Extra TMF resources
+//! can be served by a layer on top with [`Instance::set_tmf_extension`].
+//!
+//! # SLAAC IID secret
+//!
+//! Semantically opaque interface identifiers use a 32-byte secret that is
+//! generated on first start and stored under the OT settings key
+//! `SlaacIidSecretKey` (as `Slaac::SetIidSecretKey`), so addresses survive
+//! resets.
+//!
 //! # Features
 //!
 //! `ftd` (default; router, leader, forwarding), `commissioner`,
