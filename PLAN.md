@@ -87,7 +87,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Mesh header, fragmentation header, reassembly with timeouts (`mesh`, `frag`, `reassembly`: `MeshHeader`, `FragmentHeader`, sans-IO `Fragmenter`, fixed-capacity `Reassembler`, 2 s timeout like OT)
   - [ ] Out-of-order reassembly (OT drops out-of-order fragments; so do we)
   - [ ] Sleepy-device reassembly rules (clear list on new secure first fragment / mismatch): call `Reassembler::clear` from the MLE/role layer
-  - [ ] Reassembling into `Message`s from the pool and queueing the Tx side (`Fragmenter` frames -> MAC) belongs to the Phase 4/6 mesh forwarder glue
+  - [x] Reassembling and queueing the Tx side (`Fragmenter` frames -> MAC) is done by the mesh forwarder and the `Instance` (frames wait in a bounded queue for room in the MAC transmit queue)
   - [ ] MLE messages that need fragmentation must be link-secured (`MeshForwarder` retry with security) and delay-aware queue management (Phase 6)
 - [x] Mesh forwarding (mesh header) for FTD (`forward`: `classify`/`parse_frame`, `handle_mesh` deliver/forward/drop with `LocalRlocs` + `NextHops` traits, hops-left handling, 2-hop loop detection)
   - [x] Routing table / next-hop provider, ICMPv6 destination-unreachable decisions, EID-RLOC cache update from forwarded frames (Phase 7a: `opentrust_mesh::forwarder`, which drives `forward`'s rules on `Mle::next_hop_and_path_cost`)
@@ -108,7 +108,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
     - [ ] Backbone Query extension of `/a/aq` / `/b/bq` (belongs to the Backbone Router server role, Phase 9)
   - [x] Mesh forwarder glue: hold datagrams while an EID resolves, `HandleResolved`, ICMPv6 destination-unreachable on no route/resolution failure, snooping from forwarded frames (Phase 7a: `opentrust_mesh::forwarder`)
   - [x] Network Data providers for `Ip6Env` (`route_lookup`, `is_on_mesh`) and for SLAAC (`OnMeshPrefix` list) (Phase 7b, `opentrust_mesh::netdata::lookup::NetDataIp6Env`, `consumers::slaac_prefixes`)
-  - [ ] Persisted SLAAC IID secret key in settings (Phase 6 settings wiring; the key is a caller argument)
+  - [x] Persisted SLAAC IID secret key in settings (`Instance::thread_start` loads / stores `SettingsKey::SlaacIidSecretKey`)
 - [ ] DHCPv6 address allocation (OT `Dhcp6Client`/`Dhcp6Server`, legacy; only if a use case needs it)
 - [x] Domain Unicast Address client (Thread 1.2, `/n/dr`, `/n/dn`, duplicate DUA handling in `/a/ae`: `opentrust_mesh::dua`); `/b/bq` / `/b/bb` belong to the Backbone Router server role (Phase 9)
 - [x] Multicast Listener Registration (MLR, `/n/mr`) for subscribed multicast groups (`opentrust_mesh::mlr`, Phase 9)
@@ -147,12 +147,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
     - [x] Phase 7a hooks: TMF `/a/as` / `/a/ar` client and server around `MleEnv::request_router_id` / `release_router_id`, `Mle::address_solicit_reply`, `Mle::handle_address_solicit`, `Mle::handle_address_release` (`opentrust_mesh::router_id`); mesh forwarding from `Mle::next_hop_and_path_cost`; `Mle::resolve_routing_loop`; indirect hooks for sleepy children
     - [x] Network Data hooks (Phase 7b): leader reset on `MleEvent::LeaderStarted` (`netdata::leader::Leader::start`), version bumps through `Mle::set_leader_data` (`Leader::publish`, `Mle::network_data_updated`), Network Data bytes served through `MleEnv::network_data` / stored from `set_network_data`, stale Network Data entries on `MleEvent::RouterTableChanged` (`Leader::remove_stale_router_ids`)
     - [x] Hooks: alternate RLOC16 after REED -> router (`MleEnv::set_alternate_short_address`), `Mle::remove_child_that_moved`, `Mle::set_device_mode` FTD <-> MTD re-attach, address cache reactions to MLE events (`opentrust_mesh::address::handle_mle_event`)
-    - [ ] Call `Mle::remove_child_that_moved` from the mesh forwarder (it only holds `&Mle`), and feed `handle_mle_event` from the device glue (the mesh simulator polls state instead of consuming events)
+    - [x] `Mle::remove_child_that_moved` (called by the `Instance` for mesh header frames that end at this router; frames it only forwards are not examined, see the differences file) and `handle_mle_event` (the `Instance` consumes the MLE events)
     - [ ] Border Router specific upgrade in `is_router_eligible` (the Security Policy part is done: `Mle::set_routing_policy`); Time Sync TLVs in Link Request / Accept / Advertisement
   - [x] Link Metrics Management / Report sub-TLV codecs, Forward Tracking Series, Enhanced-ACK configuration, Link Probe, Initiator and Subject (`opentrust_mle::link_metrics`, `link_metrics_roles`)
     - [ ] MAC glue: call `Mle::aggregate_link_metrics` for received data / data request / ACK frames and `Mle::process_enh_ack_ie_data` for `Event::EnhAckLinkMetrics`; `MleEnv::configure_enh_ack_probing` onto the MAC's per-initiator configuration
   - [x] MLE delay queue and retransmission as OT: Link Request / Accept / Advertisement / Data Request delays, multicast Data Response jitter, aggregated Child Update Request of MTD children (`Mle::schedule_child_update_request`), Child Update / Data Request retries
-    - [ ] Delayed Child Update Request triggers from the device glue (address changes of an MTD child call `schedule_child_update_request`)
+    - [x] Delayed Child Update Request triggers from the device glue (address changes of an MTD child call `schedule_child_update_request`; full-stack test)
   - [x] Address Registration context resolution (Phase 7b: `netdata::consumers::context_prefix64` / `context_id_for` back `MleEnv::lowpan_context` / `lowpan_context_for`)
   - [x] MLR state in `Child` (`Child::multicast_listeners`, `MlrState`; Phase 9)
 - [x] Attach: Parent Request/Response, Child ID Request/Response, parent selection (link quality, connectivity) (6b)
@@ -168,7 +168,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Mesh forwarding on the routing table (Phase 7a, `opentrust_mesh::forwarder`: `MeshForwarder` route lookup incl. child / on-link / Network Data hooks, mesh header insertion, forwarding with hops left and 2-hop loop detection, held datagrams and `handle_resolved`, destination unreachable decisions, snooping; address resolution TMF in `opentrust_mesh::address`)
   - [x] Routing through Network Data (Phase 7b): `netdata::lookup::Lookup` implements the `NetworkData` trait (external routes by longest prefix / preference / path cost, default route, on-mesh, anycast lookup)
   - [x] Sleepy child -> rx-on mode change converts queued indirect messages to direct (`MeshForwarder::child_became_rx_on`)
-  - [ ] `Mle::child_message_sent` is still called by the caller (the forwarder buffers the children in `take_child_message_sent`; `Routing` holds `&Mle`)
+  - [x] `Mle::child_message_sent` is called by the `Instance` after every forwarder call
   - [x] CSL transmitter for sleepy children (`IndirectQueue::flush_csl`, `MeshForwarder::csl_flush`, `TxFrame::csl`; the MAC does the window timing and keeps the data poll as fallback), multi-radio selection hook (`RadioLink`, `trel::RadioSelector`, feature `trel`) (Phase 9c)
   - [ ] CSMA collision-avoidance delay of forwarded frames
 - [x] Child table & forwarding to sleepy children (Phase 7a, `opentrust_mesh::indirect`: per-child queue, Frame Pending / source match bookkeeping, fragments per data poll, supervision messages, purge on child removal; the child table itself is `opentrust-mle`)
@@ -207,7 +207,7 @@ Phase 8b (security part; features `ftd`, `commissioner`, `border-agent`, all def
 - [x] Tests: unit tests per role (real Joiner against Commissioner / Border Agent through relay TLVs), end-to-end in the meshcop simulator (`net_sim_commissioning`, `commissioning_sim_tests`)
 - [x] ePSKc on the Border Agent (Phase 9): separate listener, single use, timeout, attempt limit, `_meshcop-e._udp` hook
 - [ ] DNS-SD `_meshcop._udp` advertisement and state bitmap, several concurrent Border Agent sessions, Border Agent counters
-- [ ] Wire the roles into a full stack (MAC key ID mode 0 selection in the mesh forwarder, unsecure-port filter, KEK frames routed to `handle_kek_datagram`) once the integration layer exists (Phase 10)
+- [ ] Wire the roles into a full stack: the unsecure-port filter is done in the `Instance` (MLE port and `add_unsecure_port`); still open: the Joiner, Joiner Router, Commissioner and Border Agent are not yet owned by the `Instance` (they need a P-256 curve type parameter next to the crypto backend), MAC key ID mode 0 frame selection in the mesh forwarder (`TxFrame` has only a link security flag), KEK frames routed to `handle_kek_datagram`, the Joiner UDP port relay and the full-stack Joiner test
 - [ ] Interop of Joiner / Commissioner / Border Agent against OpenThread (`openthread-sys`) nodes (Phase 11)
 
 Security-relevant decisions for the review before M4:
@@ -254,7 +254,11 @@ Security-relevant decisions for the review before M4:
 
 ## Phase 10 – Public API & host interfaces
 
-- [ ] Ergonomic Rust API (`Instance`, `Dataset`, `Role`, events), async facade (embassy-sync, executor-agnostic)
+- [x] `Instance` (`opentrust-instance`, [ADR 0003](docs/decisions/0003-instance.md)): one struct owning MAC + key manager, 6LoWPAN / mesh forwarder, IPv6 / netif / UDP / ICMPv6, TMF agent, MLE, Network Data (leader store, local data, notifier, publisher, ALOCs, SLAAC), address cache and the dataset managers; sans-IO radio edge (`handle_radio_rx`, `handle_radio_tx_done`, `poll_radio_action`, `poll`, `next_deadline`, `poll_event`); persistence through `SettingsStore`; public API (`thread_start` / `become_leader` / `thread_stop` / `factory_reset`, role / RLOC16 / partition / leader data, Active / Pending dataset, `create_dataset`, addresses, UDP sockets, ping, local Network Data, poll period) and typed `Event`s
+  - [x] `opentrust-sim`: simulated 802.15.4 medium (link matrix, RSSI, loss, jamming, air time, ACK / Frame Pending / retry semantics of a MAC-offload radio) and a `Network` harness; full-stack tests: leader formation, child attach and router upgrade, 3-router chain ping with mesh header and fragmentation, ML-EID address query, border router prefix and route with SLAAC, non-FTD child address registration, UDP across the mesh, sleepy end device polling, leader restart restore, link-layer replay protection
+  - [ ] Instance wiring still missing: Joiner / Joiner Router / Commissioner / Border Agent / TCAT (see Phase 8 open item), SRP client and DNS client, DUA / MLR managers and the Backbone Router, MLE Discovery / Announce frames on another channel or PAN (`TxOptions` channel / PAN are ignored), CSL (MAC IE forwarding, `Mac::set_csl`), TREL radio, link metrics glue, Diagnostics TMF, Pending dataset delay timer persistence checks, Leader petition / commissioner session state (`/c/lp` ...), energy scan / PAN ID query servers, MTD-only data path (the forwarder is `ftd`-only)
+  - [ ] Async facade (`opentrust-embassy`): run the `Radio` trait against the `Instance` (select over `radio.receive`, the alarm for `next_deadline`, request channel), `edge-nal` UDP
+  - [ ] Differential tests of the `Instance` against an OpenThread node (Phase 11)
 - [ ] rs-matter integration (`opentrust-matter`):
   - [ ] `edge-nal` UDP socket traits (bind/send/receive over IPv6) for Matter traffic
   - [ ] Thread Network Commissioning cluster backend: scan, add/update dataset, connect, status
@@ -291,7 +295,12 @@ Security-relevant decisions for the review before M4:
 ## Phase 13 – Certification readiness & docs
 
 - [ ] Map every Thread 1.4.1 test-plan case to status (pass/fail/NA)
-- [ ] Security review (key handling, frame counters, replay protection)
+- [ ] Security review (key handling, frame counters, replay protection). Items the `Instance` adds for the review:
+  - link-layer replay protection for received data frames is `Mle::check_link_frame`, called by the `Instance` before the forwarder for every secured frame (key ID mode 1) from a known neighbor; frames from unknown sources pass, key ID mode 2 and mode 0 frames are not checked
+  - the unsecure-port filter in `Instance::unsecure_allowed` (datagrams without link security only for UDP to the MLE port and the ports of `add_unsecure_port`)
+  - the TX path secures every frame with `link_security` at the MAC (level 5, key ID mode 1) through the key manager; the key sequence rotation poll (`KeyManager::poll`) result is not yet fed back to MLE
+  - the SLAAC IID secret key and the ML-EID IID come from the instance RNG; the secret key is stored in the settings in clear
+  - a non-FTD child accepts MAC frames from its parent without per-frame counter state beyond what `check_link_frame` keeps
 - [ ] API docs, architecture doc, porting guide for new platforms
 - [ ] Release crates to crates.io
 
