@@ -49,6 +49,11 @@
 //! - [`steering`]: the Steering Data bloom filter, Joiner ID derivation and
 //!   Joiner Discerner.
 //! - [`pskd`]: the Joiner PSKd (validation, secret handling).
+//! - `tcat` (feature `tcat`, default off): the TCAT Device's
+//!   transport- and TLS-agnostic command engine (Thread 1.4.1 chapter 13,
+//!   ADR 0002): command TLVs, command-class authorization from certificate
+//!   claims, proof-of-possession hashes; the TLS layer implements
+//!   `tcat::TcatSecureTransport`.
 //! - [`epskc`]: the ephemeral PSKc (validation, timeouts, Thread
 //!   Administration One-Time Passcode with Verhoeff check digit).
 //! - [`secure`]: link-layer security classes of commissioning traffic and
@@ -88,6 +93,8 @@ pub mod pskd;
 pub mod scan;
 pub mod secure;
 pub mod steering;
+#[cfg(feature = "tcat")]
+pub mod tcat;
 pub mod timestamp;
 pub mod tlv;
 #[cfg(feature = "ftd")]
@@ -121,6 +128,8 @@ mod sim_scan_tests;
 mod sim_tests;
 #[cfg(test)]
 mod steering_tests;
+#[cfg(all(test, feature = "tcat"))]
+mod tcat_tests;
 #[cfg(test)]
 mod test_rng;
 #[cfg(test)]

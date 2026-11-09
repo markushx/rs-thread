@@ -22,6 +22,9 @@ ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd"]
 commissioner = ["ftd"]
 # The Border Agent and the external Commissioner's client side.
 border-agent = ["commissioner"]
+# The TCAT Device's command engine (Thread 1.4.1 chapter 13, ADR 0002);
+# transport- and TLS-agnostic, optional.
+tcat = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-coap/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-mesh/defmt", "opentrust-dtls/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-coap/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-mesh/log", "opentrust-dtls/log"]
 
@@ -40,6 +43,8 @@ defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Build and test the optional TCAT engine with the default checks.
+opentrust-meshcop = { path = ".", default-features = false, features = ["tcat"] }
 opentrust-mle = { workspace = true, features = ["test-support"] }
 opentrust-platform = { workspace = true }
 
