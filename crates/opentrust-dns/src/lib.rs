@@ -11,6 +11,7 @@
 //! |--------|----------|
 //! | [`wire`] | DNS header, names with compression (encode and decode, loop-safe), message [`wire::Writer`] and [`wire::Parser`] |
 //! | [`client`] | DNS / DNS-SD client: AAAA, browse (PTR), service resolution (SRV + TXT) over UDP |
+//! | [`srp`] | SRP client (RFC 9665): signed UPDATE, lease refresh, retry, server auto-start from Network Data |
 //! | [`rdata`] | TXT entries, KEY / SIG(0), EDNS(0) OPT with the Update Lease option (RFC 9664) |
 //!
 //! Deviations from OpenThread are listed in
@@ -21,6 +22,7 @@ extern crate std;
 
 pub mod client;
 pub mod rdata;
+pub mod srp;
 pub mod wire;
 
 #[cfg(test)]

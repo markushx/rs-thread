@@ -80,6 +80,17 @@ impl EcdsaP256 for SoftEcdsaP256 {
     }
 }
 
+#[cfg(all(feature = "ecdsa", feature = "soft-crypto"))]
+impl EcdsaP256 for super::soft::SoftCrypto {
+    fn public_key(&self, key: &SecretKey) -> Result<[u8; PUBLIC_KEY_LEN]> {
+        SoftEcdsaP256.public_key(key)
+    }
+
+    fn sign_digest(&self, key: &SecretKey, digest: &[u8; 32]) -> Result<[u8; SIGNATURE_LEN]> {
+        SoftEcdsaP256.sign_digest(key, digest)
+    }
+}
+
 #[cfg(all(test, feature = "ecdsa"))]
 mod tests {
     use super::*;
