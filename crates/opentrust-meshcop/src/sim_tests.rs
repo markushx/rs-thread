@@ -9,8 +9,8 @@ use opentrust_mesh::netdata::NetworkDataView;
 use opentrust_mle::Role;
 use opentrust_mle::test_support::MLP;
 
-use crate::commissioner;
 use crate::dataset::{Dataset, DatasetType};
+use crate::leader as commissioner;
 use crate::mgmt::MgmtResult;
 use crate::net_sim::Net;
 use crate::steering::SteeringData;

@@ -196,7 +196,7 @@ Phase 8a (this batch, crate `opentrust-meshcop`, leader / router code behind fea
 Open for the security batch (hooks exist, nothing implemented):
 
 - [ ] Joiner: DTLS EC-JPAKE with the PSKd, Joiner Finalize, Joiner Entrust / KEK (`DiscoverScanner` and the Steering Data filter feed it; `opentrust_core::crypto::{pskc, ecjpake}` and `opentrust-dtls` exist)
-- [ ] Joiner Router: relay `/c/rx` `/c/tx`, Joiner Entrust, KEK derivation, Joiner UDP port from the Commissioning Data (`commissioner::joiner_udp_port`)
+- [ ] Joiner Router: relay `/c/rx` `/c/tx`, Joiner Entrust, KEK derivation, Joiner UDP port from the Commissioning Data (`leader::joiner_udp_port`)
 - [ ] Commissioner: native (DTLS to the Border Agent) and on-mesh, Joiner list and Steering Data computation, commissioner dataset client (`mgmt::send_set` / `send_get` and `scan::send_*` are the request side)
 - [ ] Border Agent: DTLS server for external commissioners, `/c/ur` `/c/ut` proxy, Border Agent ID, Native Commissioner flag in Discovery Responses (`ResponseContent::native_commissioner`), `ProcessCommissionerGetRequest` with `kIgnoreSecurityPolicyFlags`
 - [x] Reload of the leader's commissioner state after a reset (`LeaderState::restore_leader`; leader Network Data wait-for-sync: `Leader::start_restoring` / `restore` / `sync_timed_out`)

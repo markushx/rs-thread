@@ -16,8 +16,10 @@ readme = "../../README.md"
 # Leader / router side: dataset leader handlers, commissioner session state.
 # The Joiner (DTLS client, Joiner Entrust) is always built; a joiner-only
 # end device uses `default-features = false`.
-default = ["ftd"]
+default = ["ftd", "commissioner"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd"]
+# The Commissioner (on-mesh, and the core of an external Commissioner).
+commissioner = ["ftd"]
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-coap/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-mesh/defmt", "opentrust-dtls/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-coap/log", "opentrust-mle/log", "opentrust-net/log", "opentrust-mesh/log", "opentrust-dtls/log"]
 

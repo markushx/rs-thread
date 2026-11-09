@@ -9,8 +9,9 @@
 //! leader's commissioner session state, Discovery, Energy Scan, PAN ID
 //! Query and Announce Begin, and the commissioning roles that run DTLS
 //! (`opentrust-dtls`, EC-JPAKE): the [`joiner`] and the Joiner Router
-//! relay (`joiner_router`, feature `ftd`). The Commissioner and the Border
-//! Agent are not implemented yet.
+//! relay (`joiner_router`, feature `ftd`) and the Commissioner
+//! (`commissioner`, feature `commissioner`). The Border Agent is not
+//! implemented yet.
 //!
 //! # Wiring
 //!
@@ -20,7 +21,7 @@
 //! [`Responder`](opentrust_coap::tmf::Responder), and everything a module
 //! needs from the rest of the stack is a trait ([`manager::DatasetEnv`]) or
 //! an argument. See [`manager`] for the dataset side,
-//! [`commissioner`] for the leader side and [`scan`] / [`discovery`] for
+//! [`leader`] for the leader side and [`scan`] / [`discovery`] for
 //! the scans. Leader and router code is behind feature `ftd` (default).
 //!
 //! - [`tlv`]: the MeshCoP TLV codec (Thread 1.4.1 section 8.10): type
@@ -32,7 +33,7 @@
 //! - [`dataset`]: the Operational Dataset TLV buffer.
 //! - [`manager`]: Active / Pending dataset management, delay timer.
 //! - [`mgmt`]: the `/c/ag` `/c/as` `/c/pg` `/c/ps` `/c/ar` TMF handlers and clients.
-//! - [`commissioner`] (feature `ftd`): the leader's commissioner session
+//! - [`leader`] (feature `ftd`): the leader's commissioner session
 //!   (`/c/lp`, `/c/la`, `/c/cs`, `/c/cg`).
 //! - [`updater`] (feature `ftd`): the Dataset Updater (change part of the
 //!   Active Dataset through a Pending Dataset).
@@ -49,17 +50,23 @@
 //!   Joiner Entrust under the KEK).
 //! - `joiner_router` (feature `ftd`): the Joiner UDP port, Relay Receive /
 //!   Transmit and the delayed Joiner Entrust.
+//! - `commissioner` (feature `commissioner`, default): petition,
+//!   keep-alive, Joiner list and Steering Data, Joiner DTLS sessions over
+//!   the relay, JOIN_FIN, MGMT_COMMISSIONER_GET / SET; on-mesh transport
+//!   `commissioner::MeshTransport`.
 
 #[cfg(test)]
 extern crate std;
 
-#[cfg(feature = "ftd")]
+#[cfg(feature = "commissioner")]
 pub mod commissioner;
 pub mod dataset;
 pub mod discovery;
 pub mod joiner;
 #[cfg(feature = "ftd")]
 pub mod joiner_router;
+#[cfg(feature = "ftd")]
+pub mod leader;
 pub mod manager;
 pub mod mgmt;
 pub mod pskd;
@@ -71,6 +78,8 @@ pub mod tlv;
 #[cfg(feature = "ftd")]
 pub mod updater;
 
+#[cfg(all(test, feature = "commissioner"))]
+mod commissioner_tests;
 #[cfg(test)]
 mod dataset_tests;
 #[cfg(test)]

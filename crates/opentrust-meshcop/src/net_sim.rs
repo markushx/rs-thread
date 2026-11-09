@@ -226,7 +226,7 @@ pub struct Node {
     pub rng: XRng,
     /// Network Data store, used while the node is the leader.
     pub nd: Leader<512>,
-    pub leader_state: crate::commissioner::LeaderState,
+    pub leader_state: crate::leader::LeaderState,
     /// Requests received, by URI id.
     pub rx: std::collections::BTreeMap<u16, u32>,
     pub comm_aloc: Option<u16>,
@@ -259,7 +259,7 @@ fn initial_cur() -> CurrentConfig {
 struct H<'a> {
     shared: &'a mut Shared,
     nd: &'a mut Leader<512>,
-    ls: &'a mut crate::commissioner::LeaderState,
+    ls: &'a mut crate::leader::LeaderState,
     srv: &'a mut Servers,
     rx: &'a mut std::collections::BTreeMap<u16, u32>,
     now: Instant,
@@ -271,7 +271,7 @@ struct H<'a> {
 impl Handler for H<'_> {
     fn handle(&mut self, uri: Uri, req: &Request<'_>, rsp: &mut dyn Responder) {
         *self.rx.entry(uri.id()).or_default() += 1;
-        self.shared.env.session = crate::commissioner::session_id(self.nd);
+        self.shared.env.session = crate::leader::session_id(self.nd);
         let now = self.now;
         let s = &mut *self.shared;
         match uri {
@@ -291,7 +291,7 @@ impl Handler for H<'_> {
                 let _ = rsp.respond(opentrust_coap::message::Code::CHANGED, &[]);
             }
             Uri::LeaderPetition => {
-                self.nd_changed |= crate::commissioner::handle_petition(
+                self.nd_changed |= crate::leader::handle_petition(
                     self.ls,
                     self.nd,
                     s.env.role == Role::Leader,
@@ -302,7 +302,7 @@ impl Handler for H<'_> {
                 );
             }
             Uri::LeaderKeepAlive => {
-                self.nd_changed |= crate::commissioner::handle_keep_alive(
+                self.nd_changed |= crate::leader::handle_keep_alive(
                     self.ls,
                     self.nd,
                     s.env.role == Role::Leader,
@@ -312,7 +312,7 @@ impl Handler for H<'_> {
                 );
             }
             Uri::CommissionerSet => {
-                self.nd_changed |= crate::commissioner::handle_commissioner_set(
+                self.nd_changed |= crate::leader::handle_commissioner_set(
                     self.nd,
                     s.env.role == Role::Leader,
                     req,
@@ -320,7 +320,7 @@ impl Handler for H<'_> {
                 );
             }
             Uri::CommissionerGet => {
-                crate::commissioner::handle_commissioner_get(
+                crate::leader::handle_commissioner_get(
                     self.nd,
                     s.env.role == Role::Leader,
                     req,
@@ -402,7 +402,7 @@ impl Net {
                 sink: Sink::default(),
                 rng: XRng(0x1357_9bdf ^ (i as u64 + 1)),
                 nd: Leader::new(),
-                leader_state: crate::commissioner::LeaderState::new(0x1234),
+                leader_state: crate::leader::LeaderState::new(0x1234),
                 rx: Default::default(),
                 comm_aloc: None,
                 dataset_changed_rx: 0,
@@ -479,7 +479,7 @@ impl Net {
         if is_leader && !node.was_leader {
             let ld = *n.mle.leader_data();
             node.nd.start(ld.data_version, ld.stable_data_version);
-            node.leader_state = crate::commissioner::LeaderState::new(0x1234 + i as u16);
+            node.leader_state = crate::leader::LeaderState::new(0x1234 + i as u16);
         }
         node.was_leader = is_leader;
         let mut restored = false;
@@ -543,7 +543,7 @@ impl Net {
         let node = &mut self.nodes[i];
         node.nd
             .start_restoring(ld.data_version, ld.stable_data_version, now);
-        node.leader_state = crate::commissioner::LeaderState::new(0x7777);
+        node.leader_state = crate::leader::LeaderState::new(0x7777);
     }
 
     pub(crate) fn publish_nd(&mut self, i: usize) {
