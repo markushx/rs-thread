@@ -449,6 +449,69 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         }
     }
 
+    fn set_csl(&mut self, period: u16, channel: u8, parent: Option<(ExtAddress, Rloc16)>) {
+        let (short, ext) = parent.map_or((Rloc16::INVALID.into(), ExtAddress([0; 8])), |(e, r)| {
+            (r.into(), e)
+        });
+        // A radio without a clock cannot sample CSL windows: the child then
+        // keeps polling.
+        let _ = self.mac.set_csl(period, channel, short, ext, self.now);
+    }
+
+    fn set_csl_parent_accuracy(&mut self, a: opentrust_mle::tlv::CslClockAccuracy) {
+        self.mac
+            .set_csl_parent_accuracy(opentrust_mac::mac::CslAccuracy {
+                clock_ppm: a.accuracy_ppm,
+                uncertainty_10us: a.uncertainty_10us,
+            });
+    }
+
+    fn csl_clock_accuracy(&self) -> Option<opentrust_mle::tlv::CslClockAccuracy> {
+        let caps = self.mac.caps();
+        caps.clock
+            .is_some()
+            .then_some(opentrust_mle::tlv::CslClockAccuracy {
+                accuracy_ppm: caps.csl_accuracy_ppm,
+                uncertainty_10us: caps.csl_uncertainty,
+            })
+    }
+
+    fn csl_child_update(&mut self, _ext: &ExtAddress, rloc16: Rloc16, channel: u8) {
+        let a = Address::Short(rloc16.into());
+        if self.mac.csl_add_child(a).is_ok() {
+            let _ = self.mac.csl_set_child_channel(a, channel);
+        }
+    }
+
+    fn csl_child_desync(&mut self, _ext: &ExtAddress, rloc16: Rloc16) {
+        self.mac.csl_child_desync(Address::Short(rloc16.into()));
+    }
+
+    fn enh_ack_probing_report(
+        &mut self,
+        rloc16: Rloc16,
+        ext: &ExtAddress,
+        v: &opentrust_mle::link_metrics::MetricsValues,
+    ) {
+        self.push_event(crate::Event::EnhAckLinkMetrics {
+            rloc16,
+            ext: *ext,
+            lqi: v.metrics.lqi.then_some(v.lqi),
+            link_margin: v.metrics.link_margin.then_some(v.link_margin),
+            rssi: v.metrics.rssi.then_some(v.rssi),
+        });
+    }
+
+    fn configure_enh_ack_probing(
+        &mut self,
+        flags: opentrust_mac::mac::LinkMetricsFlags,
+        rloc16: Rloc16,
+        ext: &ExtAddress,
+    ) -> Result<()> {
+        self.mac
+            .configure_enh_ack_probing(rloc16.into(), *ext, flags)
+    }
+
     fn set_poll_attach_mode(&mut self, fast: bool) {
         self.mac.set_poll_attach_mode(fast, self.now);
     }

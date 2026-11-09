@@ -9,7 +9,7 @@ use opentrust_core::crypto::{CryptoBackend, SecurityLevel};
 use opentrust_core::time::Instant;
 use opentrust_core::types::{Rloc16, ShortAddress};
 use opentrust_mac::frame::{
-    Address, FrameBuilder, FrameType, FrameVersion, KeyIdentifier, SecurityHeader,
+    Address, CslIe, FrameBuilder, FrameType, FrameVersion, KeyIdentifier, SecurityHeader,
 };
 use opentrust_mac::mac::{Event as MacEvent, FrameBuf, RxFrame, TxHandle};
 pub(crate) use opentrust_mesh::forwarder::Routing;
@@ -47,15 +47,30 @@ const fn mac_address(d: MacDest) -> Address {
 impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
     fn transmit(&mut self, f: &TxFrame<'_>) -> Result<()> {
         let mut buf = [0u8; 127];
+        // A CSL synchronized sleepy child puts a CSL IE (the MAC fills in
+        // the phase) in every frame it sends (Thread section 3.2.6.3).
+        let csl_period = self.mac.csl_period();
+        let csl = csl_period != 0 && f.dst != MacDest::Broadcast;
         let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::Data)
-            .version(FrameVersion::V2006)
+            .version(if csl {
+                FrameVersion::V2015
+            } else {
+                FrameVersion::V2006
+            })
             .sequence(0)
             .pan_id(self.mac.pan_id())
             .dst(mac_address(f.dst))
             .src(f.src)
             .frame_pending(f.frame_pending)
             .payload(f.payload);
+        if csl {
+            b = b.header_ie(CslIe {
+                phase: 0,
+                period: csl_period,
+                rendezvous_time: None,
+            });
+        }
         if f.link_security {
             // Frame counter and key index are filled in by the key manager.
             b = b.security(SecurityHeader::new(
@@ -81,6 +96,16 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
     }
 
     fn dest_unreachable(&mut self, _invoking: &[u8]) {}
+}
+
+#[cfg(all(test, feature = "ftd"))]
+pub(crate) fn sink_for_tests<S, C: CryptoBackend, R>(
+    core: &mut crate::stack::Core<S, C, R>,
+) -> MacSink<'_, C> {
+    MacSink {
+        mac: &mut core.mac,
+        tx: &mut core.mactx,
+    }
 }
 
 /// Collects what the forwarder asks for besides frames, so it can be done
@@ -155,6 +180,23 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 MacEvent::Received(rx) => self.handle_frame(now, rx),
                 #[cfg(feature = "ftd")]
                 MacEvent::DataPollReceived { src, .. } => self.handle_poll(now, src),
+                #[cfg(feature = "ftd")]
+                MacEvent::CslChildOutOfSync(Address::Short(s)) => {
+                    self.mle.child_csl_desynchronized(Rloc16(s.0));
+                }
+                MacEvent::EnhAckLinkMetrics { neighbor, values } => {
+                    let ext = self.neighbor_ext(neighbor);
+                    self.core.push_event(Event::EnhAckLinkMetrics {
+                        rloc16: match neighbor {
+                            Address::Short(s) => Rloc16(s.0),
+                            _ => Rloc16::INVALID,
+                        },
+                        ext,
+                        lqi: values.lqi,
+                        link_margin: values.link_margin,
+                        rssi: values.rssi,
+                    });
+                }
                 MacEvent::DataPollTimeout | MacEvent::DataPollSent(_) => {}
                 MacEvent::TxDone { .. } => {}
                 _ => {}
@@ -200,6 +242,41 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
         self.sync_src_match();
     }
 
+    /// Extended address of a neighbor known by short or extended address.
+    fn neighbor_ext_opt(&self, a: Address) -> Option<opentrust_core::types::ExtAddress> {
+        match a {
+            Address::Extended(e) => Some(e),
+            Address::Short(s) => self
+                .glue
+                .neighbors
+                .iter()
+                .find(|(r, _)| *r == s.0)
+                .map(|(_, e)| opentrust_core::types::ExtAddress(*e)),
+            _ => None,
+        }
+    }
+
+    fn neighbor_ext(&self, a: Address) -> opentrust_core::types::ExtAddress {
+        self.neighbor_ext_opt(a)
+            .unwrap_or(opentrust_core::types::ExtAddress([0; 8]))
+    }
+
+    /// Hand the frames queued for CSL synchronized children to the MAC.
+    #[cfg(feature = "ftd")]
+    fn csl_flush_children(&mut self) {
+        let mut notes = FwdNotes::default();
+        with_routing!(self, |r| {
+            let mut sink = Sink {
+                mac: MacSink {
+                    mac: &mut self.core.mac,
+                    tx: &mut self.core.mactx,
+                },
+                notes: &mut notes,
+            };
+            self.fwd.csl_flush(&r, &mut sink);
+        });
+    }
+
     /// Process a received data frame.
     fn handle_frame(&mut self, now: Instant, rx: RxFrame) {
         let Ok(f) = rx.parse() else { return };
@@ -224,6 +301,28 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             pan_id: f.pan_id().map(|p| p.0),
             channel: Some(rx.channel),
         };
+        // Link metrics of the sender (OT `Neighbor::AggregateLinkMetrics`).
+        if link_security
+            && let (Some(lqi), Some(rss)) = (rx.lqi, rx.rssi)
+            && let Some(ext) = self.neighbor_ext_opt(src)
+        {
+            self.mle.aggregate_link_metrics(
+                &ext,
+                opentrust_mle::link_metrics::FrameKind::MacData,
+                lqi,
+                rss,
+            );
+        }
+        // A frame with a CSL IE synchronizes the sending child (OT
+        // `Mac::ProcessCsl`).
+        #[cfg(feature = "ftd")]
+        if link_security
+            && f.csl_ie().is_some()
+            && let Address::Short(s) = src
+            && self.mle.child_csl_synchronized(Rloc16(s.0), now)
+        {
+            self.csl_flush_children();
+        }
         // Any secure frame from the parent is a sign of life.
         if link_security
             && let (Address::Short(s), Some(p)) = (src, self.mle.parent())

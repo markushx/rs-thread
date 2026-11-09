@@ -193,6 +193,19 @@ pub enum Event {
         /// RLOC16.
         rloc16: Rloc16,
     },
+    /// Link metrics from an Enhanced ACK of a probed neighbor.
+    EnhAckLinkMetrics {
+        /// RLOC16 of the neighbor (invalid if unknown).
+        rloc16: Rloc16,
+        /// Extended address of the neighbor.
+        ext: ExtAddress,
+        /// LQI.
+        lqi: Option<u8>,
+        /// Link margin in dB.
+        link_margin: Option<u8>,
+        /// RSSI in dBm.
+        rssi: Option<i8>,
+    },
     /// A UDP socket has data ([`Instance::udp_recv`]).
     UdpReadable(UdpSocket),
     /// An ICMPv6 echo reply arrived ([`Instance::take_ping_reply`]).
@@ -616,6 +629,44 @@ mod tests {
         // Timers (advertisements) are scheduled.
         assert!(i.next_deadline().is_some_and(|d| d >= now));
         i.poll(now + Duration::from_secs(1));
+    }
+
+    /// The MLE's CSL requests reach the MAC and an SSED frame carries the
+    /// CSL IE.
+    #[test]
+    fn csl_parameters_reach_the_mac() {
+        use opentrust_core::types::ShortAddress;
+        use opentrust_mle::MleEnv;
+        use opentrust_platform::radio::RadioClock;
+
+        let caps = RadioCaps {
+            clock: Some(RadioClock(|| 1_000_000)),
+            csl_accuracy_ppm: 20,
+            csl_uncertainty: 10,
+            ..RadioCaps::default()
+        };
+        let cfg = Config::sleepy_end_device(ExtAddress([2, 0, 0, 0, 0, 0, 0, 5]), caps);
+        let mut i = Instance::new(cfg, RamSettings::<2048>::new(), SoftCrypto, MacRng::new(1));
+        let parent = (ExtAddress([2, 0, 0, 0, 0, 0, 0, 1]), Rloc16(0x0400));
+        MleEnv::set_csl(&mut i.core, 3125, 0, Some(parent));
+        assert_eq!(i.core.mac.csl_period(), 3125);
+        let acc = MleEnv::csl_clock_accuracy(&i.core).unwrap();
+        assert_eq!((acc.accuracy_ppm, acc.uncertainty_10us), (20, 10));
+        // A frame to the parent now has a CSL IE.
+        let mut sink = crate::datapath::sink_for_tests(&mut i.core);
+        let f = opentrust_mesh::forwarder::TxFrame {
+            src: opentrust_mac::frame::Address::Short(ShortAddress(0x0401)),
+            dst: opentrust_mesh::forwarder::MacDest::Short(parent.1),
+            payload: &[0x7a, 1, 2, 3],
+            link_security: false,
+            frame_pending: false,
+            indirect: false,
+            csl: false,
+            radio: Default::default(),
+        };
+        opentrust_mesh::forwarder::FrameSink::transmit(&mut sink, &f).unwrap();
+        MleEnv::set_csl(&mut i.core, 0, 0, None);
+        assert_eq!(i.core.mac.csl_period(), 0);
     }
 
     #[test]

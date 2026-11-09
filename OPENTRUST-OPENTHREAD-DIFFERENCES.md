@@ -628,3 +628,11 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - The DAD counter is persisted under `DadInfo` as one byte (OT `DadInfo`), written whenever the manager changes it, read on `thread_start`.
 - Domain Unicast Addresses and external multicast groups are registered through the address registration of the Child Update Request (as OT) and, for the device itself and its children, with `/n/dr` and `/n/mr` to the Primary Backbone Router from the Network Data. There is no Backbone Router server role; `Instance::set_tmf_extension(uris, fn)` lets a layer on top serve extra TMF URIs (a plain function pointer, answer payload at most 64 bytes) and is how the simulator test plays the Backbone Router.
 - `Instance::add_service` / `remove_service` expose the local Network Data services.
+
+### CSL and link metrics glue in the `Instance`
+
+- `MleEnv::set_csl` calls `Mac::set_csl`; without a radio clock (`RadioCaps::clock`) the MAC refuses (`NotImplemented`) and the device keeps polling, whereas OT asserts the capability. The CSL clock accuracy reported to children comes from `RadioCaps::csl_accuracy_ppm` / `csl_uncertainty` and only if the radio has a clock.
+- Frames of a CSL synchronized sleepy child get a CSL IE (version 2015 frame, phase filled in by the MAC) when the destination is not broadcast; OT adds it to frames to the parent only, which is the same set for an end device.
+- A received frame with a CSL IE from a child calls `Mle::child_csl_synchronized` and flushes the frames queued for CSL children; `Event::CslChildOutOfSync` calls `child_csl_desynchronized`.
+- Link metrics: `aggregate_link_metrics` is fed with received data frames only (LQI and RSSI of the frame); data requests and ACKs are not aggregated because the MAC does not report their LQI. The MAC decodes the enhanced ACK probing IE itself, so `Mle::process_enh_ack_ie_data` (raw IE bytes) is not used: the decoded values are reported as `Event::EnhAckLinkMetrics`. `MleEnv::configure_enh_ack_probing` maps to `Mac::configure_enh_ack_probing`; the initiator side (`track_enh_ack_probing`) is not called yet.
+- The simulated radio has no clock or receive timing, so CSL is tested at unit level (`csl_parameters_reach_the_mac`), not end to end.
