@@ -93,6 +93,8 @@ pub mod updater;
 mod border_agent_tests;
 #[cfg(all(test, feature = "commissioner"))]
 mod commissioner_tests;
+#[cfg(all(test, feature = "border-agent"))]
+mod commissioning_sim_tests;
 #[cfg(test)]
 mod dataset_tests;
 #[cfg(test)]
@@ -105,6 +107,8 @@ mod joiner_router_tests;
 mod joiner_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod net_sim;
+#[cfg(all(test, feature = "border-agent"))]
+mod net_sim_commissioning;
 #[cfg(test)]
 mod scan_tests;
 #[cfg(all(test, feature = "ftd"))]

@@ -33,10 +33,11 @@ use crate::scan::{
     PanIdQueryServer,
 };
 
-pub type TmfAgent = Agent<4, 16, 4, 512>;
+pub type TmfAgent = Agent<8, 24, 4, 1280>;
 
 pub struct Datagram {
     pub src: Option<Ipv6Addr>,
+    pub src_port: u16,
     pub dst: Ipv6Addr,
     pub dst_port: u16,
     pub payload: std::vec::Vec<u8>,
@@ -48,9 +49,10 @@ pub struct Sink {
 }
 
 impl UdpSink for Sink {
-    fn send(&mut self, info: &SendInfo, _sp: u16, dp: u16, payload: &[u8]) -> Result<()> {
+    fn send(&mut self, info: &SendInfo, sp: u16, dp: u16, payload: &[u8]) -> Result<()> {
         self.out.push(Datagram {
             src: info.src,
+            src_port: sp,
             dst: info.dst,
             dst_port: dp,
             payload: payload.to_vec(),
@@ -60,6 +62,8 @@ impl UdpSink for Sink {
 }
 
 pub struct XRng(pub u64);
+
+impl rand_core::TryCryptoRng for XRng {}
 
 impl rand_core::TryRng for XRng {
     type Error = core::convert::Infallible;
@@ -238,9 +242,13 @@ pub struct Node {
     pub responses: std::vec::Vec<(u32, std::vec::Vec<u8>)>,
     /// Extra handler for URIs the harness does not know (used by tests).
     was_leader: bool,
+    /// Commissioning roles (see `net_sim_commissioning`).
+    pub cm: crate::net_sim_commissioning::Roles,
 }
 
 pub struct Net {
+    /// Link-local datagrams in flight and the external Commissioner.
+    pub cx: crate::net_sim_commissioning::Air,
     pub sim: Sim,
     pub nodes: std::vec::Vec<Node>,
     /// Node index acting as commissioner (owner of the commissioner ALOC).
@@ -257,6 +265,7 @@ fn initial_cur() -> CurrentConfig {
 }
 
 struct H<'a> {
+    deferred: &'a mut std::vec::Vec<(Uri, bool, std::vec::Vec<u8>)>,
     shared: &'a mut Shared,
     nd: &'a mut Leader<512>,
     ls: &'a mut crate::leader::LeaderState,
@@ -327,6 +336,10 @@ impl Handler for H<'_> {
                     rsp,
                 );
             }
+            Uri::RelayRx | Uri::RelayTx => {
+                let con = req.msg.ty() == opentrust_coap::message::Type::Con;
+                self.deferred.push((uri, con, req.msg.payload().to_vec()));
+            }
             Uri::EnergyScan => self.srv.energy.handle_request(now, req, rsp),
             Uri::PanIdQuery => self.srv.panq.handle_request(now, req, rsp),
             Uri::AnnounceBegin => self.srv.ab.handle_request(now, req, rsp),
@@ -384,6 +397,8 @@ impl Net {
                 Uri::PanIdQuery,
                 Uri::PanIdConflict,
                 Uri::AnnounceBegin,
+                Uri::RelayRx,
+                Uri::RelayTx,
             ] {
                 agent.register(u).unwrap();
             }
@@ -409,9 +424,11 @@ impl Net {
                 set_results: std::vec::Vec::new(),
                 responses: std::vec::Vec::new(),
                 was_leader: false,
+                cm: Default::default(),
             });
         }
         let mut net = Self {
+            cx: Default::default(),
             sim,
             nodes,
             commissioner: None,
@@ -590,8 +607,13 @@ impl Net {
 
     fn deliver(&mut self, to: usize, src: Ipv6Addr, d: &Datagram) {
         let now = self.sim.now;
+        if d.dst_port != opentrust_coap::tmf::UDP_PORT {
+            // UDP proxy traffic to a Commissioner ALOC.
+            self.deliver_proxy(to, src, d);
+            return;
+        }
         let meta = UdpMeta {
-            peer: SocketAddrV6::new(src, 61631, 0, 0),
+            peer: SocketAddrV6::new(src, d.src_port, 0, 0),
             local: SocketAddrV6::new(d.dst, d.dst_port, 0, 0),
             hop_limit: 64,
             ecn: 0,
@@ -600,6 +622,7 @@ impl Net {
         let node = &mut self.nodes[to];
         let mut shared = node.shared.borrow_mut();
         let mut h = H {
+            deferred: &mut node.cm.deferred,
             shared: &mut shared,
             nd: &mut node.nd,
             ls: &mut node.leader_state,
@@ -620,6 +643,14 @@ impl Net {
         let bumps = core::mem::take(&mut shared.env.bumps);
         drop(shared);
         match r {
+            TmfRx::Response { user, msg, .. } if crate::net_sim_commissioning::is_cm_user(user) => {
+                let p = msg.payload().to_vec();
+                let code = msg.code();
+                self.cm_response(to, user, Ok((code, p)));
+            }
+            TmfRx::Failed { user, error } if crate::net_sim_commissioning::is_cm_user(user) => {
+                self.cm_response(to, user, Err(error));
+            }
             TmfRx::Response { user, msg, .. } => {
                 if let Some(t) = mgmt::set_user_type(user) {
                     let res = mgmt::set_response(&msg);
@@ -674,6 +705,7 @@ impl Net {
             for i in 0..self.nodes.len() {
                 self.sync_node(i);
                 self.mirror_nd(i);
+                let mut cm_timeouts = std::vec::Vec::new();
                 // Timers and requests of the dataset managers.
                 {
                     let role = self.sim.nodes[i].mle.role();
@@ -699,6 +731,12 @@ impl Net {
                     moved |= sent > 0;
                     while let Some(ev) = node.agent.poll(now, &mut node.sink) {
                         if let Event::Timeout { user } = ev
+                            && crate::net_sim_commissioning::is_cm_user(user)
+                        {
+                            cm_timeouts.push(user);
+                            continue;
+                        }
+                        if let Event::Timeout { user } = ev
                             && let Some(t) = mgmt::set_user_type(user)
                         {
                             node.set_results
@@ -707,6 +745,10 @@ impl Net {
                         }
                     }
                 }
+                for user in cm_timeouts {
+                    self.cm_response(i, user, Err(opentrust_core::Error::ResponseTimeout));
+                }
+                moved |= self.run_commissioning(i);
                 {
                     let is_leader = self.sim.nodes[i].mle.role() == Role::Leader;
                     let node = &mut self.nodes[i];
@@ -723,6 +765,7 @@ impl Net {
                     moved = true;
                 }
             }
+            moved |= self.move_air();
             for i in 0..self.nodes.len() {
                 let out = core::mem::take(&mut self.nodes[i].sink.out);
                 for d in out {
@@ -815,8 +858,10 @@ impl Net {
                     n.srv.energy.next_deadline(),
                     n.srv.panq.next_deadline(),
                     n.srv.ab.next_deadline(),
+                    n.cm.next_deadline(),
                 ]
             })
+            .chain([self.cx.next_deadline()])
             .flatten()
             .min()
     }
