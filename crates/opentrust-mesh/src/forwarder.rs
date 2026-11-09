@@ -117,6 +117,11 @@ pub struct TxFrame<'a> {
     pub frame_pending: bool,
     /// Send as an indirect transmission (after a data poll).
     pub indirect: bool,
+    /// The destination is a CSL synchronized child: the MAC sends the frame
+    /// in the child's next sample window (its data poll still serves it if
+    /// the windows are missed), see
+    /// [`MeshForwarder::csl_flush`]. Implies `indirect`.
+    pub csl: bool,
 }
 
 /// Where the forwarder puts frames and notifications.
@@ -548,6 +553,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 link_security,
                 frame_pending: false,
                 indirect: false,
+                csl: false,
             })?;
         }
         Ok(())
@@ -628,7 +634,11 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             return SendResult::Dropped(DropReason::Invalid);
         }
         let queued = if h.dst.is_multicast() && !mpl_retransmission {
-            self.queue_multicast_for_sleepy_children(r, &h.dst, datagram)
+            let n = self.queue_multicast_for_sleepy_children(r, &h.dst, datagram);
+            if n > 0 {
+                self.csl_flush(r, sink);
+            }
+            n
         } else {
             0
         };
@@ -645,7 +655,10 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         }
         match Self::route(now, r, resolver, &h.src, &h.dst, link_security, events) {
             Ok(Route::Indirect { child }) => match self.indirect.enqueue(child, datagram) {
-                Ok(()) => SendResult::Indirect(child),
+                Ok(()) => {
+                    self.csl_flush(r, sink);
+                    SendResult::Indirect(child)
+                }
                 Err(_) => SendResult::Dropped(DropReason::NoBufs),
             },
             Ok(route) => match self.transmit(r, datagram, &h.src, route, link_security, sink) {
@@ -703,6 +716,43 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
     }
 
     // ------------------------------------------------------------ sleepy children
+
+    /// Hand the queued messages of every CSL synchronized sleepy child to
+    /// `sink` (frames with [`TxFrame::csl`]); the MAC transmits them in the
+    /// child's sample windows and keeps them for its data poll if that fails
+    /// (OT `CslTxScheduler` requests a frame ahead of each window; here the
+    /// MAC holds the frames and does the timing). Returns the number of
+    /// frames handed over. Called after queueing a message; call it again
+    /// when a child became CSL synchronized (`Mle::child_csl_synchronized`)
+    /// with messages already queued.
+    pub fn csl_flush<
+        const C: usize,
+        const U: usize,
+        const M: usize,
+        CP: ContextProvider + ?Sized,
+        ND: ?Sized,
+        S: FrameSink + ?Sized,
+    >(
+        &mut self,
+        r: &Routing<'_, C, U, M, CP, ND>,
+        sink: &mut S,
+    ) -> usize {
+        let mut sent = 0;
+        for c in r.mle.children().iter(StateFilter::Valid) {
+            if c.neighbor.mode.rx_on_when_idle() || !c.csl_synchronized {
+                continue;
+            }
+            let child = c.neighbor.rloc16;
+            let n =
+                self.indirect
+                    .flush_csl(child, r.mle.rloc16(), r.contexts, MAX_FRAME_PAYLOAD, sink);
+            if n > 0 {
+                self.note_child_message_sent(child);
+            }
+            sent += n;
+        }
+        sent
+    }
 
     /// The child (RLOC16) a data poll with MAC source `mac_src` came from.
     fn poll_child<const C: usize, const U: usize, const M: usize, CP: ?Sized, ND: ?Sized>(
@@ -1007,6 +1057,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             link_security: true,
             frame_pending: false,
             indirect: false,
+            csl: false,
         }) {
             Ok(()) => Rx::Forwarded,
             Err(_) => Rx::Dropped(DropReason::Link),

@@ -400,6 +400,16 @@ pub struct Child {
     pub supervision_interval: u16,
     /// Seconds since the last supervision message to the child.
     pub seconds_since_supervision: u16,
+    /// The child's CSL transmissions are synchronized: a frame with a CSL IE
+    /// was received since the last (re)attach (OT `mCslSynchronized`).
+    pub csl_synchronized: bool,
+    /// CSL synchronized timeout the child asked for, seconds (OT
+    /// `mCslTimeout`; 0 = none yet).
+    pub csl_timeout_secs: u32,
+    /// CSL channel of the child (0 = the PAN channel).
+    pub csl_channel: u8,
+    /// When a frame with a CSL IE was last received from the child.
+    pub csl_last_heard: Instant,
     ml_eid_iid: Option<Iid>,
     addresses: Vec<Ipv6Addr, CHILD_MAX_ADDRESSES>,
     multicast: Vec<MulticastListener, CHILD_MAX_MULTICAST_ADDRESSES>,
@@ -415,6 +425,10 @@ impl Child {
             network_data_version: 0,
             supervision_interval: 0,
             seconds_since_supervision: 0,
+            csl_synchronized: false,
+            csl_timeout_secs: 0,
+            csl_channel: 0,
+            csl_last_heard: now,
             ml_eid_iid: None,
             addresses: Vec::new(),
             multicast: Vec::new(),
@@ -443,6 +457,20 @@ impl Child {
             mode: self.neighbor.mode.to_bits(),
             version: self.neighbor.version,
         }
+    }
+
+    /// `true` if the child is a Thread 1.2+ device that can use CSL.
+    pub const fn is_csl_capable(&self) -> bool {
+        self.neighbor.version >= crate::consts::THREAD_VERSION_1_2
+    }
+
+    /// When the CSL synchronization of the child expires (`None` if it is
+    /// not synchronized).
+    pub fn csl_expiry(&self) -> Option<Instant> {
+        self.csl_synchronized.then(|| {
+            self.csl_last_heard
+                .saturating_add(Duration::from_secs(u64::from(self.csl_timeout_secs)))
+        })
     }
 
     /// The child's timeout as a [`Duration`].

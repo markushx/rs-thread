@@ -227,6 +227,39 @@ impl<const C: usize> Mle<C> {
         self.children.clear();
     }
 
+    /// A frame with a CSL IE from `child` was received (the MAC's CSL
+    /// table updated its phase): the child is CSL synchronized (OT
+    /// `Mac::ProcessCsl`). Returns `false` for an unknown child.
+    pub fn child_csl_synchronized(&mut self, child: Rloc16, now: Instant) -> bool {
+        match self
+            .children
+            .find_by_rloc_mut(child, StateFilter::AnyExceptInvalid)
+        {
+            Some(c) => {
+                c.csl_synchronized = true;
+                c.csl_last_heard = now;
+                if c.csl_timeout_secs == 0 {
+                    // Until the child announces its timeout, use its child
+                    // timeout.
+                    c.csl_timeout_secs = c.timeout_secs;
+                }
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The MAC lost the child's CSL synchronization (frames to it failed in
+    /// its windows): data polls serve it again until it sends a CSL IE.
+    pub fn child_csl_desynchronized(&mut self, child: Rloc16) {
+        if let Some(c) = self
+            .children
+            .find_by_rloc_mut(child, StateFilter::AnyExceptInvalid)
+        {
+            c.csl_synchronized = false;
+        }
+    }
+
     // ------------------------------------------------------------ timers
 
     pub(crate) fn parent_deadline(&self) -> Option<Instant> {
@@ -243,6 +276,7 @@ impl<const C: usize> Mle<C> {
             if let Some(t) = child_expiry(c) {
                 d = min_opt(d, Some(t));
             }
+            d = min_opt(d, c.csl_expiry());
         }
         d
     }
@@ -288,6 +322,14 @@ impl<const C: usize> Mle<C> {
             .collect();
         for idx in expired {
             self.remove_child(env, idx);
+        }
+        // CSL synchronization of a child that stopped sending CSL IEs
+        // expires: back to data polls (OT `HandleTimeTick`).
+        for c in self.children.iter_mut(StateFilter::AnyExceptInvalid) {
+            if c.csl_expiry().is_some_and(|t| now >= t) {
+                c.csl_synchronized = false;
+                env.csl_child_desync(&c.neighbor.ext_address, c.neighbor.rloc16);
+            }
         }
         // Child supervision, once a second.
         if self.parent_side.tick.is_some_and(|t| now >= t) {
@@ -363,6 +405,9 @@ impl<const C: usize> Mle<C> {
             });
         }
         if !c.neighbor.is_rx_on_when_idle() {
+            if c.csl_synchronized {
+                env.csl_child_desync(&c.neighbor.ext_address, c.neighbor.rloc16);
+            }
             env.indirect_remove_child(&c.neighbor.ext_address, c.neighbor.rloc16);
         }
         let _ = env.delete_child_info(&c.neighbor.ext_address);
@@ -506,11 +551,16 @@ impl<const C: usize> Mle<C> {
             .ok_or(Error::NotFound)?;
         let mut mine = [0u8; 8];
         env.fill_random(&mut mine);
-        let margin = {
+        let (margin, csl_capable) = {
             let nf = env.noise_floor();
             let c = self.children.get_mut(idx).ok_or(Error::NotFound)?;
             c.neighbor.challenge = mine;
-            c.neighbor.link_info.link_margin(nf)
+            (c.neighbor.link_info.link_margin(nf), c.is_csl_capable())
+        };
+        let csl_accuracy = if csl_capable {
+            env.csl_clock_accuracy()
+        } else {
+            None
         };
         let rloc = self.rloc16;
         let leader = self.leader_data;
@@ -527,6 +577,9 @@ impl<const C: usize> Mle<C> {
             w.challenge(&mine)?;
             w.link_margin(margin)?;
             w.connectivity(&conn)?;
+            if let Some(a) = csl_accuracy {
+                w.csl_clock_accuracy(a)?;
+            }
             w.version(Self::VERSION)
         })
     }
@@ -985,10 +1038,31 @@ impl<const C: usize> Mle<C> {
             Err(Error::NotFound) => {}
             Err(e) => return Err(e),
         }
+        let csl_timeout = match t.csl_timeout() {
+            Ok(v) => Some(v),
+            Err(Error::NotFound) => None,
+            Err(e) => return Err(e),
+        };
+        let csl_channel = t
+            .csl_channel()
+            .ok()
+            .and_then(|c| u8::try_from(c.channel).ok());
         let noise = env.noise_floor();
         let c = self.children.get_mut(idx).ok_or(Error::NotFound)?;
         let old_mode = c.neighbor.mode;
         c.neighbor.mode = mode;
+        // OT: CSL parameters are only taken from a child that is already
+        // CSL synchronized (the request itself carried a CSL IE).
+        if c.csl_synchronized {
+            if let Some(secs) = csl_timeout {
+                c.csl_timeout_secs = secs;
+                // The answer must include our CSL accuracy.
+                add_unique(&mut list, ty::CSL_CLOCK_ACCURACY);
+            }
+            if let Some(ch) = csl_channel {
+                c.csl_channel = ch;
+            }
+        }
         match Self::process_address_registration(env, c, rx) {
             Ok(()) => add_unique(&mut list, ty::ADDRESS_REGISTRATION),
             Err(Error::NotFound) => {}
@@ -1019,14 +1093,22 @@ impl<const C: usize> Mle<C> {
             c.neighbor.is_rx_on_when_idle(),
         );
         let restoring = c.neighbor.state.is_restoring();
+        let csl_update = c.csl_synchronized.then_some(c.csl_channel);
         if old_mode != mode {
             changed = true;
+            if new_rx_on && c.csl_synchronized {
+                c.csl_synchronized = false;
+                env.csl_child_desync(&ext, rloc);
+            }
             // OT IndirectSender::HandleChildModeChange.
             if !old_mode.rx_on_when_idle() && new_rx_on {
                 env.indirect_remove_child(&ext, rloc);
             } else if old_mode.rx_on_when_idle() && !new_rx_on {
                 env.indirect_add_child(&ext, rloc);
             }
+        }
+        if let Some(ch) = csl_update.filter(|_| !new_rx_on) {
+            env.csl_child_update(&ext, rloc, ch);
         }
         if restoring {
             self.child_to_valid(env, now, idx);
@@ -1059,6 +1141,7 @@ impl<const C: usize> Mle<C> {
             n
         });
         let noise = env.noise_floor();
+        let csl_accuracy = env.csl_clock_accuracy();
         let (mode, margin, timeout, sup, addrs) = match idx.and_then(|i| self.children.get(i)) {
             Some(c) => {
                 let mut entries = Vec::<AddressEntry, 10>::new();
@@ -1111,6 +1194,11 @@ impl<const C: usize> Mle<C> {
                     ty::STATUS => w.status(crate::tlv::STATUS_ERROR)?,
                     ty::RESPONSE => w.response(&ch[..clen])?,
                     ty::NETWORK_DATA => w.network_data(&nd[..nd_len])?,
+                    ty::CSL_CLOCK_ACCURACY if !mode.rx_on_when_idle() => {
+                        if let Some(a) = csl_accuracy {
+                            w.csl_clock_accuracy(a)?;
+                        }
+                    }
                     _ => {}
                 }
             }

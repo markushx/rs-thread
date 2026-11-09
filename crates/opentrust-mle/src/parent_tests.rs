@@ -547,3 +547,127 @@ fn restored_child_is_asked_and_becomes_valid() {
         rloc16: Rloc16(0x0403)
     }));
 }
+
+// ---------------------------------------------------------------- CSL parent side
+
+const RADIO_ACC: crate::tlv::CslClockAccuracy = crate::tlv::CslClockAccuracy {
+    accuracy_ppm: 20,
+    uncertainty_10us: 5,
+};
+
+/// A CSL capable (Thread 1.2+) sleepy child attached to a router whose radio
+/// reports `RADIO_ACC`.
+fn csl_child() -> (Mle<4>, TestEnv, FakeChild, Instant) {
+    let (mut p, mut penv) = router();
+    penv.csl_radio = Some(RADIO_ACC);
+    let mut c = FakeChild::new(1, SLEEPY);
+    let req = c.parent_request(0x80, [3; 8]);
+    TestEnv::deliver(&req, &mut p, &mut penv, T0, -60).unwrap();
+    let t = T0 + Duration::from_millis(501);
+    p.poll(&mut penv, t);
+    let out = penv.take_out();
+    let mut ch = [0u8; 8];
+    decode(&out[0], &c.env, |rx| {
+        // Parent Response carries the CSL accuracy for a Thread 1.2+ child.
+        assert_eq!(rx.tlvs.csl_clock_accuracy().unwrap(), RADIO_ACC);
+        ch.copy_from_slice(rx.tlvs.challenge().unwrap());
+    });
+    let req = c.child_id_request(&penv, &ch, 240, false);
+    TestEnv::deliver(&req, &mut p, &mut penv, t, -60).unwrap();
+    penv.take_out();
+    (p, penv, c, t)
+}
+
+fn csl_update(c: &mut FakeChild, penv: &TestEnv, timeout: u32, channel: u16) -> Out {
+    c.msg(ll(&penv.ext), Command::ChildUpdateRequest, |w| {
+        w.mode(SLEEPY)?;
+        w.source_address(Rloc16(0x0401))?;
+        w.leader_data(&leader())?;
+        w.timeout(240)?;
+        w.csl_channel(crate::tlv::ChannelValue { page: 0, channel })?;
+        w.csl_timeout(timeout)
+    })
+}
+
+#[test]
+fn csl_child_update_stores_parameters_and_answers_with_accuracy() {
+    let (mut p, mut penv, mut c, t) = csl_child();
+    // Not synchronized yet: the CSL TLVs are ignored (OT) and no accuracy.
+    let upd = csl_update(&mut c, &penv, 30, 20);
+    TestEnv::deliver(&upd, &mut p, &mut penv, t, -60).unwrap();
+    let out = penv.take_out();
+    decode(&out[0], &c.env, |rx| {
+        assert!(!rx.tlvs.contains(ty::CSL_CLOCK_ACCURACY));
+    });
+    assert!(penv.csl_tracked.is_empty());
+    // A frame with a CSL IE synchronizes the child.
+    assert!(p.child_csl_synchronized(Rloc16(0x0401), t));
+    assert!(!p.child_csl_synchronized(Rloc16(0x0499), t));
+    let upd = csl_update(&mut c, &penv, 30, 20);
+    TestEnv::deliver(&upd, &mut p, &mut penv, t, -60).unwrap();
+    let out = penv.take_out();
+    decode(&out[0], &c.env, |rx| {
+        assert_eq!(rx.tlvs.csl_clock_accuracy().unwrap(), RADIO_ACC);
+    });
+    let ci = p
+        .children()
+        .find_by_ext(&c.env.ext, StateFilter::Valid)
+        .unwrap();
+    assert!(ci.csl_synchronized);
+    assert_eq!((ci.csl_timeout_secs, ci.csl_channel), (30, 20));
+    assert_eq!(&penv.csl_tracked[..], &[(c.env.ext, Rloc16(0x0401), 20)]);
+}
+
+#[test]
+fn csl_synchronization_expires_after_the_csl_timeout() {
+    let (mut p, mut penv, mut c, t) = csl_child();
+    p.child_csl_synchronized(Rloc16(0x0401), t);
+    let upd = csl_update(&mut c, &penv, 30, 0);
+    TestEnv::deliver(&upd, &mut p, &mut penv, t, -60).unwrap();
+    penv.take_out();
+    // The deadline is the CSL timeout, well before the child timeout.
+    let expiry = t + Duration::from_secs(30);
+    assert!(p.next_deadline().unwrap() <= expiry);
+    p.poll(&mut penv, expiry - Duration::from_secs(1));
+    assert!(penv.csl_desyncs.is_empty());
+    // A new CSL IE postpones it.
+    p.child_csl_synchronized(Rloc16(0x0401), t + Duration::from_secs(20));
+    p.poll(&mut penv, expiry);
+    assert!(penv.csl_desyncs.is_empty());
+    let late = t + Duration::from_secs(50);
+    p.poll(&mut penv, late);
+    assert_eq!(&penv.csl_desyncs[..], &[(c.env.ext, Rloc16(0x0401))]);
+    let ci = p
+        .children()
+        .find_by_ext(&c.env.ext, StateFilter::Valid)
+        .unwrap();
+    assert!(!ci.csl_synchronized);
+}
+
+#[test]
+fn csl_child_going_rx_on_is_desynchronized() {
+    let (mut p, mut penv, mut c, t) = csl_child();
+    p.child_csl_synchronized(Rloc16(0x0401), t);
+    c.mode = RX_ON;
+    let upd = c.msg(ll(&penv.ext), Command::ChildUpdateRequest, |w| {
+        w.mode(RX_ON)?;
+        w.source_address(Rloc16(0x0401))?;
+        w.leader_data(&leader())?;
+        w.timeout(240)
+    });
+    TestEnv::deliver(&upd, &mut p, &mut penv, t, -60).unwrap();
+    assert_eq!(&penv.csl_desyncs[..], &[(c.env.ext, Rloc16(0x0401))]);
+}
+
+#[test]
+fn router_without_csl_radio_omits_the_accuracy() {
+    let (mut p, mut penv) = router();
+    let mut c = FakeChild::new(1, SLEEPY);
+    let req = c.parent_request(0x80, [3; 8]);
+    TestEnv::deliver(&req, &mut p, &mut penv, T0, -60).unwrap();
+    p.poll(&mut penv, T0 + Duration::from_millis(501));
+    let out = penv.take_out();
+    decode(&out[0], &c.env, |rx| {
+        assert!(!rx.tlvs.contains(ty::CSL_CLOCK_ACCURACY));
+    });
+}

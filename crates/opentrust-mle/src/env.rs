@@ -393,6 +393,19 @@ pub trait MleEnv {
     /// A sleepy child was removed: drop its indirect messages and
     /// source-match entries.
     fn indirect_remove_child(&mut self, _ext: &ExtAddress, _rloc16: Rloc16) {}
+    /// Clock accuracy and uncertainty of this device's radio, reported to
+    /// CSL children in the CSL Clock Accuracy TLV (OT
+    /// `Radio::GetCslAccuracy` / `GetCslUncertainty`). `None` (the default):
+    /// this device cannot transmit CSL frames and omits the TLV.
+    fn csl_clock_accuracy(&self) -> Option<crate::tlv::CslClockAccuracy> {
+        None
+    }
+    /// A child announced its CSL channel (0 = the PAN channel): track it for
+    /// CSL transmissions on that channel (its CSL IEs synchronize it).
+    fn csl_child_update(&mut self, _ext: &ExtAddress, _rloc16: Rloc16, _channel: u8) {}
+    /// A child is no longer CSL synchronized (CSL synchronized timeout,
+    /// mode change, removal): its frames wait for data polls again.
+    fn csl_child_desync(&mut self, _ext: &ExtAddress, _rloc16: Rloc16) {}
 
     /// Send a child supervision message (an empty frame / message that
     /// makes the sleepy child's data poll succeed) to a sleepy child.

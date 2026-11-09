@@ -745,3 +745,33 @@ fn data_poll_of_csl_receiver_carries_csl_ie_and_is_not_retried() {
             .any(|e| matches!(e, Event::DataPollSent(Err(_)))),
     );
 }
+
+#[test]
+fn csl_tx_window_follows_resynchronization_after_drift() {
+    set_radio(1_000_000);
+    let mut m = parent_mac(true);
+    let child = Address::Extended(CHILD_EXT);
+    m.csl_add_child(child).unwrap();
+    queue_downlink(&mut m, 1);
+    // First sync: frame at 250 ms, phase 160 ms: windows 410 ms + n * 500 ms.
+    sync_child(&mut m, 250_000, 1000);
+    actions_sec(&mut m, t(0));
+    assert_eq!(m.next_deadline(), Some(t(408_000)));
+    // The child's clock drifted: a later poll with a CSL IE (received at
+    // 700 ms, phase 100 ms) moves the windows to 800 ms + n * 500 ms; the
+    // frame is requested 2 ms before the next one after "now" (1.0 s).
+    sync_child(&mut m, 700_000, 625);
+    let c = *m.csl_child(child).unwrap();
+    assert_eq!((c.phase, c.last_rx_timestamp_us), (625, 700_000));
+    actions_sec(&mut m, t(0));
+    assert_eq!(m.next_deadline(), Some(t(298_000)));
+    // A child that stops sending CSL IEs is desynchronized by MLE: back to
+    // data polls, no CSL timer.
+    m.csl_child_desync(child);
+    actions_sec(&mut m, t(0));
+    assert_eq!(m.next_deadline(), None);
+    assert!(!m.csl_child(child).unwrap().synchronized);
+    // The next CSL IE synchronizes it again.
+    sync_child(&mut m, 1_700_000, 625);
+    assert!(m.csl_child(child).unwrap().synchronized);
+}

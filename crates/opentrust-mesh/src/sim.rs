@@ -244,6 +244,8 @@ pub struct FwdSink {
     pub frames: std::vec::Vec<(MacDest, std::vec::Vec<u8>, bool)>,
     /// Frame Pending bit of every indirect frame sent.
     pub pending_log: std::vec::Vec<bool>,
+    /// Frames sent for CSL synchronized children.
+    pub csl_frames: usize,
     pub unreachable: std::vec::Vec<std::vec::Vec<u8>>,
     pub loops: std::vec::Vec<(Rloc16, Rloc16)>,
 }
@@ -254,6 +256,7 @@ impl FrameSink for FwdSink {
         if f.indirect {
             self.pending_log.push(f.frame_pending);
         }
+        self.csl_frames += usize::from(f.csl);
         Ok(())
     }
     fn dest_unreachable(&mut self, invoking: &[u8]) {

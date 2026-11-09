@@ -91,6 +91,12 @@ pub struct TestEnv {
     /// CSL parameters set by the core: period, channel, parent.
     pub csl: Option<(u16, u8, ExtAddress, Rloc16)>,
     pub csl_accuracy: Option<crate::tlv::CslClockAccuracy>,
+    /// This device's own radio CSL accuracy (parent side).
+    pub csl_radio: Option<crate::tlv::CslClockAccuracy>,
+    /// Children tracked for CSL transmission: ext, RLOC16, channel.
+    pub csl_tracked: Vec<(ExtAddress, Rloc16, u8), 8>,
+    /// Children reported as no longer CSL synchronized.
+    pub csl_desyncs: Vec<(ExtAddress, Rloc16), 8>,
     pub parent: Option<(ExtAddress, Rloc16)>,
     pub events: Vec<MleEvent, 256>,
     pub nd: Vec<u8, 512>,
@@ -146,6 +152,9 @@ impl TestEnv {
             poll: None,
             csl: None,
             csl_accuracy: None,
+            csl_radio: None,
+            csl_tracked: Vec::new(),
+            csl_desyncs: Vec::new(),
             parent: None,
             events: Vec::new(),
             nd: Vec::new(),
@@ -361,6 +370,15 @@ impl MleEnv for TestEnv {
     }
     fn set_csl_parent_accuracy(&mut self, accuracy: crate::tlv::CslClockAccuracy) {
         self.csl_accuracy = Some(accuracy);
+    }
+    fn csl_clock_accuracy(&self) -> Option<crate::tlv::CslClockAccuracy> {
+        self.csl_radio
+    }
+    fn csl_child_update(&mut self, ext: &ExtAddress, rloc16: Rloc16, channel: u8) {
+        let _ = self.csl_tracked.push((*ext, rloc16, channel));
+    }
+    fn csl_child_desync(&mut self, ext: &ExtAddress, rloc16: Rloc16) {
+        let _ = self.csl_desyncs.push((*ext, rloc16));
     }
     fn mesh_local_prefix(&self) -> Prefix64 {
         MLP

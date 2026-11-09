@@ -47,8 +47,8 @@ use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_core::{Error, Result};
 use opentrust_mac::security::LinkFrameCounters;
 
-use crate::csl::csl_parent_metric;
 use crate::consts::{PARENT_REQ_SCANMASK_R_TIMEOUT, PARENT_REQ_SCANMASK_RE_TIMEOUT};
+use crate::csl::csl_parent_metric;
 use crate::endpoint::MleRx;
 use crate::env::{MleEnv, MleEvent, Role, StoredDataset};
 use crate::link_quality::{INVALID_RSSI, LinkQuality, compute_link_margin};
@@ -56,8 +56,8 @@ use crate::message::Command;
 use crate::mle::{Mle, NbRef, RxClass};
 use crate::neighbor::{MleReplay, Neighbor, NeighborState, Parent, Router};
 use crate::tlv::{
-    Connectivity, CslClockAccuracy, DeviceMode, LeaderData, ParentPriority, SCAN_MASK_END_DEVICE, SCAN_MASK_ROUTER,
-    ty,
+    Connectivity, CslClockAccuracy, DeviceMode, LeaderData, ParentPriority, SCAN_MASK_END_DEVICE,
+    SCAN_MASK_ROUTER, ty,
 };
 
 /// Child ID Response wait time (OT `kChildIdResponseTimeout`).
@@ -633,9 +633,7 @@ impl<const C: usize> Mle<C> {
         let two_way_margin = compute_link_margin(env.noise_floor(), rss).min(margin_out);
         let conn = t.connectivity()?;
         // Parents that do not report their CSL accuracy count as the worst.
-        let csl_accuracy = t
-            .csl_clock_accuracy()
-            .unwrap_or(CslClockAccuracy::WORST);
+        let csl_accuracy = t.csl_clock_accuracy().unwrap_or(CslClockAccuracy::WORST);
         let csl_metric_input =
             (!self.is_rx_on_when_idle()).then(|| (self.effective_csl_timeout(), csl_accuracy));
         #[cfg(feature = "ftd")]

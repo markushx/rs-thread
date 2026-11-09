@@ -132,7 +132,11 @@ impl<const C: usize> Mle<C> {
             p = p.min(Duration::from_secs(u64::from(self.effective_csl_timeout())));
             ahead = Duration::from_secs(1);
         }
-        if p > ahead { p.saturating_sub(ahead) } else { p }
+        if p > ahead {
+            p.saturating_sub(ahead)
+        } else {
+            p
+        }
     }
 
     pub(crate) fn recalculate_poll_period<E: MleEnv>(&mut self, env: &mut E) {

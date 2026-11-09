@@ -374,6 +374,47 @@ impl<const N: usize> IndirectQueue<N> {
         }
     }
 
+    /// Hand every queued frame of `child` to `sink` as CSL frames (the
+    /// child is CSL synchronized): the messages are consumed as the sink
+    /// accepts their frames. A frame the sink refuses (MAC queue full) stays
+    /// queued, counts as a failed attempt (the message is dropped after
+    /// [`MAX_POLL_TX_ATTEMPTS`]) and stops the flush; the child's data poll
+    /// or the next flush picks it up. Returns the number of frames accepted.
+    pub fn flush_csl<C: ContextProvider + ?Sized, S: FrameSink + ?Sized>(
+        &mut self,
+        child: Rloc16,
+        own_rloc16: Rloc16,
+        contexts: &C,
+        max_payload: usize,
+        sink: &mut S,
+    ) -> usize {
+        let mut buf = [0u8; 128];
+        let mut sent = 0;
+        while self.count(child) > 0 {
+            let Ok(f) = self.next_frame(child, own_rloc16, contexts, max_payload, &mut buf) else {
+                break;
+            };
+            let ok = sink
+                .transmit(&TxFrame {
+                    dst: MacDest::Short(child),
+                    payload: &buf[..f.len],
+                    link_security: true,
+                    frame_pending: false,
+                    indirect: true,
+                    csl: true,
+                })
+                .is_ok();
+            if f.message {
+                self.frame_result(child, own_rloc16, contexts, max_payload, ok);
+            }
+            if !ok {
+                break;
+            }
+            sent += 1;
+        }
+        sent
+    }
+
     /// Answer a data poll from `child`: send its next frame (an empty
     /// frame if nothing is queued) through `sink` and record the result.
     pub fn handle_data_poll<C: ContextProvider + ?Sized, S: FrameSink + ?Sized>(
@@ -393,6 +434,7 @@ impl<const N: usize> IndirectQueue<N> {
                 link_security: true,
                 frame_pending: f.frame_pending,
                 indirect: true,
+                csl: false,
             })
             .is_ok();
         if f.message {

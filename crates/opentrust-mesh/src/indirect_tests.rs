@@ -46,6 +46,9 @@ fn datagram(len: usize) -> std::vec::Vec<u8> {
 struct Frames {
     sent: std::vec::Vec<(std::vec::Vec<u8>, bool)>,
     fail: bool,
+    csl: usize,
+    /// Refuse frames once this many were accepted (a full MAC queue).
+    limit: Option<usize>,
 }
 
 impl FrameSink for Frames {
@@ -54,6 +57,10 @@ impl FrameSink for Frames {
             return Err(Error::Abort);
         }
         assert!(f.indirect);
+        if self.limit.is_some_and(|l| self.sent.len() >= l) {
+            return Err(Error::NoBufs);
+        }
+        self.csl += usize::from(f.csl);
         self.sent.push((f.payload.to_vec(), f.frame_pending));
         Ok(())
     }
@@ -426,4 +433,98 @@ fn queued_messages_become_direct_when_the_child_stops_sleeping() {
     assert_eq!(&m.tmf[4].delivered[1][48..], b"second");
     assert_eq!(queued(&m), 0);
     assert!(m.tmf[3].fwd.indirect.src_match_children().next().is_none());
+}
+
+#[test]
+fn csl_flush_hands_all_fragments_to_the_mac_at_once() {
+    let mut q = IndirectQueue::<4>::new(1);
+    let d = datagram(300);
+    q.enqueue(CHILD, &d).unwrap();
+    q.enqueue(CHILD, &datagram(5)).unwrap();
+    let mut s = Frames::default();
+    let n = q.flush_csl(CHILD, OWN, &NoContexts, 106, &mut s);
+    // Fragments of the first message, then the second message.
+    assert!(n >= 5, "{n}");
+    assert_eq!(s.csl, n);
+    assert!(q.is_empty());
+    assert!(!q.frame_pending(CHILD));
+    // Nothing sent for another child.
+    assert_eq!(q.flush_csl(OTHER, OWN, &NoContexts, 106, &mut s), 0);
+    // Reassembles to the first datagram.
+    let mut r = opentrust_lowpan::reassembly::Reassembler::<1>::new();
+    let src = opentrust_mac::frame::Address::Short(OWN.into());
+    let dst = opentrust_mac::frame::Address::Short(CHILD.into());
+    let mut out = None;
+    for (f, _) in &s.sent {
+        if let opentrust_lowpan::reassembly::Reassembled::Complete(c) = r
+            .handle_fragment(
+                opentrust_core::time::Instant::from_secs(1),
+                &NoContexts,
+                &src,
+                &dst,
+                true,
+                f,
+            )
+            .unwrap()
+        {
+            out = Some(c.to_vec());
+            break;
+        }
+    }
+    assert_eq!(out.unwrap(), d);
+}
+
+#[test]
+fn csl_flush_stops_when_the_mac_is_full_and_polls_take_over() {
+    let mut q = IndirectQueue::<4>::new(1);
+    q.enqueue(CHILD, &datagram(300)).unwrap();
+    let mut s = Frames {
+        limit: Some(2),
+        ..Frames::default()
+    };
+    assert_eq!(q.flush_csl(CHILD, OWN, &NoContexts, 106, &mut s), 2);
+    // The rest stays queued (as a failed attempt) and goes out on polls.
+    assert!(q.frame_pending(CHILD));
+    let mut p = Frames::default();
+    let mut polls = 0;
+    while q.frame_pending(CHILD) {
+        poll(&mut q, CHILD, &mut p);
+        polls += 1;
+        assert!(polls < 10);
+    }
+    assert_eq!(polls + 2, s.sent.len() + p.sent.len());
+    // Repeated refusals drop the message after the attempt limit.
+    q.enqueue(CHILD, &datagram(4)).unwrap();
+    let mut full = Frames {
+        limit: Some(0),
+        ..Frames::default()
+    };
+    for _ in 0..MAX_POLL_TX_ATTEMPTS {
+        q.flush_csl(CHILD, OWN, &NoContexts, 106, &mut full);
+    }
+    assert!(q.is_empty());
+}
+
+#[test]
+fn datagram_for_a_csl_synchronized_child_is_sent_without_a_data_poll() {
+    let mut m = line_with_sleepy();
+    let child = m.sim.nodes[4].mle.rloc16();
+    let now = m.sim.now;
+    // A frame with a CSL IE from the child reached its parent.
+    assert!(m.sim.nodes[3].mle.child_csl_synchronized(child, now));
+    let eid = m.ml_eid(4);
+    assert_eq!(m.send_udp(0, eid, b"csl"), SendResult::Held);
+    assert!(m.run_until(secs(10), |s| s.tmf[4].delivered.len() == 1));
+    assert_eq!(&m.tmf[4].delivered[0][48..], b"csl");
+    assert_eq!(queued(&m), 0);
+    assert!(m.tmf[3].fsink.csl_frames > 0);
+    // After the CSL synchronization is lost the child is polled again.
+    m.sim.nodes[3].mle.child_csl_desynchronized(child);
+    let before = m.tmf[3].fsink.csl_frames;
+    assert_eq!(m.send_udp(0, eid, b"poll"), SendResult::Sent);
+    assert!(m.run_until(secs(10), |s| queued(s) == 1));
+    assert_eq!(m.tmf[3].fsink.csl_frames, before);
+    let (fp, _) = m.data_poll(4);
+    assert!(fp);
+    assert_eq!(m.tmf[4].delivered.len(), 2);
 }
