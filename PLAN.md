@@ -235,7 +235,11 @@ Security-relevant decisions for the review before M4:
 - [x] SRP client (RFC 9665) & DNS-SD client (1.3) — **pulled forward**: required by Matter for operational discovery (`_matter._tcp`); target M4 (`opentrust-dns`: `wire` / `rdata` DNS codec with name compression, TXT, KEY / SIG(0), OPT Update Lease; `client` DNS / DNS-SD client: AAAA, browse, SRV+TXT resolve; `srp` SRP client with SIG(0) ECDSA P-256 signing (`opentrust_core::crypto::ecdsa`), lease refresh, OT retry backoff, Network Data auto-start with unicast / anycast selection and server switching; tests against a scripted fake server, no simulator end-to-end test yet)
   - [ ] SRP server (advertising proxy), DNS-SD discovery proxy, mDNS, DNS over TCP, NAT64 (A record) queries, SRP client end-to-end test in the mesh simulator (a node acting as SRP server), Network Data adapter feeding `SrpClient::handle_network_data` from `opentrust_mesh::netdata::view::ServiceEntry`
 - [ ] TREL hooks (optional, 1.3)
-- [ ] Thread 1.4 additions: ephemeral key / ePSKc Border Agent, TCAT (BLE commissioning) — scope review, mark optional
+- [ ] Thread 1.4 additions: ephemeral key / ePSKc Border Agent
+- [ ] TCAT (Thread Commissioning over Authenticated TLS, BLE commissioning) — **optional**; scope review done (ADR 0002, option (b)):
+  - [ ] Transport- and TLS-agnostic TCAT engine in `opentrust-meshcop` (feature `tcat`, default off): command TLVs, command classes, section 13.12.1 authorization over certificate claims, `TcatSecureTransport` seam
+  - [ ] TLS 1.3 server with mutual certificate authentication (`TLS_AES_128_GCM_SHA256`, secp256r1, ECDSA) and a no-alloc X.509 chain validator on RustCrypto `p256` / `aes-gcm` / `der` (own crate, separate security review; ~2.5-3.5 kLOC)
+  - [ ] Thin BLE GATT adapter (TCAT service 0xFFFB, C1/C2, advertisement TLVs) on a BLE host such as `trouble-host`; TMF `/c/te` (TCAT_ENABLE)
 - [ ] Border Router role (feature `border-router`, `std`/Linux only initially): RA/RIO, OMR prefix, NAT64 hooks — likely defer
 
 ## Phase 10 – Public API & host interfaces
