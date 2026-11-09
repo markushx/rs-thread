@@ -2,7 +2,8 @@
 //! and keep-alive, `NetworkData::Leader::HandleTmf<kUriCommissionerSet>` /
 //! `<kUriCommissionerGet>`).
 //!
-//! Only the TMF / leader side is here: a commissioner (native over DTLS or
+//! Only the TMF / leader side is here (the Commissioner role is the
+//! `commissioner` module): a commissioner (native over DTLS or
 //! on-mesh) petitions the leader with `/c/lp`, keeps the session alive with
 //! `/c/la` and changes the Commissioning Data (Steering Data, Joiner UDP
 //! Port) with `/c/cs`. The leader stores the session in the Commissioning

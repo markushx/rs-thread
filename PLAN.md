@@ -126,8 +126,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] Automated differential/interop handshakes against `openthread-sys` / mbedTLS (Joiner and Commissioner, both roles, lossy links) (Phase 11)
   - [ ] Hardware P-256 backends for the `ecjpake::P256` trait (CryptoCell, CRACEN, ESP ECC) and an rs-matter `EcPoint`/`EcScalar` adapter (Phase 12)
   - [ ] Fuzz the record/handshake parsers and the EC-JPAKE readers (Phase 11)
-  - [ ] Security review of the EC-JPAKE/DTLS code before M4 (ADR 0001)
-  - [ ] Wire into MeshCoP Joiner / Commissioner / Border Agent (relay, ePSKc, connection-attempt limits, guard times) (Phase 8)
+  - [ ] Security review of the EC-JPAKE/DTLS code before M4 (ADR 0001); include the commissioning decisions listed under Phase 8b
+  - [x] Wire into MeshCoP Joiner / Commissioner / Border Agent (relay, connection-attempt limits, guard times) (Phase 8b; the roles own `opentrust_dtls::Session` directly via `opentrust_meshcop::secure`)
+    - [ ] ePSKc (Thread 1.4 ephemeral PSKc on the Border Agent) (Phase 9)
 
 ## Phase 6 – MLE (§4)
 
@@ -174,31 +175,50 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [x] Network Data Publisher (`netdata::publisher`: on-mesh prefix, external route, DNS/SRP anycast / unicast entries) and the `kBorderRouterRequest` decision in the notifier (`schedule_router_upgrade` / `router_upgrade_tick`)
   - [ ] Consume the router upgrade flag in the MLE (`is_router_eligible` Border Router rule), Backbone Router / DUA entries, DNS/SRP query helpers, DHCPv6 / ND agent ALOC subscription, Publisher driven by the Border Routing Manager (requester quotas)
 - [x] Anycast locators, Service ALOCs (Phase 7b: `netdata::aloc` (leader, service and commissioner ALOC set maintenance), `netdata::anycast` (`/a/yl`), `lookup::anycast_lookup` for leader / service / commissioner / DHCP / ND ALOCs)
-- [x] Commissioning datasets (Phase 8a: Active / Pending Operational Dataset, delay timer in `opentrust_meshcop::{dataset, manager, mgmt}`; the Commissioning Data TLV of Network Data is written by `Leader::set_commissioning_data` and `opentrust_meshcop::commissioner`)
+- [x] Commissioning datasets (Phase 8a: Active / Pending Operational Dataset, delay timer in `opentrust_meshcop::{dataset, manager, mgmt}`; the Commissioning Data TLV of Network Data is written by `Leader::set_commissioning_data` and `opentrust_meshcop::leader`)
 
 ## Phase 8 – MeshCoP / Commissioning (§8)
 
-Phase 8a (this batch, crate `opentrust-meshcop`, leader / router code behind feature `ftd`):
+Phase 8a (crate `opentrust-meshcop`, leader / router code behind feature `ftd`):
 
 - [x] MeshCoP TLV codec (`tlv`: all section 8.10 TLVs, Security Policy 1.2+ layout, Channel Mask page 0, State, Discovery Request / Response), Timestamp ordering (`timestamp`; `opentrust_mle::tlv::Timestamp::compare`), Steering Data bloom filter, Joiner ID, Joiner Discerner (`steering`; vectors of `test_meshcop.cpp`)
 - [x] Operational Dataset type (`dataset`: fixed 254 byte TLV buffer, validation, typed setters; vectors of `test_dataset.cpp`)
 - [x] Active / Pending dataset management (`manager::Datasets`: network and local timestamps, persistence hooks `DatasetEnv::{store, load, delete}`, Pending delay timer -> Active, timestamp rules on receipt through MLE, MGMT_SET retry toward the leader) and `/c/ag` `/c/pg` `/c/as` `/c/ps` `/c/ar` (`mgmt`: leader accept / reject rules, partial updates from the commissioner, Active updates that change connectivity become Pending, `/c/dc` notification, clients)
 - [x] Security Policy feeds router eligibility (`opentrust_mle::RoutingPolicy`, `Mle::set_routing_policy`)
-- [x] Leader commissioner session (`commissioner`: `/c/lp` petition, `/c/la` keep-alive, 50 s timeout, resign, `/c/cs` Commissioner Set, `/c/cg` Commissioner Get, Commissioning Data in Network Data)
+- [x] Leader commissioner session (`leader`, formerly `commissioner`: `/c/lp` petition, `/c/la` keep-alive, 50 s timeout, resign, `/c/cs` Commissioner Set, `/c/cg` Commissioner Get, Commissioning Data in Network Data)
 - [x] Discovery (`opentrust_mle::discovery` transport, `opentrust_meshcop::discovery` content, Steering Data filter, active scanner state machine), MLE Announce send / receive
 - [x] Energy Scan, PAN ID Query, Announce Begin servers and commissioner-side requests (`scan`: `/c/es` `/c/er` `/c/pq` `/c/pc` `/c/ab`)
 - [x] Multi-node tests (`net_sim`, `sim_tests`, `sim_scan_tests` over the MLE simulator with a TMF agent, dataset managers and commissioner state per node)
 - [x] Dataset Updater (`opentrust_meshcop::updater`) and persistence of the Pending delay across resets (checkpoint every 60 s)
-- [ ] `MGMT_COMMISSIONER_GET` by a commissioner client for the Commissioner Dataset (the leader side exists; `mgmt::send_get` is the request side for Active / Pending)
+- [x] `MGMT_COMMISSIONER_GET` by a commissioner client for the Commissioner Dataset (Phase 8b: `Commissioner::send_commissioner_get`, `MgmtResponse::CommissionerGet`)
 - [x] Announce attach state and Orphan Announces (see Phase 6b)
 - [ ] Reattach with the stored Active / Pending Dataset, periodic Announce sender (see Phase 6b)
 
-Open for the security batch (hooks exist, nothing implemented):
+Phase 8b (security part; features `ftd`, `commissioner`, `border-agent`, all default; a joiner-only device uses `default-features = false`):
 
-- [ ] Joiner: DTLS EC-JPAKE with the PSKd, Joiner Finalize, Joiner Entrust / KEK (`DiscoverScanner` and the Steering Data filter feed it; `opentrust_core::crypto::{pskc, ecjpake}` and `opentrust-dtls` exist)
-- [ ] Joiner Router: relay `/c/rx` `/c/tx`, Joiner Entrust, KEK derivation, Joiner UDP port from the Commissioning Data (`leader::joiner_udp_port`)
-- [ ] Commissioner: native (DTLS to the Border Agent) and on-mesh, Joiner list and Steering Data computation, commissioner dataset client (`mgmt::send_set` / `send_get` and `scan::send_*` are the request side)
-- [ ] Border Agent: DTLS server for external commissioners, `/c/ur` `/c/ut` proxy, Border Agent ID, Native Commissioner flag in Discovery Responses (`ResponseContent::native_commissioner`), `ProcessCommissionerGetRequest` with `kIgnoreSecurityPolicyFlags`
+- [x] Joiner (`joiner`, `pskd`): PSKd validation and secret handling, filtered discovery with OT candidate ranking, DTLS EC-JPAKE with the PSKd over the Joiner UDP port (unsecured link), JOIN_FIN with vendor TLVs / Provisioning URL, Joiner Entrust accepted only under key ID mode 0 (KEK), dataset saved, retries over the candidates, timeouts, events
+- [x] Joiner Router (`joiner_router`, feature `ftd`): Joiner UDP port from the Commissioning Data, relay `/c/rx` `/c/tx`, delayed Joiner Entrust under the KEK (dedicated CoAP endpoint, one in flight), answer handling; KEK derivation is in `opentrust-dtls` (`Session::kek`)
+- [x] MAC key ID mode 0 (`opentrust_mac::security::KeyManager::set_kek`)
+- [x] Commissioner (`commissioner`): petition / keep-alive / resign, session ID, Commissioner ALOC, Joiner list (any / EUI-64 / discerner, PSKd, expiry), Steering Data and `/c/cs`, `/c/rx` -> DTLS server per Joiner with that Joiner's PSKd, JOIN_FIN, `/c/tx` with the KEK, session timeout, Joiner removal, MGMT_COMMISSIONER_GET / SET, generic management requests; on-mesh `MeshTransport`
+- [x] Border Agent (`border_agent`): DTLS server keyed with the PSKc, COMM_PET / COMM_KA forwarding, local `/c/cg` `/c/ag` `/c/pg` (`kIgnoreSecurityPolicyFlags`), `/c/tx`, `/c/rx`, UDP proxy `/c/ut` `/c/ur`, Border Agent ID, native commissioner flag in Discovery Responses (`discovery::build_response_with_border_agent`), keep-alive timeout, guard time, connection-attempt limit; external Commissioner client (`BorderAgentClient`, `ExternalTransport`)
+- [x] Tests: unit tests per role (real Joiner against Commissioner / Border Agent through relay TLVs), end-to-end in the meshcop simulator (`net_sim_commissioning`, `commissioning_sim_tests`)
+- [ ] ePSKc, DNS-SD `_meshcop._udp` advertisement and state bitmap, several concurrent Border Agent sessions, Border Agent counters
+- [ ] Wire the roles into a full stack (MAC key ID mode 0 selection in the mesh forwarder, unsecure-port filter, KEK frames routed to `handle_kek_datagram`) once the integration layer exists (Phase 10)
+- [ ] Interop of Joiner / Commissioner / Border Agent against OpenThread (`openthread-sys`) nodes (Phase 11)
+
+Security-relevant decisions for the review before M4:
+
+- PSKd (`JoinerPskd`) and PSKc / KEK / network key (`opentrust_core::types` secret types) are wiped on drop or replacement, compared in constant time, redacted in `Debug` / `defmt`, and never logged (the commissioning modules log nothing; OT logs the PSKd).
+- `Dataset` wipes its TLV buffer on drop and `clear`; temporary buffers that held the Network Key, PSKc or KEK (Joiner Entrust payload, Relay Transmit with KEK, Border Agent get answers) are zeroized after use.
+- The Joiner accepts a Joiner Entrust only when the caller reports key ID mode 0 under the KEK of its own DTLS session (`LinkSecurity::Kek`) and only in the Entrust state; network-key or unsecured frames never reach it. The KEK is discarded when the Joiner finishes and by the Joiner Router after the answer / timeout (single use, Thread 7.2.1.1).
+- The Commissioner attaches the KEK only to the Relay Transmit of an accepting JOIN_FIN.rsp (OT also for a rejection), so a rejected Joiner never receives the Network Key.
+- The Joiner Entrust content is the OT set (Network Key, Mesh-Local Prefix, Extended PAN ID, Network Name, Active Timestamp, Channel Mask, PSKc, Security Policy, Key Sequence); the KEK in `/c/tx` and the Joiner Entrust travel under the network key / KEK respectively, never in the clear.
+- The Joiner Router relays only link-local sources; one Joiner Entrust is in flight so the MAC never swaps the KEK while an answer is pending.
+- Commissioner: one Joiner DTLS session at a time, bound to the Joiner IID (others get `Busy`), PSKd chosen by OT's best-match rule, 30 s session timeout; confirmable Relay Receive is dropped.
+- Border Agent: one session; sessions keyed with the PSKc; 2 s guard time after every session end; optional connection-attempt limit; keep-alive timeout 50 s; Relay Receive / UDP proxy only for a petitioned (active) Commissioner, proxied UDP always from its ALOC; local Active / Pending gets include the Network Key for the PSKc-authenticated Commissioner (OT behaviour, worth a review).
+- External Commissioner CoAP tokens come from a non-cryptographic generator seeded from the caller's RNG (tokens match responses only; the DTLS layer authenticates).
+- The meshcop simulator emulates key ID mode 0 by comparing KEKs; the real MAC path (`KeyManager` mode 0) is unit-tested with an independent CCM reference, but end-to-end MAC framing of commissioning traffic awaits the integration layer.
+
 - [x] Reload of the leader's commissioner state after a reset (`LeaderState::restore_leader`; leader Network Data wait-for-sync: `Leader::start_restoring` / `restore` / `sync_timed_out`)
 
 ## Phase 9 – Thread 1.2 / 1.3 / 1.4 features
