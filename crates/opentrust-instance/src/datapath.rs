@@ -152,6 +152,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             busy = true;
             match ev {
                 MacEvent::Received(rx) => self.handle_frame(now, rx),
+                #[cfg(feature = "ftd")]
                 MacEvent::DataPollReceived { src, .. } => self.handle_poll(now, src),
                 MacEvent::DataPollTimeout | MacEvent::DataPollSent(_) => {}
                 MacEvent::TxDone { .. } => {}
@@ -178,6 +179,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
     }
 
     /// A data poll from a sleepy child: release its next frame.
+    #[cfg(feature = "ftd")]
     fn handle_poll(&mut self, _now: Instant, src: Address) {
         let mut notes = FwdNotes::default();
         let _ = with_routing!(self, |r| {
@@ -190,6 +192,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             };
             self.fwd.handle_data_poll(&src, &r, &mut sink)
         });
+        #[cfg(feature = "ftd")]
         while let Some(c) = self.fwd.take_child_message_sent() {
             self.mle.child_message_sent(c);
         }
@@ -274,9 +277,12 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         let _ = forwarded;
         self.after_forwarder(now, events, notes);
         if dg_len > 0 {
+            #[cfg(feature = "ftd")]
             if let (Some(ms), Ok(h)) = (mesh_src, Ipv6Header::parse(&dg[..dg_len])) {
                 self.mle.remove_child_that_moved(&mut self.core, &h.src, ms);
             }
+            #[cfg(not(feature = "ftd"))]
+            let _ = mesh_src;
             self.receive_datagram(now, &mut dg[..dg_len], link_security);
         }
     }
@@ -306,12 +312,15 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
                 self.send_ip6(now, &out[..n], true);
             }
         }
-        for (from, dest) in notes.loops {
-            self.mle
-                .resolve_routing_loop(&mut self.core, now, from, dest);
-        }
-        while let Some(c) = self.fwd.take_child_message_sent() {
-            self.mle.child_message_sent(c);
+        #[cfg(feature = "ftd")]
+        {
+            for (from, dest) in notes.loops {
+                self.mle
+                    .resolve_routing_loop(&mut self.core, now, from, dest);
+            }
+            while let Some(c) = self.fwd.take_child_message_sent() {
+                self.mle.child_message_sent(c);
+            }
         }
     }
 

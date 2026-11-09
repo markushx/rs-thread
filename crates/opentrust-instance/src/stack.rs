@@ -132,6 +132,7 @@ impl UdpSink for Outbox {
 
 /// A router ID request or release MLE queued for the TMF client.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(feature = "ftd"), allow(dead_code))]
 pub(crate) enum SolicitCmd {
     Request(RouterIdRequest),
     Release(Rloc16),

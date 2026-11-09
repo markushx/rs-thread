@@ -67,10 +67,12 @@ use opentrust_mac::security::KeyManager;
 use opentrust_mesh::forwarder::MeshForwarder;
 use opentrust_mesh::netdata::NetworkData as NetData;
 use opentrust_mesh::netdata::aloc::AlocSet;
+#[cfg(feature = "ftd")]
 use opentrust_mesh::netdata::leader::Leader;
 use opentrust_mesh::netdata::local::LocalData;
 use opentrust_mesh::netdata::notifier::Notifier;
 use opentrust_mesh::netdata::publisher::{Publisher, PublisherEvent};
+#[cfg(feature = "ftd")]
 use opentrust_mesh::router_id::RouterIdOutbox;
 use opentrust_meshcop::manager::Datasets;
 use opentrust_mle::Mle;
@@ -202,12 +204,14 @@ pub struct Instance<S, C: CryptoBackend, R> {
     pub(crate) agent: TmfAgent,
     /// TMF and application datagrams queued for the IPv6 layer.
     pub(crate) sink: Outbox,
+    #[cfg(feature = "ftd")]
     pub(crate) solicit: RouterIdOutbox,
     /// Non-cryptographic randomness (CoAP tokens, MPL and TMF jitter).
     pub(crate) prng: MacRng,
     pub(crate) udp: UdpSockets<{ UDP_SOCKETS }>,
     pub(crate) resolver: AddressResolver<8>,
     pub(crate) fwd: MeshForwarder<2, 2, 4>,
+    #[cfg(feature = "ftd")]
     pub(crate) leader: Leader<{ NETDATA_LEN }>,
     pub(crate) local: LocalData,
     pub(crate) notifier: Notifier,
@@ -302,11 +306,13 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             core,
             agent,
             sink: Outbox::default(),
+            #[cfg(feature = "ftd")]
             solicit: RouterIdOutbox::new(),
             prng: MacRng::new(prng_seed),
             udp,
             resolver: AddressResolver::new(),
             fwd: MeshForwarder::new(msg_seed ^ 0x5a5a),
+            #[cfg(feature = "ftd")]
             leader: Leader::new(),
             local: LocalData::new(),
             notifier: Notifier::new(),
@@ -390,7 +396,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             self.publisher.next_deadline(),
             self.slaac.next_deadline(),
             self.core.datasets.next_deadline(),
-            self.leader.next_deadline(),
+            self.leader_deadline(),
             self.glue.next_deadline(),
         ]
         .into_iter()
@@ -402,6 +408,28 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         d
     }
 
+    #[cfg(feature = "ftd")]
+    fn leader_deadline(&self) -> Option<Instant> {
+        self.leader.next_deadline()
+    }
+
+    #[cfg(not(feature = "ftd"))]
+    #[allow(clippy::unused_self)]
+    fn leader_deadline(&self) -> Option<Instant> {
+        None
+    }
+
+    #[cfg(feature = "ftd")]
+    fn solicit_pending(&self) -> bool {
+        self.solicit.is_pending()
+    }
+
+    #[cfg(not(feature = "ftd"))]
+    #[allow(clippy::unused_self)]
+    fn solicit_pending(&self) -> bool {
+        false
+    }
+
     fn has_pending_work(&self) -> bool {
         !self.core.mle_out.q.is_empty()
             || !self.sink.q.is_empty()
@@ -409,7 +437,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             || !self.core.child_changes.is_empty()
             || self.core.nd_rx.is_some()
             || !self.core.solicit.is_empty()
-            || self.solicit.is_pending()
+            || self.solicit_pending()
             || !self.core.cfg.ds_events.is_empty()
             || self.core.cfg.applied
     }
@@ -420,7 +448,48 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "ftd")))]
+mod mtd_tests {
+    use opentrust_core::crypto::soft::SoftCrypto;
+    use opentrust_core::time::{Duration, Instant};
+    use opentrust_platform::RamSettings;
+
+    use super::*;
+
+    /// An end-device-only build attaches by sending a Parent Request on the
+    /// dataset's channel and has no router, leader or indirect machinery.
+    #[test]
+    fn end_device_build_starts_and_asks_for_a_parent() {
+        let cfg = Config::end_device(ExtAddress([2, 0, 0, 0, 0, 0, 0, 9]), RadioCaps::default());
+        let mut i = Instance::new(cfg, RamSettings::<2048>::new(), SoftCrypto, MacRng::new(7));
+        let mut now = Instant::from_secs(10);
+        let ds = i.create_dataset(15).unwrap();
+        i.set_active_dataset(&ds, now).unwrap();
+        i.ip6_set_enabled(true);
+        i.thread_start(now).unwrap();
+        assert_eq!(i.role(), Role::Detached);
+        let mut transmitted = false;
+        for _ in 0..40 {
+            i.poll(now);
+            while let Some(a) = i.poll_radio_action(now) {
+                if let RadioAction::Transmit(tx) = a {
+                    assert_eq!(tx.channel, 15);
+                    transmitted = true;
+                }
+            }
+            match i.next_deadline() {
+                Some(d) if d > now => now = d.min(now + Duration::from_secs(1)),
+                _ => now += Duration::from_millis(10),
+            }
+            if transmitted {
+                break;
+            }
+        }
+        assert!(transmitted);
+    }
+}
+
+#[cfg(all(test, feature = "ftd"))]
 mod tests {
     extern crate std;
 

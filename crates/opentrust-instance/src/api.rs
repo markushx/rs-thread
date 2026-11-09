@@ -82,6 +82,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
 
     /// Start Thread and become the leader of a new partition at once (OT
     /// `otThreadBecomeLeader`).
+    #[cfg(feature = "ftd")]
     pub fn become_leader(&mut self, now: Instant) -> Result<()> {
         self.start_inner(now, true)
     }
@@ -113,11 +114,13 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         match restored {
             Ok(Restored::Router { role, .. }) => {
                 self.glue.restoring_leader = role == Role::Leader;
+                #[cfg(feature = "ftd")]
                 self.mle.restore_children(&mut self.core, now);
             }
             Ok(Restored::Child { .. }) => {}
             Err(_) => {
                 self.mle.start(&mut self.core, now)?;
+                #[cfg(feature = "ftd")]
                 if lead {
                     self.mle.become_leader(&mut self.core, now, false)?;
                 }

@@ -12,36 +12,50 @@ use opentrust_core::types::Prefix64;
 use opentrust_mesh::address::{self, AddressAction, AddressErrorOutcome};
 use opentrust_mesh::netdata::anycast;
 use opentrust_mesh::netdata::backbone::BackboneRouterLeader;
+#[cfg(feature = "ftd")]
 use opentrust_mesh::netdata::leader::{Changed, Leader};
-use opentrust_mesh::netdata::server_data::{self, USER_SERVER_DATA};
+#[cfg(feature = "ftd")]
+use opentrust_mesh::netdata::server_data;
+use opentrust_mesh::netdata::server_data::USER_SERVER_DATA;
+#[cfg(feature = "ftd")]
 use opentrust_mesh::router_id;
 use opentrust_meshcop::dataset::DatasetType;
-use opentrust_meshcop::mgmt::{self, MgmtCommand};
+use opentrust_meshcop::mgmt;
+#[cfg(feature = "ftd")]
+use opentrust_meshcop::mgmt::MgmtCommand;
 use opentrust_mle::Mle;
 use opentrust_net::resolver::{AddressResolver, ResolverEvent};
 use opentrust_net::udp::UdpMeta;
 use opentrust_platform::SettingsStore;
 use rand_core::Rng;
 
-use crate::stack::{CHILDREN, Core, NETDATA_LEN, SolicitCmd};
+use crate::stack::{CHILDREN, Core};
+#[cfg(feature = "ftd")]
+use crate::stack::{NETDATA_LEN, SolicitCmd};
 use crate::{Instance, TmfAgent};
 
 /// The URIs this node serves.
 pub(crate) fn register_uris(agent: &mut TmfAgent) {
     for u in [
-        Uri::AddressSolicit,
-        Uri::AddressRelease,
-        Uri::AddressQuery,
         Uri::AddressNotify,
         Uri::AddressError,
-        Uri::ServerData,
         Uri::AnycastLocate,
         Uri::ActiveGet,
         Uri::PendingGet,
+        Uri::DatasetChanged,
+    ] {
+        let _ = agent.register(u);
+    }
+    // Leader / router side requests (OT: `OPENTHREAD_FTD` handlers).
+    #[cfg(feature = "ftd")]
+    for u in [
+        Uri::AddressSolicit,
+        Uri::AddressRelease,
+        Uri::AddressQuery,
+        Uri::ServerData,
         Uri::ActiveSet,
         Uri::PendingSet,
         Uri::ActiveReplace,
-        Uri::DatasetChanged,
     ] {
         let _ = agent.register(u);
     }
@@ -60,7 +74,9 @@ impl TmfEnv for MlTmfEnv {
 struct Deferred {
     actions: Vec<AddressAction, 4>,
     events: Vec<ResolverEvent, 4>,
+    #[cfg(feature = "ftd")]
     sd_changed: Changed,
+    #[cfg(feature = "ftd")]
     outcomes: Vec<mgmt::SetOutcome, 2>,
     duplicate_dua: bool,
 }
@@ -68,6 +84,7 @@ struct Deferred {
 struct NodeHandler<'a, S, C: CryptoBackend, R> {
     mle: &'a mut Mle<CHILDREN>,
     core: &'a mut Core<S, C, R>,
+    #[cfg(feature = "ftd")]
     leader: &'a mut Leader<NETDATA_LEN>,
     resolver: &'a mut AddressResolver<8>,
     now: Instant,
@@ -79,6 +96,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Handler for NodeHandler
         let now = self.now;
         let iid = self.core.ml_iid;
         match uri {
+            #[cfg(feature = "ftd")]
             Uri::AddressSolicit => {
                 if let Some(h) =
                     router_id::handle_address_solicit(self.mle, self.core, now, req, rsp)
@@ -87,9 +105,11 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Handler for NodeHandler
                     self.resolver.remove_entries_for_rloc16(old);
                 }
             }
+            #[cfg(feature = "ftd")]
             Uri::AddressRelease => {
                 router_id::handle_address_release(self.mle, self.core, now, req, rsp);
             }
+            #[cfg(feature = "ftd")]
             Uri::AddressQuery => {
                 if let Some(a) =
                     address::handle_address_query(&self.core.ip6.netif, self.mle, &iid, now, req)
@@ -120,6 +140,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Handler for NodeHandler
                     }
                 }
             }
+            #[cfg(feature = "ftd")]
             Uri::ServerData => {
                 if let Some(c) =
                     server_data::handle_server_data(self.leader, self.mle, self.core, now, req, rsp)
@@ -137,6 +158,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Handler for NodeHandler
             Uri::PendingGet => {
                 mgmt::handle_get(&self.core.datasets, now, DatasetType::Pending, req, rsp);
             }
+            #[cfg(feature = "ftd")]
             Uri::ActiveSet | Uri::PendingSet | Uri::ActiveReplace => {
                 let (t, cmd) = match uri {
                     Uri::ActiveSet => (DatasetType::Active, MgmtCommand::Set),
@@ -162,6 +184,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         let mut h = NodeHandler {
             mle: &mut self.mle,
             core: &mut self.core,
+            #[cfg(feature = "ftd")]
             leader: &mut self.leader,
             resolver: &mut self.resolver,
             now,
@@ -173,8 +196,13 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         let out = core::mem::take(&mut h.out);
         match r {
             TmfRx::Response { user, msg, .. } => {
-                if let Some(rep) = router_id::client_response(user, &msg) {
-                    self.mle.address_solicit_reply(&mut self.core, now, rep);
+                #[cfg(feature = "ftd")]
+                let solicit = router_id::client_response(user, &msg);
+                #[cfg(not(feature = "ftd"))]
+                let solicit: Option<()> = None;
+                if let Some(_rep) = solicit {
+                    #[cfg(feature = "ftd")]
+                    self.mle.address_solicit_reply(&mut self.core, now, _rep);
                 } else if user == USER_SERVER_DATA {
                     self.notifier.response(now, true);
                 } else if let Some(t) = mgmt::set_user_type(user) {
@@ -190,6 +218,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             TmfRx::Failed { user, .. } => self.tmf_failed(now, user),
             _ => {}
         }
+        #[cfg(feature = "ftd")]
         if out.sd_changed.any {
             self.leader_changed(now);
         }
@@ -208,6 +237,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         for e in out.events {
             self.handle_resolver_event(now, e);
         }
+        #[cfg(feature = "ftd")]
         for o in out.outcomes {
             if let Some(session) = o.notify_commissioner {
                 let _ = session;
@@ -219,9 +249,12 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
     }
 
     fn tmf_failed(&mut self, now: Instant, user: u32) {
+        #[cfg(feature = "ftd")]
         if let Some(r) = router_id::client_failure(user) {
             self.mle.address_solicit_reply(&mut self.core, now, r);
-        } else if user == USER_SERVER_DATA {
+            return;
+        }
+        if user == USER_SERVER_DATA {
             self.notifier.response(now, false);
         } else if let Some(t) = mgmt::set_user_type(user) {
             self.core.datasets.mgmt_set_finished(now, t);
@@ -231,25 +264,28 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
     /// TMF timers and the requests MLE and the dataset managers queued.
     pub(crate) fn service_tmf(&mut self, now: Instant) -> bool {
         let mut busy = false;
-        while let Some(cmd) = self.core.solicit.pop_front() {
-            busy = true;
-            match cmd {
-                SolicitCmd::Request(r) => {
-                    let _ = self.solicit.request_router_id(&r);
+        #[cfg(feature = "ftd")]
+        {
+            while let Some(cmd) = self.core.solicit.pop_front() {
+                busy = true;
+                match cmd {
+                    SolicitCmd::Request(r) => {
+                        let _ = self.solicit.request_router_id(&r);
+                    }
+                    SolicitCmd::Release(r) => self.solicit.release_router_id(r),
                 }
-                SolicitCmd::Release(r) => self.solicit.release_router_id(r),
             }
-        }
-        if self.solicit.is_pending() {
-            busy = true;
-            self.solicit.flush(
-                &mut self.agent,
-                now,
-                &mut self.prng,
-                &mut self.sink,
-                &mut self.mle,
-                &mut self.core,
-            );
+            if self.solicit.is_pending() {
+                busy = true;
+                self.solicit.flush(
+                    &mut self.agent,
+                    now,
+                    &mut self.prng,
+                    &mut self.sink,
+                    &mut self.mle,
+                    &mut self.core,
+                );
+            }
         }
         while let Some(ev) = self.agent.poll(now, &mut self.sink) {
             busy = true;

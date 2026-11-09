@@ -67,6 +67,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
             ds.poll(&mut env, now);
         }
         self.slaac.poll(&mut self.core.ip6.netif, now);
+        #[cfg(feature = "ftd")]
         if self.leader.sync_timed_out(now) {
             self.mle.become_detached(&mut self.core, now);
         }
@@ -97,6 +98,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         if self.core.cfg.nd_version_bump {
             self.core.cfg.nd_version_bump = false;
             busy = true;
+            #[cfg(feature = "ftd")]
             if self.mle.role() == Role::Leader {
                 let c = self.leader.increment_version_and_stable();
                 if c.any {
@@ -124,6 +126,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         match ev {
             MleEvent::RoleChanged { old, new } => {
                 self.notifier.event(NotifierEvent::RoleChanged);
+                #[cfg(feature = "ftd")]
                 if new == Role::Leader {
                     let ld = *self.mle.leader_data();
                     if self.glue.restoring_leader {
@@ -250,6 +253,7 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
     // ------------------------------------------------------------ Network Data
 
     /// The leader store changed: serve it, advertise it.
+    #[cfg(feature = "ftd")]
     pub(crate) fn leader_changed(&mut self, now: Instant) {
         self.core.netdata = self.leader.data().clone();
         self.leader.publish(&mut self.mle, &mut self.core, now);
@@ -261,7 +265,12 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
     pub(crate) fn service_netdata(&mut self, now: Instant) -> bool {
         let mut busy = false;
         let role = self.mle.role();
-        if role == Role::Leader {
+        #[cfg(feature = "ftd")]
+        let leader_handled = role == Role::Leader;
+        #[cfg(not(feature = "ftd"))]
+        let leader_handled = false;
+        #[cfg(feature = "ftd")]
+        if leader_handled {
             let mask = self.mle.router_id_mask();
             let mut ch = self
                 .leader
@@ -292,9 +301,11 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
                 busy = true;
                 self.leader_changed(now);
             }
-        } else if let Some((_ld, data)) = self.core.nd_rx.take() {
+        }
+        if !leader_handled && let Some((_ld, data)) = self.core.nd_rx.take() {
             busy = true;
             if self.core.netdata.set(&data).is_ok() {
+                #[cfg(feature = "ftd")]
                 self.mle.network_data_updated(&mut self.core, now);
                 self.notifier.event(NotifierEvent::NetworkDataChanged);
                 self.core.push_event(Event::NetworkDataChanged);
