@@ -470,3 +470,26 @@ fn detached_devices_only_use_link_local_destinations() {
     assert_eq!(route("fd00::1"), Err(crate::forwarder::RouteError::Drop));
     assert_eq!(route("ff03::1"), Err(crate::forwarder::RouteError::Drop));
 }
+
+#[test]
+fn frames_carry_the_mac_source_they_were_compressed_against() {
+    let mut m = line_with_child();
+    // An ML-EID source over several hops: the mesh frame is sent from the
+    // own short address.
+    for t in &mut m.tmf {
+        t.fsink.sources.clear();
+    }
+    let dst = rloc(&m, 3);
+    assert_eq!(m.send_udp(0, dst, b"x"), SendResult::Sent);
+    assert_eq!(
+        m.tmf[0].fsink.sources,
+        [Address::Short(m.sim.nodes[0].mle.rloc16().into())]
+    );
+    // A link-local source: the extended address.
+    let ext = m.sim.nodes[0].env.ext;
+    let src = ipv6::link_local(&ext);
+    let to = ipv6::link_local(&m.sim.nodes[1].env.ext);
+    m.tmf[0].fsink.sources.clear();
+    assert_eq!(m.send_udp_from(0, src, to, b"y"), SendResult::Sent);
+    assert_eq!(m.tmf[0].fsink.sources, [Address::Extended(ext)]);
+}

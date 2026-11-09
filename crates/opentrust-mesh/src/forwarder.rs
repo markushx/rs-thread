@@ -108,6 +108,10 @@ impl MacDest {
 /// A frame for the MAC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TxFrame<'a> {
+    /// MAC source address the payload was compressed against: the extended
+    /// address for datagrams from an extended-address IID source, the own
+    /// short address otherwise (and for mesh header frames).
+    pub src: Address,
     /// MAC destination.
     pub dst: MacDest,
     /// MAC payload (6LoWPAN: mesh header, fragment header, IPHC, data).
@@ -571,6 +575,11 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         let mut buf = [0u8; 128];
         while let Some(n) = f.next_frame(&mut buf)? {
             sink.transmit(&TxFrame {
+                src: if mesh.is_some() {
+                    Address::Short(r.mle.rloc16().into())
+                } else {
+                    mac_src
+                },
                 dst,
                 payload: &buf[..n],
                 link_security,
@@ -1076,6 +1085,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             Err(_) => return Rx::Dropped(DropReason::Invalid),
         };
         match sink.transmit(&TxFrame {
+            src: Address::Short(mle.rloc16().into()),
             dst: MacDest::Short(hop),
             payload: &out[..n],
             link_security: true,

@@ -242,6 +242,8 @@ impl NetworkData for SimNd {
 #[derive(Default)]
 pub struct FwdSink {
     pub frames: std::vec::Vec<(MacDest, std::vec::Vec<u8>, bool)>,
+    /// MAC source of every frame in `frames`.
+    pub sources: std::vec::Vec<Address>,
     /// Frame Pending bit of every indirect frame sent.
     pub pending_log: std::vec::Vec<bool>,
     /// Frames sent for CSL synchronized children.
@@ -253,6 +255,7 @@ pub struct FwdSink {
 impl FrameSink for FwdSink {
     fn transmit(&mut self, f: &TxFrame<'_>) -> Result<()> {
         self.frames.push((f.dst, f.payload.to_vec(), f.indirect));
+        self.sources.push(f.src);
         if f.indirect {
             self.pending_log.push(f.frame_pending);
         }

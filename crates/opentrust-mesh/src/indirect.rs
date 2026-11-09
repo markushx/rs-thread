@@ -397,6 +397,7 @@ impl<const N: usize> IndirectQueue<N> {
             };
             let ok = sink
                 .transmit(&TxFrame {
+                    src: Address::Short(own_rloc16.into()),
                     dst: MacDest::Short(child),
                     payload: &buf[..f.len],
                     link_security: true,
@@ -431,6 +432,7 @@ impl<const N: usize> IndirectQueue<N> {
         let f = self.next_frame(child, own_rloc16, contexts, max_payload, &mut buf)?;
         let ok = sink
             .transmit(&TxFrame {
+                src: Address::Short(own_rloc16.into()),
                 dst: MacDest::Short(child),
                 payload: &buf[..f.len],
                 link_security: true,
