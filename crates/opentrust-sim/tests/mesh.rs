@@ -4,47 +4,8 @@ use common::*;
 use opentrust_instance::Role;
 use opentrust_sim::{Kind, Network};
 
-/// Leader 0 - router 1 - router 2, no direct link between 0 and 2.
 fn chain() -> Network {
-    let mut net = Network::routers(3, 7);
-    net.medium.connect(0, 1, -60);
-    net.medium.connect(1, 2, -60);
-    let ds = dataset(&mut net);
-    start(&mut net, 0, &ds);
-    assert!(net.run_until(secs(60), |n| role(n, 0) == Role::Leader));
-    for i in 1..3 {
-        start(&mut net, i, &ds);
-        assert!(
-            net.run_until(secs(120), |n| role(n, i) == Role::Child),
-            "node {i} role {:?}",
-            net.node(i).role()
-        );
-        assert!(
-            net.run_until(secs(300), |n| role(n, i) == Role::Router),
-            "node {i} role {:?}",
-            net.node(i).role()
-        );
-    }
-    // Routes converge over the advertisements.
-    let r2 = net.node(2).rloc16();
-    let r0 = net.node(0).rloc16();
-    assert!(net.run_until(secs(600), |n| {
-        n.node(0).mle().next_hop_and_path_cost(r2).0.is_some()
-            && n.node(2).mle().next_hop_and_path_cost(r0).0.is_some()
-    }));
-    net
-}
-
-fn ping(net: &mut Network, from: usize, dst: core::net::Ipv6Addr, len: usize, seq: u16) -> bool {
-    let payload = vec![0x5a; len];
-    net.with(from, |n, now| {
-        n.ping(dst, None, 0x1234, seq, &payload, now).unwrap();
-    });
-    net.run_until(secs(30), |n| {
-        n.node(from)
-            .take_ping_reply()
-            .is_some_and(|r| r.seq == seq && r.payload_len == len)
-    })
+    router_chain(7)
 }
 
 #[test]

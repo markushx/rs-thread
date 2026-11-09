@@ -46,9 +46,12 @@ mod tmf;
 
 pub use api::{PingReply, UdpSocket};
 pub use opentrust_core::types::{ExtAddress, Rloc16};
+pub use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig};
+pub use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
 pub use opentrust_meshcop::dataset::Dataset;
 pub use opentrust_mle::tlv::DeviceMode;
 pub use opentrust_mle::{MleConfig, Role};
+pub use opentrust_net::udp::{RecvInfo, UdpMeta, UdpSendOpts};
 pub use opentrust_platform::radio::{PsduRxInfo, RadioCaps};
 pub use stack::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 

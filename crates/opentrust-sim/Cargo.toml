@@ -20,5 +20,8 @@ opentrust-instance = { workspace = true }
 rand_core = { workspace = true }
 heapless = { workspace = true }
 
+[dev-dependencies]
+opentrust-mle = { workspace = true }
+
 [lints]
 workspace = true
