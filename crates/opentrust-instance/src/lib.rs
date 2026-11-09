@@ -46,7 +46,7 @@
 //! [`Event::SrpClient`], [`Event::DnsResult`]). They use two internal UDP
 //! sockets, take the server from the Network Data (`srp_enable_auto_start`),
 //! persist the SRP key and server in the settings and register the
-//! interface addresses. This needs [`EcdsaP256`](opentrust_core::crypto::ecdsa::EcdsaP256)
+//! interface addresses. This needs `EcdsaP256` (`opentrust_core::crypto::ecdsa`)
 //! on the crypto backend and a `CryptoRng` as the RNG.
 //!
 //! # Backbone Router client
