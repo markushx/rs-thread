@@ -94,6 +94,8 @@ pub struct Outgoing {
     pub dst_port: u16,
     /// UDP payload.
     pub payload: Vec<u8, MAX_UDP_PAYLOAD>,
+    /// Channel and PAN ID to send the frames with.
+    pub tx: (Option<u8>, Option<u16>),
 }
 
 /// Bounded queue of outgoing UDP datagrams (TMF, MLE, application).
@@ -117,6 +119,7 @@ impl Outbox {
                 src_port,
                 dst_port,
                 payload,
+                tx: (None, None),
             })
             .map_err(|_| Error::NoBufs)
     }
@@ -147,7 +150,11 @@ pub(crate) enum SolicitCmd {
 #[derive(Debug, Default)]
 pub struct MacTx {
     pub(crate) handle: u16,
-    pub(crate) pending: Deque<opentrust_mac::mac::FrameBuf, 32>,
+    pub(crate) pending: Deque<(opentrust_mac::mac::FrameBuf, Option<u8>), 32>,
+    /// Channel and PAN ID of the datagram being sent (MLE Discovery and
+    /// Announce), `None`: the PAN's.
+    pub(crate) channel: Option<u8>,
+    pub(crate) pan_id: Option<u16>,
 }
 
 /// Changes of the child table the data path has to follow.
@@ -399,13 +406,16 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             multicast_loop: false,
             link_security: opts.link_security,
         };
-        let _ = opts.channel;
         self.mle_out.push(
             info,
             opentrust_net::udp::MLE_UDP_PORT,
             opentrust_net::udp::MLE_UDP_PORT,
             payload,
-        )
+        )?;
+        if let Some(o) = self.mle_out.q.back_mut() {
+            o.tx = (opts.channel, opts.pan_id);
+        }
+        Ok(())
     }
 
     fn pan_id(&self) -> u16 {

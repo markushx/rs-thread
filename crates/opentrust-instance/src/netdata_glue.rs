@@ -39,6 +39,7 @@ pub(crate) struct GlueState {
     pub restoring_leader: bool,
     pub replay_drops: u32,
     pub commissioner_aloc: Option<u16>,
+    pub key_sequence: Option<u32>,
 }
 
 impl GlueState {
@@ -58,10 +59,16 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
 
     /// Run the timers of the layers.
     pub(crate) fn service_timers(&mut self, now: Instant) -> bool {
-        if self.core.mac.security_mut().poll(now) {
-            // The key sequence advanced on its own (rotation).
-        }
+        // Key rotation advances the sequence on its own; adopting a newer one
+        // from a neighbor or the dataset does too. MLE persists the network
+        // info on its poll (`KeyManager::needs_store`).
+        let _ = self.core.mac.security_mut().poll(now);
         self.mle.poll(&mut self.core, now);
+        let ks = self.core.mac.security().key_sequence();
+        if self.glue.key_sequence.is_some_and(|k| k != ks) {
+            self.core.push_event(Event::KeySequenceChanged(ks));
+        }
+        self.glue.key_sequence = Some(ks);
         self.fwd.poll(now);
         {
             let (ds, mut env) = self.core.ds();

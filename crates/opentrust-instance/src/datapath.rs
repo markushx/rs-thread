@@ -59,7 +59,9 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
                 FrameVersion::V2006
             })
             .sequence(0)
-            .pan_id(self.mac.pan_id())
+            .pan_id(opentrust_core::types::PanId(
+                self.tx.pan_id.unwrap_or(self.mac.pan_id().0),
+            ))
             .dst(mac_address(f.dst))
             .src(f.src)
             .frame_pending(f.frame_pending)
@@ -84,14 +86,17 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
         // Keep the order: nothing overtakes frames that wait for the MAC.
         if self.tx.pending.is_empty() {
             self.tx.handle = self.tx.handle.wrapping_add(1);
-            match self.mac.transmit(TxHandle(self.tx.handle), &frame) {
+            match self
+                .mac
+                .transmit_on(TxHandle(self.tx.handle), &frame, self.tx.channel)
+            {
                 Err(opentrust_core::Error::NoBufs) => {}
                 r => return r,
             }
         }
         self.tx
             .pending
-            .push_back(frame)
+            .push_back((frame, self.tx.channel))
             .map_err(|_| opentrust_core::Error::NoBufs)
     }
 
@@ -208,9 +213,13 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
     /// Hand waiting frames to the MAC as room frees up.
     pub(crate) fn flush_mac_queue(&mut self) -> bool {
         let mut busy = false;
-        while let Some(f) = self.core.mactx.pending.front() {
+        while let Some((f, ch)) = self.core.mactx.pending.front() {
             self.core.mactx.handle = self.core.mactx.handle.wrapping_add(1);
-            match self.core.mac.transmit(TxHandle(self.core.mactx.handle), f) {
+            match self
+                .core
+                .mac
+                .transmit_on(TxHandle(self.core.mactx.handle), f, *ch)
+            {
                 Err(opentrust_core::Error::NoBufs) => break,
                 _ => {
                     self.core.mactx.pending.pop_front();
@@ -542,7 +551,11 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 .or_else(|| self.sink.q.pop_front());
             let Some(o) = next else { break };
             busy = true;
+            self.core.mactx.channel = o.tx.0;
+            self.core.mactx.pan_id = o.tx.1;
             let _ = self.send_udp_datagram(now, &o.info, o.src_port, o.dst_port, &o.payload);
+            self.core.mactx.channel = None;
+            self.core.mactx.pan_id = None;
         }
         // MPL retransmissions.
         let mut out = [0u8; opentrust_net::header::MAX_DATAGRAM_LEN];

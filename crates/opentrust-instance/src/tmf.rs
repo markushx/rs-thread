@@ -9,7 +9,7 @@ use opentrust_coap::uri::Uri;
 use opentrust_core::crypto::CryptoBackend;
 use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::time::Instant;
-use opentrust_core::types::Prefix64;
+use opentrust_core::types::{Prefix64, Rloc16};
 use opentrust_mesh::address::{self, AddressAction, AddressErrorOutcome};
 use opentrust_mesh::netdata::anycast;
 #[cfg(feature = "ftd")]
@@ -41,6 +41,10 @@ pub(crate) fn register_uris(agent: &mut TmfAgent) {
         Uri::AddressError,
         Uri::AnycastLocate,
         Uri::DuaRegistrationNotify,
+        Uri::DiagnosticGetRequest,
+        Uri::DiagnosticGetQuery,
+        Uri::DiagnosticReset,
+        Uri::DiagnosticGetAnswer,
         Uri::ActiveGet,
         Uri::PendingGet,
         Uri::DatasetChanged,
@@ -80,6 +84,9 @@ struct Deferred {
     #[cfg(feature = "ftd")]
     outcomes: Vec<mgmt::SetOutcome, 2>,
     duplicate_dua: bool,
+    reset_counters: bool,
+    diag_event: bool,
+    diag_answer: Option<(core::net::Ipv6Addr, crate::diag::Out)>,
 }
 
 struct NodeHandler<'a, S, C: CryptoBackend, R> {
@@ -89,6 +96,7 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     leader: &'a mut Leader<NETDATA_LEN>,
     resolver: &'a mut AddressResolver<8>,
     bbrg: &'a mut crate::bbr::BbrGlue,
+    diag_in: &'a mut heapless::Deque<Vec<u8, { crate::diag::MAX_RESPONSE }>, 2>,
     ext: Option<crate::TmfExtension>,
     now: Instant,
     out: Deferred,
@@ -153,6 +161,33 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                     self.out.sd_changed.stable |= c.stable;
                 }
             }
+            Uri::DiagnosticGetRequest => {
+                let o = crate::diag::build_response(self.mle, self.core, req.msg.payload());
+                let _ = rsp.respond(Code::CHANGED, &o.buf);
+            }
+            Uri::DiagnosticGetQuery => {
+                if req.msg.ty() == opentrust_coap::message::Type::Con {
+                    let _ = rsp.respond(Code::CHANGED, &[]);
+                }
+                let o = crate::diag::build_answer(self.mle, self.core, req.msg.payload());
+                self.out.diag_answer = Some((req.ctx.peer.addr, o));
+            }
+            Uri::DiagnosticGetAnswer => {
+                if req.msg.ty() == opentrust_coap::message::Type::Con {
+                    let _ = rsp.respond(Code::CHANGED, &[]);
+                }
+                if let Ok(v) = Vec::from_slice(req.msg.payload()) {
+                    if self.diag_in.is_full() {
+                        let _ = self.diag_in.pop_front();
+                    }
+                    let _ = self.diag_in.push_back(v);
+                    self.out.diag_event = true;
+                }
+            }
+            Uri::DiagnosticReset => {
+                self.out.reset_counters = true;
+                let _ = rsp.respond(Code::CHANGED, &[]);
+            }
             Uri::DuaRegistrationNotify => {
                 if req.msg.ty() == opentrust_coap::message::Type::Con {
                     let _ = rsp.respond(Code::CHANGED, &[]);
@@ -207,6 +242,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             leader: &mut self.leader,
             resolver: &mut self.resolver,
             bbrg: &mut self.bbrg,
+            diag_in: &mut self.diag_in,
             ext: self.tmf_ext,
             now,
             out: Deferred::default(),
@@ -226,6 +262,14 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                     self.mle.address_solicit_reply(&mut self.core, now, _rep);
                 } else if user == USER_SERVER_DATA {
                     self.notifier.response(now, true);
+                } else if user == crate::diag::USER_DIAG_GET {
+                    if let Ok(v) = Vec::from_slice(msg.payload()) {
+                        if self.diag_in.is_full() {
+                            let _ = self.diag_in.pop_front();
+                        }
+                        let _ = self.diag_in.push_back(v);
+                        self.core.push_event(crate::Event::DiagAnswer);
+                    }
                 } else if self.bbrg.queue_outcome(
                     user,
                     crate::bbr::Outcome::Response(msg.code(), {
@@ -274,6 +318,27 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
         }
         if out.duplicate_dua {
             self.bbrg.duplicate_dua = true;
+        }
+        if out.diag_event {
+            self.core.push_event(crate::Event::DiagAnswer);
+        }
+        if out.reset_counters {
+            self.core.mac.reset_counters();
+        }
+        if let Some((dst, o)) = out.diag_answer {
+            let own = self.mle.rloc16();
+            let mlp = self.core.cfg.cur.mesh_local_prefix;
+            let _ = self.agent.post(
+                now,
+                &mut self.prng,
+                &mut self.sink,
+                dst,
+                (own != Rloc16::INVALID).then(|| mlp.rloc(own)),
+                opentrust_core::message::Priority::Normal,
+                Uri::DiagnosticGetAnswer,
+                &o.buf,
+                None,
+            );
         }
     }
 

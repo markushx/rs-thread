@@ -240,7 +240,7 @@ pub struct Mac<
     pending: u8,
     tx_poll_before_data: bool,
     tx: Option<TxOp>,
-    direct: Deque<(TxHandle, FrameBuf), TXQ>,
+    direct: Deque<(TxHandle, FrameBuf, Option<u8>), TXQ>,
     indirect: IndirectQueue<IND>,
     poll_requests: Deque<Address, POLLQ>,
     src_match: SrcMatch,
@@ -430,6 +430,11 @@ impl<
     /// Counters.
     pub fn counters(&self) -> &MacCounters {
         &self.counters
+    }
+
+    /// Reset all counters (OT `otLinkResetCounters`).
+    pub fn reset_counters(&mut self) {
+        self.counters = MacCounters::default();
     }
 
     /// Current operation.
@@ -1092,9 +1097,20 @@ impl<
     /// (if the security-enabled bit is set); completion is reported as
     /// [`Event::TxDone`] with `handle`.
     pub fn transmit(&mut self, handle: TxHandle, frame: &[u8]) -> Result<()> {
+        self.transmit_on(handle, frame, None)
+    }
+
+    /// [`transmit`](Self::transmit) on `channel` instead of the PAN channel
+    /// (MLE Discovery and Announce messages, OT `Message::SetChannel`).
+    pub fn transmit_on(
+        &mut self,
+        handle: TxHandle,
+        frame: &[u8],
+        channel: Option<u8>,
+    ) -> Result<()> {
         let buf = Self::validate_frame(frame)?;
         self.direct
-            .push_back((handle, buf))
+            .push_back((handle, buf, channel))
             .map_err(|_| Error::NoBufs)
     }
 
@@ -2056,7 +2072,7 @@ impl<
     }
 
     fn start_direct(&mut self, now: Instant) {
-        let Some((handle, mut frame)) = self.direct.pop_front() else {
+        let Some((handle, mut frame, channel)) = self.direct.pop_front() else {
             self.finish_operation();
             return;
         };
@@ -2064,7 +2080,7 @@ impl<
             Ok(processed) => self.start_frame(
                 TxKind::Direct(handle),
                 frame,
-                self.channel,
+                channel.unwrap_or(self.channel),
                 false,
                 processed,
                 now,

@@ -72,12 +72,16 @@
 mod api;
 mod bbr;
 mod datapath;
+mod diag;
 mod dns_srp;
 mod netdata_glue;
 mod stack;
 mod tmf;
 
 pub use api::{PingReply, UdpSocket};
+#[cfg(feature = "ftd")]
+pub use diag::RouteInfo;
+pub use diag::{ChildInfo, NeighborInfo, tlv as diag_tlv};
 pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES};
 pub use opentrust_coap::message::Code as CoapCode;
 pub use opentrust_coap::uri::Uri as TmfUri;
@@ -87,10 +91,12 @@ pub use opentrust_dns::client::{
 };
 pub use opentrust_dns::rdata::TxtEntry;
 pub use opentrust_dns::srp::{ItemState, ServiceConfig, ServiceId, SrpError, SrpEvent};
+pub use opentrust_mac::mac::MacCounters;
 pub use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig};
 pub use opentrust_mesh::netdata::publisher::DnsSrpService;
 pub use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
 pub use opentrust_meshcop::dataset::Dataset;
+pub use opentrust_meshcop::tlv::SecurityPolicy;
 pub use opentrust_mle::tlv::DeviceMode;
 pub use opentrust_mle::{MleConfig, Role};
 pub use opentrust_net::udp::{RecvInfo, UdpMeta, UdpSendOpts};
@@ -99,7 +105,7 @@ pub use stack::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 
 pub use opentrust_mac::mac::{RadioAction, TxOutcome};
 
-use heapless::Deque;
+use heapless::{Deque, Vec};
 use opentrust_coap::tmf::Agent;
 use opentrust_core::crypto::CryptoBackend;
 use opentrust_core::crypto::ecdsa::EcdsaP256;
@@ -139,7 +145,7 @@ pub const MAX_UDP_PAYLOAD: usize = 1232;
 pub type TmfExtension = fn(TmfUri, &[u8]) -> Option<(CoapCode, heapless::Vec<u8, 64>)>;
 
 /// The TMF agent with the capacities of the instance.
-pub(crate) type TmfAgent = Agent<4, 16, 4, 320>;
+pub(crate) type TmfAgent = Agent<4, 32, 4, 320>;
 
 /// Event for the application (OpenThread: `otStateChangedCallback` flags,
 /// the receive callbacks of UDP and ICMPv6 and the result callbacks of the
@@ -206,6 +212,11 @@ pub enum Event {
         /// RSSI in dBm.
         rssi: Option<i8>,
     },
+    /// The key sequence counter changed (rotation, adopted from a neighbor or
+    /// the dataset).
+    KeySequenceChanged(u32),
+    /// A diagnostic answer arrived ([`Instance::diag_take_answer`]).
+    DiagAnswer,
     /// A UDP socket has data ([`Instance::udp_recv`]).
     UdpReadable(UdpSocket),
     /// An ICMPv6 echo reply arrived ([`Instance::take_ping_reply`]).
@@ -287,6 +298,7 @@ pub struct Instance<S, C: CryptoBackend, R> {
     pub(crate) glue: netdata_glue::GlueState,
     pub(crate) dnssrp: dns_srp::DnsSrp,
     pub(crate) bbrg: bbr::BbrGlue,
+    pub(crate) diag_in: Deque<Vec<u8, { diag::MAX_RESPONSE }>, 2>,
     pub(crate) tmf_ext: Option<TmfExtension>,
     pub(crate) ping: api::PingState,
     pub(crate) ip6_enabled: bool,
@@ -391,6 +403,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             glue: netdata_glue::GlueState::default(),
             dnssrp: dns_srp::DnsSrp::new(),
             bbrg: bbr::BbrGlue::new(),
+            diag_in: Deque::new(),
             tmf_ext: None,
             ping: api::PingState::default(),
             ip6_enabled: false,
@@ -667,6 +680,50 @@ mod tests {
         opentrust_mesh::forwarder::FrameSink::transmit(&mut sink, &f).unwrap();
         MleEnv::set_csl(&mut i.core, 0, 0, None);
         assert_eq!(i.core.mac.csl_period(), 0);
+    }
+
+    /// Discovery and Announce frames use the channel and PAN ID of their
+    /// transmit options.
+    #[test]
+    fn transmit_options_channel_and_pan_are_honoured() {
+        use opentrust_mle::MleEnv;
+        let mut i = instance();
+        let now = Instant::from_secs(10);
+        let ds = i.create_dataset(15).unwrap();
+        i.set_active_dataset(&ds, now).unwrap();
+        i.ip6_set_enabled(true);
+        i.become_leader(now).unwrap();
+        while i.poll_radio_action(now).is_some() {}
+        let opts = opentrust_mle::env::TxOptions {
+            channel: Some(21),
+            pan_id: Some(0xbeef),
+            link_security: false,
+        };
+        let src = opentrust_core::types::ipv6::link_local(&ExtAddress([2, 0, 0, 0, 0, 0, 0, 1]));
+        let dst = opentrust_core::types::ipv6::LINK_LOCAL_ALL_ROUTERS;
+        MleEnv::send_with(&mut i.core, &opts, src, dst, &[0xaa; 20]).unwrap();
+        i.poll(now);
+        let mut seen = false;
+        let mut t = now;
+        for _ in 0..50 {
+            while let Some(a) = i.poll_radio_action(t) {
+                if let RadioAction::Transmit(tx) = a
+                    && tx.channel == 21
+                {
+                    let f =
+                        opentrust_mac::frame::Frame::parse(&tx.psdu[..tx.psdu.len() - 2]).unwrap();
+                    if f.pan_id().map(|p| p.0) == Some(0xbeef) {
+                        seen = true;
+                    }
+                }
+            }
+            if seen {
+                break;
+            }
+            t += Duration::from_millis(20);
+            i.poll(t);
+        }
+        assert!(seen);
     }
 
     #[test]

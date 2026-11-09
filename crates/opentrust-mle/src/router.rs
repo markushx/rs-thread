@@ -554,7 +554,7 @@ impl<const C: usize> Mle<C> {
     // ------------------------------------------------------------ Connectivity / Route64 content
 
     /// Connectivity TLV for Parent Responses (OT `FillConnectivityTlv`).
-    pub(crate) fn fill_connectivity(&self) -> Connectivity {
+    pub fn fill_connectivity(&self) -> Connectivity {
         let max = C as u16;
         let n = self.children.count(StateFilter::Valid) as u16;
         let parent_priority = if max.saturating_sub(n) < max / 3 {
@@ -644,7 +644,7 @@ impl<const C: usize> Mle<C> {
     }
 
     /// Route64 TLV *value* (for Child ID / Data Response).
-    pub(crate) fn route64_value(&self) -> Vec<u8, 72> {
+    pub fn route64_value(&self) -> Vec<u8, 72> {
         let (seq, mask, entries) = self.fill_route64(None);
         let mut v = Vec::new();
         let _ = v.push(seq);
