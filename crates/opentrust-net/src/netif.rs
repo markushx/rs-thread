@@ -463,6 +463,16 @@ impl<const U: usize, const M: usize> Netif<U, M> {
             .filter(addr::is_multicast_larger_than_realm_local)
     }
 
+    /// The addresses subscribed by the application (what MLE registers with
+    /// the parent on behalf of a sleepy child, Thread 1.2 MLR).
+    pub fn external_multicast_addresses(&self) -> impl Iterator<Item = Ipv6Addr> + '_ {
+        self.multicast
+            .iter()
+            .flatten()
+            .filter(|e| e.kind == MulticastKind::External)
+            .map(|e| e.addr)
+    }
+
     /// Remove all external subscriptions.
     pub fn unsubscribe_all_external(&mut self) {
         for s in &mut self.multicast {
