@@ -508,3 +508,25 @@ Reference: `thread/mlr_manager.cpp`, `backbone_router/bbr_leader.cpp`,
 | Commissioner registration | `RegisterMulticastListeners` with Commissioner Session ID and Timeout TLVs | Not implemented | Not needed by a device | none |
 | Thread 1.1 parents | Service ALOC of the Backbone Router service | Not supported (end devices register through their 1.2+ parent) | 1.1 is not a target | A 1.1 parent does not proxy MLR |
 | MLR.req priority | Normal confirmable POST | Same (`Priority::Normal`); DUA.req uses net priority as OT | | none |
+
+## DNS and SRP (`opentrust-dns`, ECDSA in `opentrust_core::crypto::ecdsa`)
+
+| Area | OpenThread | OpenTrust | Why | Interop impact |
+|------|------------|-----------|-----|----------------|
+| Message buffers | `Message` chains | `wire::Writer` over a caller buffer; update message at most 1232 bytes (stack array), queries at most 400 bytes; names at most 128 bytes dotted (hosts, service types), labels at most 63 bytes, TXT at most 256 bytes, 4 subtypes, 4 host addresses, 4 services / 4 queries by default (const generics) | no heap | very large registrations need several services per update (single service mode) |
+| Name compression | explicit `AppendPointerLabel` for the names it knows | generic longest-suffix compression against up to 32 remembered label starts; produces the same pointers for the SRP update layout | one code path | none (wire format valid either way) |
+| Decoding pointers | `LabelIterator` | a pointer must point strictly before the start of the current label run (loop-free by construction); total name at most 255 bytes | simple proof of termination | rejects the same loops / forward pointers as OT (vectors of `test_dns.cpp` ported) |
+| ECDSA key storage | mbedTLS key pair as DER blob in settings (`SrpEcdsaKey`) | raw 32-byte big-endian scalar via `SrpContext::load_key` / `store_key` (zeroized on drop); public key derived on demand | no ASN.1 / PKCS#8 in the no_std core | an OT settings blob is not directly reusable |
+| Signature | mbedTLS ECDSA (random k) | RFC 6979 deterministic ECDSA (`p256`), through the `EcdsaP256` backend trait; hardware backends can implement the trait | no hand-rolled primitives | none (any valid signature verifies) |
+| SRP client callbacks | one callback with error, host info and removed services | `SrpEvent`: `Registered{lease,key_lease}`, `HostRemoved`, `ServiceRemoved(id)`, `Failed(SrpError)` (YXDOMAIN / YXRRSET is `SrpError::NameConflict`), `ServerSelected(Option<addr>)` (auto-start callback) | no callbacks / lifetimes in sans-IO | none |
+| Platform inputs | `ThreadNetif`, `Mle`, `Settings`, socket | `SrpContext` (send, events, `auto_addresses` + `ml_eid`, key and selected-server persistence) and `Env` (now, RNG, crypto, context); the caller reports attach state (`set_attached`), address changes (`on_addresses_changed`) and Network Data (`handle_network_data` with `NetDataService` items) | sans-IO | none |
+| Auto host addresses | SLAAC / unicast address events with a per-address `mSrpRegistered` flag | the client remembers the registered list and compares it with `auto_addresses()` on `on_addresses_changed`; policy (preferred, not link-local, not mesh-local, else ML-EID) in `filter_auto_addresses` / the client | no netif access | same registrations |
+| Server list for switching | live Network Data iteration | snapshot of up to 8 unicast entries per kind taken at `handle_network_data` | no Network Data access in the client | none (OT's list also only changes on Network Data events) |
+| Short Update Lease option | test-only `SetUseShortLeaseOption` | parsed on receive, never sent | test feature | none |
+| Reference-device options | service KEY record, TTL / lease test knobs | not implemented (TTL cap via `set_ttl`) | test-only | none |
+| TX jitter | `TxJitter` with the six reasons | the same maxima (700 ms reboot, 10 s others); SLAAC add / remove share one reason | equal maxima | none |
+| Fast polls for sleepy devices | `SendFastPolls` after update tx | not requested by the client (the caller schedules polls from `SrpClient::next_deadline` / events) | no data-poll sender access | slower responses on SEDs until wired up |
+| DNS client transport | UDP and (optional) TCP, NAT64 A-record fallback | UDP only; truncated responses fail with `DnsError::Truncated`; no A / NAT64 queries; no TXT-only or SRV-only response merging beyond the five service modes | scope | large responses need TCP (not supported) |
+| DNS service mode | `SRV_TXT_OPTIMIZE` also falls back on incomplete responses | falls back on timeout only (missing TXT in a combined answer is accepted as empty) | simplicity | none for SRP servers answering both |
+| DNS default server | set by SRP auto-start (`UpdateDefaultConfigAddress`) | the caller sets it from `SrpEvent::ServerSelected` | no cross-module access | none |
+| Retransmission | per-query timer, max attempts 3 / 6 s | same defaults; a failed retransmission send is retried at the next timeout | equal | none |

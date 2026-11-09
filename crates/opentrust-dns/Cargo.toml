@@ -1,0 +1,33 @@
+[package]
+name = "opentrust-dns"
+description = "DNS codec, DNS / DNS-SD client and SRP client (RFC 9665) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "opentrust-core/defmt", "heapless/defmt"]
+log = ["dep:log", "opentrust-core/log"]
+
+[dependencies]
+opentrust-core = { workspace = true }
+rand_core = { workspace = true }
+heapless = { workspace = true }
+zeroize = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+opentrust-core = { workspace = true, features = ["ecdsa", "soft-crypto"] }
+p256 = { workspace = true, features = ["ecdsa"] }
+sha2 = { workspace = true }
+
+[lints]
+workspace = true

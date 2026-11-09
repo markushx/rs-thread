@@ -175,7 +175,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [x] Publisher is part of the mesh simulator (`MeshSim` polls `TmfNode::publisher`); tests: five publishers settle at three entries and a replacement takes over (`netdata_sim_tests`)
   - [x] Network Data Publisher (`netdata::publisher`: on-mesh prefix, external route, DNS/SRP anycast / unicast entries) and the `kBorderRouterRequest` decision in the notifier (`schedule_router_upgrade` / `router_upgrade_tick`)
   - [x] Backbone Router service and Domain Prefix entries are read by `netdata::backbone` (Primary BBR selection, BBR Dataset, Domain Prefix events; client side, Phase 9)
-  - [ ] Consume the router upgrade flag in the MLE (`is_router_eligible` Border Router rule), DNS/SRP query helpers, DHCPv6 / ND agent ALOC subscription, Publisher driven by the Border Routing Manager (requester quotas)
+  - [ ] Consume the router upgrade flag in the MLE (`is_router_eligible` Border Router rule), DNS/SRP query helpers (client side done in `opentrust-dns`), DHCPv6 / ND agent ALOC subscription, Publisher driven by the Border Routing Manager (requester quotas)
 - [x] Anycast locators, Service ALOCs (Phase 7b: `netdata::aloc` (leader, service and commissioner ALOC set maintenance), `netdata::anycast` (`/a/yl`), `lookup::anycast_lookup` for leader / service / commissioner / DHCP / ND ALOCs)
 - [x] Commissioning datasets (Phase 8a: Active / Pending Operational Dataset, delay timer in `opentrust_meshcop::{dataset, manager, mgmt}`; the Commissioning Data TLV of Network Data is written by `Leader::set_commissioning_data` and `opentrust_meshcop::leader`)
 
@@ -232,7 +232,8 @@ Security-relevant decisions for the review before M4:
 - [x] Multicast Listener Registration (MLR) (1.2): `mlr` (device and child groups, `/n/mr`, timeouts, reregistration, failed addresses, `MlrState` in `Child`)
   - [ ] Commissioner MLR (Commissioner Session ID / Timeout TLVs)
 - [ ] Enhanced CSL, Link Metrics (initiator & subject)
-- [ ] SRP client (RFC 9665) & DNS-SD client (1.3) — **pulled forward**: required by Matter for operational discovery (`_matter._tcp`); target M4
+- [x] SRP client (RFC 9665) & DNS-SD client (1.3) — **pulled forward**: required by Matter for operational discovery (`_matter._tcp`); target M4 (`opentrust-dns`: `wire` / `rdata` DNS codec with name compression, TXT, KEY / SIG(0), OPT Update Lease; `client` DNS / DNS-SD client: AAAA, browse, SRV+TXT resolve; `srp` SRP client with SIG(0) ECDSA P-256 signing (`opentrust_core::crypto::ecdsa`), lease refresh, OT retry backoff, Network Data auto-start with unicast / anycast selection and server switching; tests against a scripted fake server, no simulator end-to-end test yet)
+  - [ ] SRP server (advertising proxy), DNS-SD discovery proxy, mDNS, DNS over TCP, NAT64 (A record) queries, SRP client end-to-end test in the mesh simulator (a node acting as SRP server), Network Data adapter feeding `SrpClient::handle_network_data` from `opentrust_mesh::netdata::view::ServiceEntry`
 - [ ] TREL hooks (optional, 1.3)
 - [ ] Thread 1.4 additions: ephemeral key / ePSKc Border Agent, TCAT (BLE commissioning) — scope review, mark optional
 - [ ] Border Router role (feature `border-router`, `std`/Linux only initially): RA/RIO, OMR prefix, NAT64 hooks — likely defer

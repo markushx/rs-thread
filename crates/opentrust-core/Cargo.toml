@@ -20,6 +20,8 @@ soft-crypto = ["dep:aes", "dep:cmac", "dep:hmac", "dep:sha2"]
 # EC-JPAKE on P-256 (`crypto::ecjpake`, Thread commissioning / DTLS
 # `TLS_ECJPAKE_WITH_AES_128_CCM_8`); pulls in RustCrypto `p256`.
 ecjpake = ["dep:p256"]
+# ECDSA P-256 / SHA-256 signing (`crypto::ecdsa`, SRP SIG(0)); RustCrypto `p256`.
+ecdsa = ["dep:p256", "p256/ecdsa"]
 defmt = ["dep:defmt"]
 log = ["dep:log"]
 
