@@ -39,6 +39,7 @@
 //! `defmt` / `log` select the logging backend.
 
 mod api;
+mod bbr;
 mod datapath;
 mod dns_srp;
 mod netdata_glue;
@@ -47,6 +48,8 @@ mod tmf;
 
 pub use api::{PingReply, UdpSocket};
 pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES};
+pub use opentrust_coap::message::Code as CoapCode;
+pub use opentrust_coap::uri::Uri as TmfUri;
 pub use opentrust_core::types::{ExtAddress, Rloc16};
 pub use opentrust_dns::client::{
     DnsError, QueryConfig, QueryId, ResolvedAddresses, ResolvedService,
@@ -97,6 +100,12 @@ use crate::stack::{Core, MacRng, NetConfig, Outbox};
 /// Largest UDP payload of a queued datagram (IPv6 minimum MTU minus the IPv6
 /// and UDP headers).
 pub const MAX_UDP_PAYLOAD: usize = 1232;
+
+/// Application handler for TMF requests of registered extra URIs
+/// ([`Instance::set_tmf_extension`]): returns the response code and payload
+/// (`None`: no response). Used for roles built on top of the instance, e.g. a
+/// Backbone Router.
+pub type TmfExtension = fn(TmfUri, &[u8]) -> Option<(CoapCode, heapless::Vec<u8, 64>)>;
 
 /// The TMF agent with the capacities of the instance.
 pub(crate) type TmfAgent = Agent<4, 16, 4, 320>;
@@ -233,6 +242,8 @@ pub struct Instance<S, C: CryptoBackend, R> {
     pub(crate) slaac: Slaac<4>,
     pub(crate) glue: netdata_glue::GlueState,
     pub(crate) dnssrp: dns_srp::DnsSrp,
+    pub(crate) bbrg: bbr::BbrGlue,
+    pub(crate) tmf_ext: Option<TmfExtension>,
     pub(crate) ping: api::PingState,
     pub(crate) ip6_enabled: bool,
     pub(crate) started: bool,
@@ -335,6 +346,8 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             slaac: Slaac::new(),
             glue: netdata_glue::GlueState::default(),
             dnssrp: dns_srp::DnsSrp::new(),
+            bbrg: bbr::BbrGlue::new(),
+            tmf_ext: None,
             ping: api::PingState::default(),
             ip6_enabled: false,
             started: false,
@@ -390,6 +403,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             busy |= self.service_netdata(now);
             busy |= self.service_tmf(now);
             busy |= self.service_dns_srp(now);
+            busy |= self.service_bbr(now);
             busy |= self.service_outbox(now);
             if !busy {
                 break;
@@ -415,6 +429,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             self.leader_deadline(),
             self.glue.next_deadline(),
             self.dnssrp.next_deadline(),
+            self.bbrg.next_deadline(),
         ]
         .into_iter()
         .flatten()
@@ -458,6 +473,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             || !self.core.cfg.ds_events.is_empty()
             || self.core.cfg.applied
             || self.dnssrp.has_pending_work()
+            || self.bbrg.has_pending_work()
     }
 
     /// The next application event.

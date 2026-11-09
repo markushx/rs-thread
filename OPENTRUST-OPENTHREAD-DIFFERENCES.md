@@ -622,3 +622,9 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 
 - The parent sends link-local unicast messages to a sleepy child indirectly only after the child is `Child::confirmed` (it has sent a Child Update Request, or was restored). OT sends the Child ID Response indirectly to the child's extended address; here the response goes out directly while the child still listens, because the indirect path addresses frames by RLOC16, which the child does not know yet.
 - Attach mode of the data poll sender (`Mac::set_poll_attach_mode`, 100 ms) and fast polls after a Data Request (`MleEnv::send_fast_polls`) are implemented; attach-mode polling is not started right after the Child ID Request as in OT (see above).
+
+### DUA, MLR and Backbone Router client in the `Instance` (`opentrust-instance::bbr`)
+
+- The DAD counter is persisted under `DadInfo` as one byte (OT `DadInfo`), written whenever the manager changes it, read on `thread_start`.
+- Domain Unicast Addresses and external multicast groups are registered through the address registration of the Child Update Request (as OT) and, for the device itself and its children, with `/n/dr` and `/n/mr` to the Primary Backbone Router from the Network Data. There is no Backbone Router server role; `Instance::set_tmf_extension(uris, fn)` lets a layer on top serve extra TMF URIs (a plain function pointer, answer payload at most 64 bytes) and is how the simulator test plays the Backbone Router.
+- `Instance::add_service` / `remove_service` expose the local Network Data services.

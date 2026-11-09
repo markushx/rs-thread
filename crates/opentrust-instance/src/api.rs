@@ -105,6 +105,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             let _ = ds.restore(&mut env, now, DatasetType::Pending);
         }
         self.load_iid_secret();
+        self.load_dad_counter();
         self.started = true;
         self.sync_netif();
         let restored = if lead {
@@ -374,6 +375,34 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
         self.notifier
             .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
         self.poll(now);
+    }
+
+    /// Add a service to the local Network Data (OT `otServerAddService`).
+    pub fn add_service(
+        &mut self,
+        cfg: opentrust_mesh::netdata::local::ServiceConfig,
+    ) -> Result<()> {
+        self.local.add_service(cfg)?;
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        Ok(())
+    }
+
+    /// Remove a service from the local Network Data.
+    pub fn remove_service(&mut self, enterprise_number: u32, service_data: &[u8]) -> Result<()> {
+        self.local.remove_service(enterprise_number, service_data)?;
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        Ok(())
+    }
+
+    /// Serve extra TMF resources with `handler` (the request payload goes in,
+    /// the response comes out). Replaces an earlier handler.
+    pub fn set_tmf_extension(&mut self, uris: &[crate::TmfUri], handler: crate::TmfExtension) {
+        for u in uris {
+            let _ = self.agent.register(*u);
+        }
+        self.tmf_ext = Some(handler);
     }
 
     /// The local Network Data (what this device registers).

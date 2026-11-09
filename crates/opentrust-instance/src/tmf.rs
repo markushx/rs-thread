@@ -12,7 +12,6 @@ use opentrust_core::time::Instant;
 use opentrust_core::types::Prefix64;
 use opentrust_mesh::address::{self, AddressAction, AddressErrorOutcome};
 use opentrust_mesh::netdata::anycast;
-use opentrust_mesh::netdata::backbone::BackboneRouterLeader;
 #[cfg(feature = "ftd")]
 use opentrust_mesh::netdata::leader::{Changed, Leader};
 #[cfg(feature = "ftd")]
@@ -41,6 +40,7 @@ pub(crate) fn register_uris(agent: &mut TmfAgent) {
         Uri::AddressNotify,
         Uri::AddressError,
         Uri::AnycastLocate,
+        Uri::DuaRegistrationNotify,
         Uri::ActiveGet,
         Uri::PendingGet,
         Uri::DatasetChanged,
@@ -88,6 +88,8 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     #[cfg(feature = "ftd")]
     leader: &'a mut Leader<NETDATA_LEN>,
     resolver: &'a mut AddressResolver<8>,
+    bbrg: &'a mut crate::bbr::BbrGlue,
+    ext: Option<crate::TmfExtension>,
     now: Instant,
     out: Deferred,
 }
@@ -127,12 +129,11 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 });
             }
             Uri::AddressError => {
-                let bbr = BackboneRouterLeader::default();
                 match address::handle_address_error(
                     &mut self.core.ip6.netif,
                     self.mle,
                     &iid,
-                    &bbr,
+                    &self.bbrg.bbr,
                     req,
                     rsp,
                 ) {
@@ -150,6 +151,15 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                 {
                     self.out.sd_changed.any |= c.any;
                     self.out.sd_changed.stable |= c.stable;
+                }
+            }
+            Uri::DuaRegistrationNotify => {
+                if req.msg.ty() == opentrust_coap::message::Type::Con {
+                    let _ = rsp.respond(Code::CHANGED, &[]);
+                }
+                let mut v: Vec<u8, 64> = Vec::new();
+                if v.extend_from_slice(req.msg.payload()).is_ok() {
+                    let _ = self.bbrg.ntf_inbox.push_back(v);
                 }
             }
             Uri::AnycastLocate => {
@@ -175,7 +185,13 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             Uri::DatasetChanged => {
                 let _ = rsp.respond(Code::CHANGED, &[]);
             }
-            _ => {}
+            other => {
+                if let Some(f) = self.ext
+                    && let Some((code, body)) = f(other, req.msg.payload())
+                {
+                    let _ = rsp.respond(code, &body);
+                }
+            }
         }
     }
 }
@@ -190,6 +206,8 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             #[cfg(feature = "ftd")]
             leader: &mut self.leader,
             resolver: &mut self.resolver,
+            bbrg: &mut self.bbrg,
+            ext: self.tmf_ext,
             now,
             out: Deferred::default(),
         };
@@ -208,6 +226,14 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                     self.mle.address_solicit_reply(&mut self.core, now, _rep);
                 } else if user == USER_SERVER_DATA {
                     self.notifier.response(now, true);
+                } else if self.bbrg.queue_outcome(
+                    user,
+                    crate::bbr::Outcome::Response(msg.code(), {
+                        let mut v = Vec::new();
+                        let _ = v.extend_from_slice(msg.payload());
+                        v
+                    }),
+                ) {
                 } else if let Some(t) = mgmt::set_user_type(user) {
                     let _ = mgmt::set_response(&msg);
                     self.core.datasets.mgmt_set_finished(now, t);
@@ -218,7 +244,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
                     self.glue.located = Some(l);
                 }
             }
-            TmfRx::Failed { user, .. } => self.tmf_failed(now, user),
+            TmfRx::Failed { user, .. } => self.tmf_failed(now, user, false),
             _ => {}
         }
         #[cfg(feature = "ftd")]
@@ -247,11 +273,11 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
             }
         }
         if out.duplicate_dua {
-            // The DUA manager reacts to duplicates; no DUA is configured.
+            self.bbrg.duplicate_dua = true;
         }
     }
 
-    fn tmf_failed(&mut self, now: Instant, user: u32) {
+    fn tmf_failed(&mut self, now: Instant, user: u32, timeout: bool) {
         #[cfg(feature = "ftd")]
         if let Some(r) = router_id::client_failure(user) {
             self.mle.address_solicit_reply(&mut self.core, now, r);
@@ -259,6 +285,14 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
         }
         if user == USER_SERVER_DATA {
             self.notifier.response(now, false);
+        } else if self.bbrg.queue_outcome(
+            user,
+            if timeout {
+                crate::bbr::Outcome::Timeout
+            } else {
+                crate::bbr::Outcome::Failed
+            },
+        ) {
         } else if let Some(t) = mgmt::set_user_type(user) {
             self.core.datasets.mgmt_set_finished(now, t);
         }
@@ -293,7 +327,7 @@ impl<S: SettingsStore, C: CryptoBackend + EcdsaP256 + Clone, R: Rng + CryptoRng>
         while let Some(ev) = self.agent.poll(now, &mut self.sink) {
             busy = true;
             let CoapEvent::Timeout { user } = ev;
-            self.tmf_failed(now, user);
+            self.tmf_failed(now, user, true);
         }
         let mut evs: Vec<ResolverEvent, 4> = Vec::new();
         self.resolver.poll(now, &mut |e| {

@@ -23,6 +23,7 @@ heapless = { workspace = true }
 [dev-dependencies]
 opentrust-mle = { workspace = true }
 opentrust-dns = { workspace = true }
+opentrust-mesh = { workspace = true, features = ["ftd"] }
 p256 = { workspace = true, features = ["ecdsa"] }
 sha2 = { workspace = true }
 
