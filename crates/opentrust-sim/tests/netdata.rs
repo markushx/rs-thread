@@ -53,3 +53,39 @@ fn border_router_prefix_gives_slaac_addresses_everywhere() {
         .addr;
     assert!(ping(&mut net, 0, dst, 12, 9), "no reply from {dst}");
 }
+
+#[test]
+fn end_device_registers_its_slaac_address_with_the_parent() {
+    use opentrust_core::time::Duration;
+    use opentrust_instance::Role;
+    use opentrust_sim::{Kind, Network};
+
+    let mut net = Network::new(&[Kind::Router, Kind::EndDevice], 61);
+    net.medium.connect(0, 1, -60);
+    let ds = dataset(&mut net);
+    start(&mut net, 0, &ds);
+    assert!(net.run_until(secs(60), |n| role(n, 0) == Role::Leader));
+    // The leader is the border router.
+    net.with(0, |n, _| {
+        n.add_on_mesh_prefix(OnMeshPrefixConfig {
+            prefix: prefix(),
+            flags: BrFlags(BrFlags::PREFERRED | BrFlags::SLAAC | BrFlags::ON_MESH),
+            stable: true,
+        })
+        .unwrap();
+    });
+    start(&mut net, 1, &ds);
+    assert!(net.run_until(secs(120), |n| role(n, 1) == Role::Child));
+    assert!(net.run_until(secs(300), |n| has_prefix(n.inst(1))));
+    // The parent learns the new address with a Child Update Request, and
+    // delivers to it directly (no address query).
+    net.run_for(Duration::from_secs(20));
+    let dst = net
+        .inst(1)
+        .unicast_addresses()
+        .find(|a| a.addr.octets()[..8] == [0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0])
+        .unwrap()
+        .addr;
+    assert!(ping(&mut net, 0, dst, 12, 3), "no reply from {dst}");
+    assert!(net.inst(0).address_cache().next().is_none());
+}

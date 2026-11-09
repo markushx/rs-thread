@@ -387,6 +387,11 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         if h != self.glue.addr_hash {
             self.glue.addr_hash = h;
             self.core.push_event(Event::AddressesChanged);
+            // A child that is not an FTD re-registers its addresses with
+            // its parent (OT `Mle::HandleNotifierEvents`).
+            if role == Role::Child && !self.mle.is_full_thread_device() {
+                self.mle.schedule_child_update_request(&mut self.core, now);
+            }
         }
         let _ = ipv6::LINK_LOCAL_ALL_NODES;
         busy

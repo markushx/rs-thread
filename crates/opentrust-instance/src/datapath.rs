@@ -227,6 +227,16 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         {
             self.mle.parent_frame_received(now);
         }
+        // The mesh source of a mesh header frame, to find children that
+        // moved (OT `UpdateEidRlocCacheAndStaleChild`).
+        let mesh_src = match opentrust_lowpan::forward::parse_frame(payload) {
+            Ok(opentrust_lowpan::forward::LowpanFrame::Mesh { header, .. })
+                if !dst.is_broadcast() =>
+            {
+                Some(Rloc16(header.source))
+            }
+            _ => None,
+        };
         let mut dg = [0u8; opentrust_mesh::forwarder::MTU];
         let mut dg_len = 0usize;
         let mut events: Vec<ResolverEvent, 4> = Vec::new();
@@ -264,6 +274,9 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         let _ = forwarded;
         self.after_forwarder(now, events, notes);
         if dg_len > 0 {
+            if let (Some(ms), Ok(h)) = (mesh_src, Ipv6Header::parse(&dg[..dg_len])) {
+                self.mle.remove_child_that_moved(&mut self.core, &h.src, ms);
+            }
             self.receive_datagram(now, &mut dg[..dg_len], link_security);
         }
     }
