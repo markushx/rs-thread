@@ -25,10 +25,10 @@ opentrust-lowpan = { path = "crates/opentrust-lowpan", version = "0.1.0" }
 opentrust-net = { path = "crates/opentrust-net", version = "0.1.0" }
 opentrust-coap = { path = "crates/opentrust-coap", version = "0.1.0" }
 opentrust-dtls = { path = "crates/opentrust-dtls", version = "0.1.0" }
-opentrust-mle = { path = "crates/opentrust-mle", version = "0.1.0" }
+opentrust-mle = { path = "crates/opentrust-mle", version = "0.1.0", default-features = false }
 opentrust-dns = { path = "crates/opentrust-dns", version = "0.1.0" }
-opentrust-mesh = { path = "crates/opentrust-mesh", version = "0.1.0" }
-opentrust-meshcop = { path = "crates/opentrust-meshcop", version = "0.1.0" }
+opentrust-mesh = { path = "crates/opentrust-mesh", version = "0.1.0", default-features = false }
+opentrust-meshcop = { path = "crates/opentrust-meshcop", version = "0.1.0", default-features = false }
 opentrust-embassy = { path = "crates/opentrust-embassy", version = "0.1.0" }
 opentrust-matter = { path = "crates/opentrust-matter", version = "0.1.0" }
 opentrust-cli = { path = "crates/opentrust-cli", version = "0.1.0" }

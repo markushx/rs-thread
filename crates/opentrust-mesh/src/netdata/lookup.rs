@@ -48,7 +48,6 @@ pub trait MeshInfo {
     }
 }
 
-#[cfg(feature = "ftd")]
 impl<const C: usize> MeshInfo for opentrust_mle::Mle<C> {
     fn path_cost(&self, rloc16: u16) -> u8 {
         opentrust_mle::Mle::path_cost(self, opentrust_core::types::Rloc16(rloc16))
@@ -58,6 +57,9 @@ impl<const C: usize> MeshInfo for opentrust_mle::Mle<C> {
     }
     fn has_rloc16(&self, rloc16: u16) -> bool {
         self.rloc16().0 == rloc16
+    }
+    fn is_ftd(&self) -> bool {
+        self.is_full_thread_device()
     }
 }
 
@@ -272,7 +274,6 @@ impl<'a, M: MeshInfo + ?Sized> Lookup<'a, M> {
     }
 }
 
-#[cfg(feature = "ftd")]
 impl<M: MeshInfo + ?Sized> crate::forwarder::NetworkData for Lookup<'_, M> {
     fn route_lookup(
         &self,
@@ -327,7 +328,6 @@ impl MeshInfo for EndDeviceMesh {
 
 /// [`Ip6Env`](opentrust_net::ip6::Ip6Env) backed by Network Data and the
 /// MLE core: role, external route lookup, on-mesh check.
-#[cfg(feature = "ftd")]
 #[derive(Debug, Clone, Copy)]
 pub struct NetDataIp6Env<'a, const C: usize> {
     /// Network Data.
@@ -336,7 +336,6 @@ pub struct NetDataIp6Env<'a, const C: usize> {
     pub mle: &'a opentrust_mle::Mle<C>,
 }
 
-#[cfg(feature = "ftd")]
 impl<const C: usize> opentrust_net::ip6::Ip6Env for NetDataIp6Env<'_, C> {
     fn role(&self) -> opentrust_net::mpl::Role {
         use opentrust_mle::Role as R;

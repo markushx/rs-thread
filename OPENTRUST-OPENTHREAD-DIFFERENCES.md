@@ -600,3 +600,10 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - **MTD-only builds.** The forwarder is `ftd`-only, so the data path of an end-device-only build is not implemented yet; the crate builds, `ftd` is a forwarded feature of the lower crates.
 - **Simulator radio.** `opentrust-sim` models a MAC-offload radio (`TX_ACK`, `RX_ACK`, `SRC_MATCH`, CSMA backoff, retries, ACK timeout, energy scan; address filtering stays in the MAC) with air time (32 us / byte + SHR / PHR), 192 us turnaround, 16 tries per frame and independent per-direction loss. It does not model collisions, CCA by other nodes (only forced jamming), timed receive windows / CSL, or capture effects. It is not the OpenThread simulation platform protocol (Phase 11).
 
+
+### End-device-only builds (`default-features = false`)
+
+- The workspace dependencies on `opentrust-mle`, `opentrust-mesh` and `opentrust-meshcop` no longer enable their default features, so an `opentrust-instance` build without `ftd` really has no router, leader, Router ID, indirect queue user or commissioner code (before, feature unification pulled `ftd` in everywhere).
+- `opentrust-mesh::forwarder` / `indirect` are compiled without `ftd` (OT `mesh_forwarder.cpp` + `mesh_forwarder_mtd.cpp`); the MLE offers a parent-only `next_hop_and_path_cost` in that build. Mesh header frames are dropped on receive without `ftd` (OT `HandleReceivedFrame`: `HandleMesh` is FTD only). The `MeshForwarder` struct still contains the (empty) indirect queue instead of being a separate type; OT has no queue object in MTD builds. An end device sends everything except link-local to its parent, as in OT `UpdateIp6RouteMtd`.
+- The `Instance` of such a build serves only Address Notify / Address Error / Anycast Locate / dataset Get on TMF and has no `become_leader`.
+- Deviation in test coverage: the sim harness cannot mix `ftd` and non-`ftd` instances in one binary (feature unification), so the end-device build is tested at the instance level (start, Parent Request on the dataset channel); full attach of mode-MTD nodes is covered by the existing sim tests.

@@ -226,6 +226,43 @@ impl<const C: usize> Mle<C> {
         &mut self.mle_counter
     }
 
+    /// Router ID of the leader.
+    pub fn leader_router_id(&self) -> u8 {
+        self.leader_data.leader_router_id
+    }
+
+    /// RLOC16 of the leader.
+    pub fn leader_rloc16(&self) -> Rloc16 {
+        Rloc16::from_router_id(self.leader_data.leader_router_id).unwrap_or(Rloc16::INVALID)
+    }
+
+    /// Path cost towards `dest` (`MAX_ROUTE_COST` if unreachable).
+    pub fn path_cost(&self, dest: Rloc16) -> u8 {
+        self.next_hop_and_path_cost(dest).1
+    }
+
+    /// Next hop and path cost towards `dest` for an end-device-only build
+    /// (OT `RouterTable::GetNextHopAndPathCost` with no routing table: the
+    /// only neighbor with a route is the parent).
+    #[cfg(not(feature = "ftd"))]
+    pub fn next_hop_and_path_cost(&self, dest: Rloc16) -> (Option<Rloc16>, u8) {
+        use crate::consts::MAX_ROUTE_COST;
+        if !self.role.is_attached() {
+            return (None, MAX_ROUTE_COST);
+        }
+        if self.rloc16 == dest {
+            return (Some(dest), 0);
+        }
+        let Some(parent) = &self.parent else {
+            return (None, MAX_ROUTE_COST);
+        };
+        let p = &parent.router.neighbor;
+        if !p.is_valid() || dest.router_id() != p.rloc16.router_id() {
+            return (None, MAX_ROUTE_COST);
+        }
+        (Some(p.rloc16), p.link_info.link_quality_in().cost())
+    }
+
     /// The child table (parent side).
     pub fn children(&self) -> &ChildTable<C> {
         &self.children

@@ -269,16 +269,6 @@ impl<const C: usize> Mle<C> {
             .then(|| now.saturating_duration_since(self.rtr.id_sequence_updated))
     }
 
-    /// Router ID of the leader.
-    pub fn leader_router_id(&self) -> u8 {
-        self.leader_data.leader_router_id
-    }
-
-    /// RLOC16 of the leader.
-    pub fn leader_rloc16(&self) -> Rloc16 {
-        Rloc16::from_router_id(self.leader_data.leader_router_id).unwrap_or(Rloc16::INVALID)
-    }
-
     /// `true` if attached, router eligible and at most one router is
     /// active (OT `IsSingleton`).
     pub fn is_singleton(&self) -> bool {
@@ -554,11 +544,6 @@ impl<const C: usize> Mle<C> {
             cost = cost.saturating_add(LinkQuality::Q3.cost());
         }
         (next_hop, cost)
-    }
-
-    /// Path cost towards `dest` ([`MAX_ROUTE_COST`] if unreachable).
-    pub fn path_cost(&self, dest: Rloc16) -> u8 {
-        self.next_hop_and_path_cost(dest).1
     }
 
     /// Path cost to the leader.

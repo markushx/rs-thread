@@ -1031,6 +1031,10 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         let Some(mut header) = header else {
             return Rx::Consumed;
         };
+        if cfg!(not(feature = "ftd")) {
+            // OT `HandleReceivedFrame`: mesh header frames are an FTD feature.
+            return Rx::Dropped(DropReason::Invalid);
+        }
         if !link_security {
             return Rx::Dropped(DropReason::Security);
         }

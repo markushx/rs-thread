@@ -40,9 +40,7 @@ extern crate std;
 
 pub mod address;
 pub mod dua;
-#[cfg(feature = "ftd")]
 pub mod forwarder;
-#[cfg(feature = "ftd")]
 pub mod indirect;
 pub mod mlr;
 pub mod netdata;

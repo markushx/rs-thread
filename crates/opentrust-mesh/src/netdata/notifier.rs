@@ -313,7 +313,6 @@ impl Notifier {
 /// A child RLOC16 of this router that has Border Router, Has Route or
 /// Server entries in `leader` but is not a valid child any more (OT
 /// `RemoveStaleChildEntries`).
-#[cfg(feature = "ftd")]
 pub fn find_stale_child<const C: usize>(
     leader: &NetworkDataView<'_>,
     mle: &opentrust_mle::Mle<C>,
