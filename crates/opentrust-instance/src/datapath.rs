@@ -203,6 +203,17 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
         let dst = f.dst_address();
         let payload = f.payload();
         let link_security = rx.security.is_some();
+        // Link-layer replay protection (Thread 1.4.1 section 7.2.1.2).
+        if let Some(sec) = &rx.security
+            && let Some(ks) = sec.key_sequence
+            && self
+                .mle
+                .check_link_frame(src, ks, sec.frame_counter)
+                .is_err()
+        {
+            self.glue.replay_drops = self.glue.replay_drops.wrapping_add(1);
+            return;
+        }
         self.core.rx_link = LinkRxInfo {
             rss: rx.rssi,
             lqi: rx.lqi,
@@ -642,6 +653,11 @@ impl<S: SettingsStore, C: CryptoBackend + Clone, R: Rng> Instance<S, C, R> {
     /// An echo reply or other ICMPv6 message for the application.
     fn handle_icmp(&mut self, now: Instant, d: &Delivery, bytes: &[u8]) {
         self.ping_received(now, d, bytes);
+    }
+
+    /// Frames dropped by link-layer replay protection so far.
+    pub fn replay_drops(&self) -> u32 {
+        self.glue.replay_drops
     }
 
     /// Reason of the last dropped datagram, for diagnostics.

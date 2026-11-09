@@ -36,6 +36,7 @@ pub(crate) struct GlueState {
     pub located: Option<Located>,
     pub addr_hash: u64,
     pub restoring_leader: bool,
+    pub replay_drops: u32,
     pub commissioner_aloc: Option<u16>,
 }
 
