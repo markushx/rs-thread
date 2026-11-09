@@ -1,6 +1,6 @@
 [package]
 name = "opentrust-sim"
-description = "POSIX simulation platform (OpenThread simulation compatible) for OpenTrust"
+description = "Simulated 802.15.4 medium and network harness for OpenTrust (std, for tests)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,16 +12,13 @@ keywords.workspace = true
 categories.workspace = true
 readme = "../../README.md"
 
-[features]
-defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-platform/defmt", "opentrust-embassy/defmt"]
-log = ["dep:log", "opentrust-core/log", "opentrust-platform/log", "opentrust-embassy/log"]
-
 [dependencies]
 opentrust-core = { workspace = true }
 opentrust-platform = { workspace = true }
-opentrust-embassy = { workspace = true }
-defmt = { workspace = true, optional = true }
-log = { workspace = true, optional = true }
+opentrust-mac = { workspace = true }
+opentrust-instance = { workspace = true }
+rand_core = { workspace = true }
+heapless = { workspace = true }
 
 [lints]
 workspace = true
