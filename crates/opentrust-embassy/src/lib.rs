@@ -33,13 +33,14 @@
 //! [`OpenTrust::srp_wait_host_registered`] /
 //! [`OpenTrust::srp_wait_service_registered`] and
 //! [`OpenTrust::dns_resolve_address`] / [`OpenTrust::dns_browse`] /
-//! [`OpenTrust::dns_resolve_service`] issue a request and await its result
+//! [`OpenTrust::dns_resolve_service`], [`OpenTrust::scan`] (MLE discovery)
+//! and [`OpenTrust::energy_scan`] issue a request and await its result
 //! without taking events from [`OpenTrust::next_event`] (see the
 //! `requests` module docs of the source for the rules). Timeouts are driven
-//! by `run`. Not wrapped, because the [`Instance`] has no such API yet:
-//! the MLE discovery / active scan, the energy scan and the Thread network
-//! diagnostic requests (use [`OpenTrust::with`] and events for the
-//! diagnostics).
+//! by `run`. Not wrapped: the MAC beacon active scan (use
+//! [`Instance::active_scan_start`] and `Event::ActiveScanResult` through
+//! [`OpenTrust::with`] / [`OpenTrust::next_event`]) and the Thread network
+//! diagnostic requests.
 //!
 //! # edge-nal
 //!//!
@@ -118,7 +119,7 @@ mod state;
 mod udp;
 
 pub use opentrust_instance::{
-    DnsError, PingReply, QueryConfig, ResolvedAddresses, ResolvedService, ServiceId,
+    DiscoverResult, DnsError, PingReply, QueryConfig, ResolvedAddresses, ResolvedService, ServiceId,
 };
 pub use opentrust_instance::{Event, Instance};
 pub use opentrust_meshcop::joiner::JoinerConfig;

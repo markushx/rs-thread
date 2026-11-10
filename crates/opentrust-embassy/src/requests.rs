@@ -21,7 +21,7 @@ use heapless::Vec;
 use opentrust_core::Error;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_instance::{
-    BrowseInstance, DnsError, DnsOutcome, Instance, InstanceCrypto, ItemState,
+    BrowseInstance, DiscoverResult, DnsError, DnsOutcome, Instance, InstanceCrypto, ItemState,
     MAX_BROWSE_INSTANCES, PingReply, QueryConfig, QueryId, ResolvedAddresses, ResolvedService,
     ServiceId,
 };
@@ -179,6 +179,53 @@ where
             Ok(DnsOutcome::Failed(e)) => Err(DnsClientError::Failed(e)),
             Ok(o) => Ok(o),
             Err(e) => Err(DnsClientError::Request(e)),
+        }
+    }
+
+    /// Scan for Thread networks with the MLE discovery scan (see
+    /// [`Instance::discover_start`]; OT `otThreadDiscover`, esp-rs
+    /// `OpenThread::scan`): `f` is called with every answering network and
+    /// finally with `None`. `channels` is a bit mask (`0`: all 2.4 GHz
+    /// channels); each channel takes 300 ms.
+    ///
+    /// [`Error::Busy`] while a scan runs. Dropping the future does not stop
+    /// the scan (the instance has no cancel); a new scan fails with `Busy`
+    /// until it ends.
+    pub async fn scan(
+        &self,
+        channels: u32,
+        mut f: impl FnMut(Option<&DiscoverResult>),
+    ) -> Result<(), Error> {
+        self.res.lock(|s| s.disc_q.clear());
+        self.with(|i, now| i.discover_start(channels, 0xffff, false, now))?;
+        loop {
+            match self.wait_for(None, |s| s.disc_q.pop_front()).await? {
+                Some(r) => f(Some(&r)),
+                None => {
+                    f(None);
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    /// Energy scan (see [`Instance::energy_scan_start`]): `f(channel, max_rssi)`
+    /// per channel of `channels` (`0`: all supported) after `duration` each;
+    /// the RSSI is 127 if the radio cannot measure. [`Error::NotImplemented`]
+    /// if the radio has no energy scan, [`Error::Busy`] while a scan runs.
+    pub async fn energy_scan(
+        &self,
+        channels: u32,
+        duration: Duration,
+        mut f: impl FnMut(u8, i8),
+    ) -> Result<(), Error> {
+        self.res.lock(|s| s.energy_q.clear());
+        self.with(|i, now| i.energy_scan_start(channels, duration, now))?;
+        loop {
+            match self.wait_for(None, |s| s.energy_q.pop_front()).await? {
+                Some((channel, rssi)) => f(channel, rssi),
+                None => return Ok(()),
+            }
         }
     }
 

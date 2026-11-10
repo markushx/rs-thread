@@ -274,7 +274,8 @@ Security-relevant decisions for the review before M4:
   - [ ] Initiator side of Enhanced ACK probing (`Mac::track_enh_ack_probing`) and aggregation of data request / ACK frames
   - [x] Async facade (`opentrust-embassy`): `Resources` / `OpenTrust` handle, drop-safe `run(radio, alarm)`, multi-waiter `wait_changed`, `next_event`, `with` passthrough, async `UdpSocket`; tested over an async test medium in virtual time
   - [x] `edge-nal` UDP traits (feature `edge-nal`), async wrappers for ping / joiner / SRP wait / DNS (resolve address, browse, resolve service)
-  - [ ] Async facade, open: async scan wrappers (MLE discovery scan, active scan, energy scan: the `Instance` does not expose them yet), the esp-rs `openthread`-compatible surface
+  - [x] Scans in the `Instance` (MLE discovery, MAC active scan with beacons from attached routers, energy scan) and async `scan` / `energy_scan` wrappers
+  - [ ] Async facade, open: an async wrapper for the MAC active scan, the esp-rs `openthread`-compatible surface
   - [ ] Differential tests of the `Instance` against an OpenThread node (Phase 11)
 - [ ] rs-matter integration (`opentrust-matter`):
   - [ ] `edge-nal` UDP socket traits (bind/send/receive over IPv6) for Matter traffic

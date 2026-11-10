@@ -12,7 +12,8 @@ use embassy_sync::waitqueue::{MultiWakerRegistration, WakerRegistration};
 use heapless::Deque;
 use opentrust_core::time::Instant;
 use opentrust_instance::{
-    Event, Instance, InstanceCrypto, Rloc16, Role, UDP_SOCKETS, UdpSocket as RawUdpSocket,
+    DiscoverResult, Event, Instance, InstanceCrypto, Rloc16, Role, UDP_SOCKETS,
+    UdpSocket as RawUdpSocket,
 };
 use opentrust_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
@@ -25,6 +26,13 @@ pub const EVENT_QUEUE_LEN: usize = 16;
 /// registered waiter is woken (it re-checks its condition and registers
 /// again), so waiting stays correct for any number of tasks.
 pub const WAITERS: usize = 8;
+
+fn push_drop_oldest<T, const N: usize>(q: &mut Deque<T, N>, v: T) {
+    if q.is_full() {
+        let _ = q.pop_front();
+    }
+    let _ = q.push_back(v);
+}
 
 pub(crate) struct UdpSlot {
     pub(crate) sock: Option<RawUdpSocket>,
@@ -47,6 +55,10 @@ pub(crate) struct State<S, C: InstanceCrypto, R> {
     /// The last Joiner result, `None` while joining or before a join.
     pub(crate) joiner_result: Option<Result<(), opentrust_core::Error>>,
     pub(crate) ping_seq: u16,
+    /// Results of the running discovery scan (`None`: done).
+    pub(crate) disc_q: Deque<Option<DiscoverResult>, 16>,
+    /// Results of the running energy scan (`None`: done).
+    pub(crate) energy_q: Deque<Option<(u8, i8)>, 32>,
     /// A transmit / energy scan was started by `run` but its future was
     /// dropped before the result was reported.
     pub(crate) interrupted: bool,
@@ -60,6 +72,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> State<S, C, R> {
         while let Some(ev) = self.inst.poll_event() {
             if let Event::JoinerResult(r) = ev {
                 self.joiner_result = Some(r);
+            }
+            match ev {
+                Event::DiscoverResult(r) => push_drop_oldest(&mut self.disc_q, Some(r)),
+                Event::DiscoverDone => push_drop_oldest(&mut self.disc_q, None),
+                Event::EnergyScanResult { channel, max_rssi } => {
+                    push_drop_oldest(&mut self.energy_q, Some((channel, max_rssi)));
+                }
+                Event::EnergyScanDone => push_drop_oldest(&mut self.energy_q, None),
+                _ => {}
             }
             if matches!(ev, Event::UdpReadable(_)) {
                 // Handled by the per-socket wakers below (the instance
@@ -128,6 +149,8 @@ impl<M: RawMutex, K: Clock, S, C: InstanceCrypto, R> Resources<M, K, S, C, R> {
                 req_deadline: None,
                 joiner_result: None,
                 ping_seq: 0,
+                disc_q: Deque::new(),
+                energy_q: Deque::new(),
                 interrupted: false,
             })),
             kick: Signal::new(),

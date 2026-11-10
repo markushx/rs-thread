@@ -330,3 +330,55 @@ fn dns_resolution_and_srp_registration() {
     );
     assert_eq!(updates.get(), 1);
 }
+
+#[test]
+fn scan_finds_the_leader_and_energy_scan_reports_each_channel() {
+    let clks = [clock(), clock()];
+    let air = Air::new(2);
+    let pend = [Cell::new(None), Cell::new(None)];
+    let res0: Res<'_> = Res::new(instance(1), &clks[0]);
+    let res1: Res<'_> = Res::new(instance(2), &clks[1]);
+    let ots = [Ot::new(&res0), Ot::new(&res1)];
+    let ds = ots[0].with(|i, _| i.create_dataset(15).unwrap());
+    let tasks = vec![
+        run_task(ots[0], &air, 0, &clks[0], &pend[0]),
+        run_task(ots[1], &air, 1, &clks[1], &pend[1]),
+    ];
+    drive(
+        &[&clks[0], &clks[1]],
+        &[&pend[0], &pend[1]],
+        tasks,
+        async {
+            start(ots[0], &ds, true).await;
+            role(ots[0], Role::Leader).await;
+            // The scanner is factory new with the interface up.
+            ots[1].with(|i, _| i.ip6_set_enabled(true));
+
+            let leader_ext = ots[0].with(|i, _| i.ext_address());
+            let mut found = Vec::new();
+            let mut ended = false;
+            ots[1]
+                .scan(0, |r| match r {
+                    Some(r) => found.push(*r),
+                    None => ended = true,
+                })
+                .await
+                .unwrap();
+            assert!(ended);
+            assert_eq!(found.len(), 1, "{found:?}");
+            assert_eq!(found[0].ext_address, leader_ext);
+            assert_eq!(found[0].channel, 15);
+            assert_eq!(found[0].network_name.unwrap().as_str(), "OpenTrust");
+
+            let mut rssi = Vec::new();
+            ots[1]
+                .energy_scan(1 << 11 | 1 << 15 | 1 << 20, secs(0), |c, r| {
+                    rssi.push((c, r))
+                })
+                .await
+                .unwrap();
+            assert_eq!(rssi, vec![(11, -100), (15, -100), (20, -100)]);
+        },
+        secs(1800),
+    );
+}
