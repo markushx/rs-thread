@@ -682,3 +682,8 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - Defaults instead of data: `mle_counters`, `ip_counters` (all zero); `mac_counters` fields the MAC does not keep (unicast / broadcast, no-ack-requested, other, busy channel, duplicates, FCS) are 0; `NeighborInfo` age, frame counters, last RSSI and error rates; `RouteInfo` ext address, LQIs and age; `full_network_data` of a neighbor is its FTD flag.
 - `NotImplemented` / no effect: `set_csl_period`, `set_child_timeout`, `set_child_supervision_*`. `scan` is the MLE discovery scan and ignores `duration_millis`. `srp_set_conf` applies only host name and addresses, `srp_add_service` ignores subtype labels, `srp_remove_service` ignores `immediate`.
 - Not provided: the DNS client calls, `detach_gracefully`, `buffer_info`, `with_instance`, raw `rx` / `tx`, the pending-dataset components. The native API covers DNS (`OpenTrust::dns_*`).
+
+## Message buffers
+
+- OpenThread has one message pool (`OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS`, default 44 buffers of 128 bytes) shared by every queue. OpenTrust uses the same buffer size and chained storage (`opentrust_core::bufpool`) but each queue (UDP receive queues, outbox, Border Agent outbox, indirect queue, forwarder held datagrams, CoAP pending requests and cached responses, DNS/SRP datagrams) owns its own pool with a const-generic size, so exhaustion in one queue does not starve another and the total is a compile-time bound. Allocation failure is `NoBufs`, as in OpenThread.
+- The reassembler, the forwarder receive buffer and the MAC transmit queue still hold full-MTU buffers per slot.

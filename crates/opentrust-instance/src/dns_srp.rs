@@ -7,6 +7,7 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::{Deque, String, Vec};
+use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
 use opentrust_core::crypto::ecdsa::SecretKey;
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::Instant;
@@ -73,6 +74,42 @@ struct Dgram {
     buf: [u8; MAX_UDP_PAYLOAD],
 }
 
+/// Queue of datagrams of the clients; the payloads are chains of buffers of
+/// a pool (`NoBufs` when it is exhausted).
+#[derive(Debug, Default)]
+struct DgramQueue {
+    q: Deque<(Which, SocketAddrV6, Chain), 2>,
+    pool: BufPool<12, POOL_BUF_SIZE>,
+}
+
+impl DgramQueue {
+    fn push(&mut self, which: Which, dst: SocketAddrV6, p: &[u8]) -> Result<()> {
+        if self.q.is_full() {
+            return Err(Error::NoBufs);
+        }
+        let chain = self.pool.alloc(p)?;
+        let _ = self.q.push_back((which, dst, chain));
+        Ok(())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.q.is_empty()
+    }
+
+    fn pop_front(&mut self) -> Option<Dgram> {
+        let (which, dst, chain) = self.q.pop_front()?;
+        let mut buf = [0u8; MAX_UDP_PAYLOAD];
+        let len = self.pool.read(&chain, &mut buf);
+        self.pool.free(chain);
+        Some(Dgram {
+            which,
+            dst,
+            len,
+            buf,
+        })
+    }
+}
+
 /// State of the SRP and DNS clients.
 #[derive(Debug)]
 pub(crate) struct DnsSrp {
@@ -80,7 +117,7 @@ pub(crate) struct DnsSrp {
     pub(crate) dns: DnsClient<4>,
     srp_sock: Option<SocketHandle>,
     dns_sock: Option<SocketHandle>,
-    out: Deque<Dgram, 2>,
+    out: DgramQueue,
     srp_events: Deque<SrpEvent, 4>,
     results: Deque<(QueryId, DnsOutcome), 2>,
     /// Results already announced with an event.
@@ -97,7 +134,7 @@ impl DnsSrp {
             dns: DnsClient::new(),
             srp_sock: None,
             dns_sock: None,
-            out: Deque::new(),
+            out: DgramQueue::default(),
             srp_events: Deque::new(),
             results: Deque::new(),
             notified: 0,
@@ -124,25 +161,15 @@ impl DnsSrp {
 const SERVER_INFO_LEN: usize = 18;
 
 struct SrpCtx<'a, S> {
-    out: &'a mut Deque<Dgram, 2>,
+    out: &'a mut DgramQueue,
     events: &'a mut Deque<SrpEvent, 4>,
     settings: &'a mut S,
     addrs: Vec<Ipv6Addr, MAX_HOST_ADDRS>,
     ml_eid: Ipv6Addr,
 }
 
-fn queue(out: &mut Deque<Dgram, 2>, which: Which, dst: SocketAddrV6, p: &[u8]) -> Result<()> {
-    let mut buf = [0u8; MAX_UDP_PAYLOAD];
-    buf.get_mut(..p.len())
-        .ok_or(Error::NoBufs)?
-        .copy_from_slice(p);
-    out.push_back(Dgram {
-        which,
-        dst,
-        len: p.len(),
-        buf,
-    })
-    .map_err(|_| Error::NoBufs)
+fn queue(out: &mut DgramQueue, which: Which, dst: SocketAddrV6, p: &[u8]) -> Result<()> {
+    out.push(which, dst, p)
 }
 
 impl<S: SettingsStore> SrpContext for SrpCtx<'_, S> {
@@ -203,7 +230,7 @@ impl<S: SettingsStore> SrpContext for SrpCtx<'_, S> {
 }
 
 struct DnsCtx<'a> {
-    out: &'a mut Deque<Dgram, 2>,
+    out: &'a mut DgramQueue,
     results: &'a mut Deque<(QueryId, DnsOutcome), 2>,
 }
 
