@@ -56,6 +56,26 @@
 //! Registration ([`Instance::domain_unicast_address`]). Extra TMF resources
 //! can be served by a layer on top with [`Instance::set_tmf_extension`].
 //!
+//! # Commissioning
+//!
+//! The instance owns the MeshCoP roles: the Joiner (always,
+//! [`Instance::joiner_start`]), the Joiner Router and the leader's
+//! commissioner session (`ftd`), the on-mesh Commissioner
+//! (`commissioner`, `Instance::commissioner_start`) and the Border Agent
+//! (`border-agent`, `Instance::border_agent_start`; the host carries its
+//! DTLS datagrams on the external interface). The crypto parameter
+//! implements [`InstanceCrypto`], which adds the EC-JPAKE curve.
+//!
+//! Frames carry a [`LinkSecurity`](opentrust_core::types::LinkSecurity)
+//! class. Only key ID mode 1 counts as link-layer secured above the MAC.
+//! Key ID mode 0 (the KEK) frames are accepted only from the peer of a
+//! running Joiner Entrust exchange, addressed to us, with a frame counter
+//! above the last accepted one under the current KEK, and only as UDP
+//! between link-local addresses to the TMF port; they reach only the
+//! Joiner / Joiner Router, never IPv6 or TMF ([`Instance::kek_drops`]).
+//! Unsecured Joiner DTLS records are accepted on the Joiner UDP port only
+//! between link-local addresses.
+//!
 //! # SLAAC IID secret
 //!
 //! Semantically opaque interface identifiers use a 32-byte secret that is
