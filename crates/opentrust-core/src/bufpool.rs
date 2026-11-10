@@ -13,6 +13,9 @@ use crate::error::{Error, Result};
 
 const NIL: u8 = u8::MAX;
 
+/// OpenThread message buffer size (`OPENTHREAD_CONFIG_MESSAGE_BUFFER_SIZE`).
+pub const POOL_BUF_SIZE: usize = 128;
+
 /// A message stored in a [`BufPool`]: the first buffer and the byte length.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Chain {
@@ -33,7 +36,7 @@ impl Chain {
 }
 
 /// `N` buffers of `SIZE` bytes (`N` below 255).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BufPool<const N: usize, const SIZE: usize> {
     data: [[u8; SIZE]; N],
     next: [u8; N],
@@ -49,7 +52,7 @@ impl<const N: usize, const SIZE: usize> Default for BufPool<N, SIZE> {
 
 impl<const N: usize, const SIZE: usize> BufPool<N, SIZE> {
     /// An empty pool with every buffer free.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         const { assert!(N < NIL as usize && SIZE > 0) };
         let mut next = [NIL; N];
         let mut i = 0;

@@ -48,15 +48,27 @@ use crate::tlv::Tlvs;
 pub const RECEIVER_ID: ReceiverId = ReceiverId::MLE;
 
 /// Claim UDP port 19788 for MLE (OT `Mle::Enable` / `mSocket.Open`).
-pub fn register_receiver<const N: usize, const Q: usize, const BUF: usize, const R: usize>(
-    udp: &mut UdpSockets<N, Q, BUF, R>,
+pub fn register_receiver<
+    const N: usize,
+    const Q: usize,
+    const BUF: usize,
+    const R: usize,
+    const P: usize,
+>(
+    udp: &mut UdpSockets<N, Q, BUF, R, P>,
 ) -> Result<()> {
     udp.register_receiver(MLE_UDP_PORT, RECEIVER_ID)
 }
 
 /// Release the MLE port.
-pub fn unregister_receiver<const N: usize, const Q: usize, const BUF: usize, const R: usize>(
-    udp: &mut UdpSockets<N, Q, BUF, R>,
+pub fn unregister_receiver<
+    const N: usize,
+    const Q: usize,
+    const BUF: usize,
+    const R: usize,
+    const P: usize,
+>(
+    udp: &mut UdpSockets<N, Q, BUF, R, P>,
 ) -> Result<()> {
     udp.unregister_receiver(RECEIVER_ID)
 }

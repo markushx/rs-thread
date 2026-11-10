@@ -250,15 +250,27 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
     }
 
     /// Claim port 61631 in the UDP table (OT `Agent::Start`).
-    pub fn register_receiver<const N: usize, const Q: usize, const BUF: usize, const R: usize>(
-        udp: &mut UdpSockets<N, Q, BUF, R>,
+    pub fn register_receiver<
+        const N: usize,
+        const Q: usize,
+        const BUF: usize,
+        const R: usize,
+        const P: usize,
+    >(
+        udp: &mut UdpSockets<N, Q, BUF, R, P>,
     ) -> Result<()> {
         udp.register_receiver(UDP_PORT, ReceiverId::TMF)
     }
 
     /// Release the port.
-    pub fn unregister_receiver<const N: usize, const Q: usize, const BUF: usize, const R: usize>(
-        udp: &mut UdpSockets<N, Q, BUF, R>,
+    pub fn unregister_receiver<
+        const N: usize,
+        const Q: usize,
+        const BUF: usize,
+        const R: usize,
+        const P: usize,
+    >(
+        udp: &mut UdpSockets<N, Q, BUF, R, P>,
     ) -> Result<()> {
         udp.unregister_receiver(ReceiverId::TMF)
     }

@@ -43,6 +43,7 @@
 
 use core::net::{Ipv6Addr, SocketAddrV6};
 
+use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
 use opentrust_core::{Error, Result};
 
 use crate::header::{PROTO_UDP, UdpHeader};
@@ -191,22 +192,22 @@ impl Default for UdpSendOpts {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Packet<const BUF: usize> {
+struct Packet {
     len: usize,
     full_len: usize,
     meta: UdpMeta,
-    data: [u8; BUF],
+    chain: Chain,
 }
 
 #[derive(Debug, Clone)]
-struct Socket<const Q: usize, const BUF: usize> {
+struct Socket<const Q: usize> {
     /// Bound local address and port (port 0 = not bound yet).
     local: SocketAddrV6,
     /// Connected peer (port 0 = not connected).
     peer: SocketAddrV6,
     /// Open order, newest wins on overlapping matches (OT list head).
     seq: u32,
-    queue: [Option<Packet<BUF>>; Q],
+    queue: [Option<Packet>; Q],
     head: usize,
     count: usize,
     dropped: u32,
@@ -225,27 +226,32 @@ pub struct UdpSockets<
     const Q: usize = 2,
     const BUF: usize = 1280,
     const R: usize = 4,
+    const P: usize = 16,
 > {
-    sockets: [Option<Socket<Q, BUF>>; N],
+    sockets: [Option<Socket<Q>>; N],
+    pool: BufPool<P, POOL_BUF_SIZE>,
     receivers: [Option<(u16, ReceiverId)>; R],
     next_ephemeral: u16,
     open_seq: u32,
     epoch: u32,
 }
 
-impl<const N: usize, const Q: usize, const BUF: usize, const R: usize> Default
-    for UdpSockets<N, Q, BUF, R>
+impl<const N: usize, const Q: usize, const BUF: usize, const R: usize, const P: usize> Default
+    for UdpSockets<N, Q, BUF, R, P>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const N: usize, const Q: usize, const BUF: usize, const R: usize> UdpSockets<N, Q, BUF, R> {
+impl<const N: usize, const Q: usize, const BUF: usize, const R: usize, const P: usize>
+    UdpSockets<N, Q, BUF, R, P>
+{
     /// An empty table.
     pub const fn new() -> Self {
         Self {
             sockets: [const { None }; N],
+            pool: BufPool::new(),
             receivers: [None; R],
             next_ephemeral: EPHEMERAL_PORT_MIN,
             open_seq: 0,
@@ -253,14 +259,14 @@ impl<const N: usize, const Q: usize, const BUF: usize, const R: usize> UdpSocket
         }
     }
 
-    fn sock(&self, h: SocketHandle) -> Result<&Socket<Q, BUF>> {
+    fn sock(&self, h: SocketHandle) -> Result<&Socket<Q>> {
         self.sockets
             .get(usize::from(h.0))
             .and_then(Option::as_ref)
             .ok_or(Error::InvalidArgs)
     }
 
-    fn sock_mut(&mut self, h: SocketHandle) -> Result<&mut Socket<Q, BUF>> {
+    fn sock_mut(&mut self, h: SocketHandle) -> Result<&mut Socket<Q>> {
         self.sockets
             .get_mut(usize::from(h.0))
             .and_then(Option::as_mut)
@@ -321,7 +327,11 @@ impl<const N: usize, const Q: usize, const BUF: usize, const R: usize> UdpSocket
     /// Close a socket, dropping queued packets.
     pub fn close(&mut self, h: SocketHandle) -> Result<()> {
         self.sock(h)?;
-        self.sockets[usize::from(h.0)] = None;
+        if let Some(mut sock) = self.sockets[usize::from(h.0)].take() {
+            for p in sock.queue.iter_mut().filter_map(Option::take) {
+                self.pool.free(p.chain);
+            }
+        }
         self.epoch = self.epoch.wrapping_add(1);
         Ok(())
     }
@@ -437,7 +447,7 @@ impl<const N: usize, const Q: usize, const BUF: usize, const R: usize> UdpSocket
     // ------------------------------------------------------------ receive
 
     /// OT `SocketHandle::Matches`.
-    fn matches(s: &Socket<Q, BUF>, info: &UdpRxInfo, dst_port: u16, src_port: u16) -> bool {
+    fn matches(s: &Socket<Q>, info: &UdpRxInfo, dst_port: u16, src_port: u16) -> bool {
         if s.local.port() == 0 || s.local.port() != dst_port {
             return false;
         }
@@ -506,14 +516,16 @@ impl<const N: usize, const Q: usize, const BUF: usize, const R: usize> UdpSocket
             return UdpRx::Dropped(DropReason::QueueFull);
         }
         let n = payload.len().min(BUF);
-        let mut data = [0u8; BUF];
-        data[..n].copy_from_slice(&payload[..n]);
+        let Ok(chain) = self.pool.alloc(&payload[..n]) else {
+            s.dropped = s.dropped.saturating_add(1);
+            return UdpRx::Dropped(DropReason::QueueFull);
+        };
         let tail = (s.head + s.count) % Q;
         s.queue[tail] = Some(Packet {
             len: n,
             full_len: payload.len(),
             meta,
-            data,
+            chain,
         });
         s.count += 1;
         self.epoch = self.epoch.wrapping_add(1);
@@ -541,7 +553,8 @@ impl<const N: usize, const Q: usize, const BUF: usize, const R: usize> UdpSocket
         s.head = (s.head + 1) % Q;
         s.count -= 1;
         let len = p.len.min(buf.len());
-        buf[..len].copy_from_slice(&p.data[..len]);
+        self.pool.read(&p.chain, &mut buf[..len]);
+        self.pool.free(p.chain);
         Ok(Some(RecvInfo {
             len,
             truncated: len < p.full_len,
