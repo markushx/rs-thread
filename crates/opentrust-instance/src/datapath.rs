@@ -220,6 +220,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                         rssi: values.rssi,
                     });
                 }
+                MacEvent::ActiveScanResult(r) => {
+                    self.core.push_event(Event::ActiveScanResult(r));
+                }
+                MacEvent::ActiveScanDone => self.core.push_event(Event::ActiveScanDone),
+                MacEvent::EnergyScanResult { channel, max_rssi } => {
+                    self.core
+                        .push_event(Event::EnergyScanResult { channel, max_rssi });
+                }
+                MacEvent::EnergyScanDone => self.core.push_event(Event::EnergyScanDone),
                 MacEvent::DataPollTimeout | MacEvent::DataPollSent(_) => {}
                 MacEvent::TxDone { .. } => {}
                 _ => {}

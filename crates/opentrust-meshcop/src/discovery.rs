@@ -152,7 +152,7 @@ pub fn build_response_with_border_agent(
 
 /// A discovered Thread network (OT `otActiveScanResult` with
 /// `mDiscover`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScanResult {
     /// Extended address of the responding router.
     pub ext_address: ExtAddress,

@@ -223,6 +223,10 @@ pub struct Core<S, C: CryptoBackend, R> {
     pub(crate) disc_rx: Deque<(DiscoveryResponseInfo, Vec<u8, DISCOVERY_TLVS>), 4>,
     /// The Joiner is discovering: keep Discovery Responses.
     pub(crate) joiner_discovering: bool,
+    /// Discovery Responses for the discovery scan.
+    pub(crate) scan_rx: Deque<(DiscoveryResponseInfo, Vec<u8, DISCOVERY_TLVS>), 4>,
+    /// A discovery scan is running: keep Discovery Responses.
+    pub(crate) scanning: bool,
     /// UDP port of the Border Agent (native commissioner flag of the
     /// Discovery Response).
     pub(crate) border_agent_port: Option<u16>,
@@ -712,6 +716,14 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
     }
 
     fn discovery_response_received(&mut self, info: &DiscoveryResponseInfo, tlvs: &[u8]) {
+        if self.scanning
+            && let Ok(v) = Vec::from_slice(tlvs)
+        {
+            if self.scan_rx.is_full() {
+                let _ = self.scan_rx.pop_front();
+            }
+            let _ = self.scan_rx.push_back((*info, v));
+        }
         // For the Joiner (only while one is discovering).
         if self.joiner_discovering
             && let Ok(v) = Vec::from_slice(tlvs)

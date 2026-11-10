@@ -100,6 +100,7 @@ mod datapath;
 mod diag;
 mod dns_srp;
 mod netdata_glue;
+mod scan;
 mod stack;
 mod tmf;
 
@@ -120,10 +121,12 @@ pub use opentrust_dns::client::{
 pub use opentrust_dns::rdata::TxtEntry;
 pub use opentrust_dns::srp::{ItemState, ServiceConfig, ServiceId, SrpError, SrpEvent};
 pub use opentrust_mac::mac::MacCounters;
+pub use opentrust_mac::mac::ScanResult as BeaconScanResult;
 pub use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig};
 pub use opentrust_mesh::netdata::publisher::DnsSrpService;
 pub use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
 pub use opentrust_meshcop::dataset::Dataset;
+pub use opentrust_meshcop::discovery::ScanResult as DiscoverResult;
 pub use opentrust_meshcop::tlv::SecurityPolicy;
 pub use opentrust_mle::tlv::DeviceMode;
 pub use opentrust_mle::{MleConfig, Role};
@@ -254,6 +257,26 @@ pub enum Event {
     UdpReadable(UdpSocket),
     /// An ICMPv6 echo reply arrived ([`Instance::take_ping_reply`]).
     PingReply,
+    /// A network answered the discovery scan ([`Instance::discover_start`]).
+    DiscoverResult(DiscoverResult),
+    /// The discovery scan finished.
+    DiscoverDone,
+    /// A beacon was heard during the active scan
+    /// ([`Instance::active_scan_start`]).
+    ActiveScanResult(BeaconScanResult),
+    /// The active scan finished.
+    ActiveScanDone,
+    /// The maximum RSSI of one channel of the energy scan
+    /// ([`Instance::energy_scan_start`]).
+    EnergyScanResult {
+        /// Channel.
+        channel: u8,
+        /// Maximum RSSI in dBm (the radio's "invalid" value 127 if it could
+        /// not measure).
+        max_rssi: i8,
+    },
+    /// The energy scan finished.
+    EnergyScanDone,
     /// A Network Data Publisher entry changed state.
     Publisher(PublisherEvent),
     /// The SRP client selected or lost a server, registered, or failed.
@@ -346,6 +369,7 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) cm: commissioning::Commissioning<C>,
     pub(crate) tmf_ext: Option<TmfExtension>,
     pub(crate) ping: api::PingState,
+    pub(crate) scan: scan::ScanState,
     pub(crate) ip6_enabled: bool,
     pub(crate) started: bool,
 }
@@ -432,6 +456,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             iid_secret,
             disc_rx: Deque::new(),
             joiner_discovering: false,
+            scan_rx: Deque::new(),
+            scanning: false,
             border_agent_port: None,
         };
         let mut udp = UdpSockets::new();
@@ -464,6 +490,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             cm,
             tmf_ext: None,
             ping: api::PingState::default(),
+            scan: scan::ScanState::default(),
             ip6_enabled: false,
             started: false,
         }
@@ -529,6 +556,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy |= self.service_dns_srp(now);
             busy |= self.service_bbr(now);
             busy |= self.service_commissioning(now);
+            busy |= self.service_scan(now);
             busy |= self.service_outbox(now);
             if !busy {
                 break;
@@ -543,6 +571,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.core.mac.next_deadline(),
             self.mle.next_deadline(),
             self.core.mac.security().next_deadline(),
+            self.scan.disc.next_deadline(),
             self.core.ip6.next_deadline(),
             self.fwd.next_deadline(),
             self.resolver.next_deadline(),
@@ -593,6 +622,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     fn has_pending_work(&self) -> bool {
         !self.core.mle_out.q.is_empty()
+            || !self.core.scan_rx.is_empty()
             || !self.sink.q.is_empty()
             || !self.core.mle_events.is_empty()
             || !self.core.child_changes.is_empty()

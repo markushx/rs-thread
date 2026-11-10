@@ -237,6 +237,17 @@ fn lone_leader(seed: u8) -> Role {
 
 #[test]
 fn resources_can_be_recreated_after_a_drop() {
+    // An `Instance` is ~150 kB and moves a few times in a debug build: run
+    // on a bigger stack than the default test thread has.
+    std::thread::Builder::new()
+        .stack_size(16 << 20)
+        .spawn(recreate)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn recreate() {
     // No global state: the same code twice in one process, then a node
     // restarted from the instance of a dropped one.
     assert_eq!(lone_leader(1), Role::Leader);
