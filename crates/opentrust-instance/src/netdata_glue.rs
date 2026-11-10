@@ -234,9 +234,16 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         if c.ip6.netif.rloc() != rloc.map(|r| mlp.rloc(r)) {
             let _ = c.ip6.netif.set_rloc16(rloc);
         }
+        // A REED (router-eligible FTD child) listens on the all-routers
+        // groups too (OT `Mle::SetStateChild`): it answers Address Queries
+        // for its own addresses itself, its parent does not register them.
+        #[cfg(feature = "ftd")]
+        let reed = role == crate::Role::Child && self.mle.is_router_eligible();
+        #[cfg(not(feature = "ftd"))]
+        let reed = false;
         if enabled {
             c.ip6.netif.subscribe_all_nodes();
-            if role.is_router_or_leader() {
+            if role.is_router_or_leader() || reed {
                 c.ip6.netif.subscribe_all_routers();
             } else {
                 c.ip6.netif.unsubscribe_all_routers();

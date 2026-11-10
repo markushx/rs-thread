@@ -43,7 +43,7 @@ log = { workspace = true, optional = true }
 [dev-dependencies]
 # Enables the `edge-nal` feature for the tests (feature unification).
 opentrust-embassy = { path = ".", features = ["edge-nal", "openthread-compat"] }
-opentrust-sim = { workspace = true }
+opentrust-sim = { workspace = true, features = ["testing"] }
 opentrust-dns = { workspace = true }
 
 [lints]

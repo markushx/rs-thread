@@ -60,6 +60,14 @@ embassy-sync = { version = "0.8", default-features = false }
 p256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 # Test-only: differential testing of CCM* against the RustCrypto `ccm` crate.
 ccm = { version = "0.6", default-features = false }
+# rs-matter (opentrust-matter): the `rs-matter-stack` crate of the 0.4.1
+# workspace is not on crates.io yet, so the whole workspace is pinned to one
+# git revision (see the opentrust-matter crate docs). Needs Rust 1.92.
+rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
+# Virtual embassy-time driver of the test harness (opentrust-sim `testing`).
+embassy-time-driver = { version = "0.2", default-features = false }
+embassy-time-queue-utils = { version = "0.3", default-features = false }
+critical-section = "1.1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

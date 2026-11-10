@@ -279,10 +279,12 @@ Security-relevant decisions for the review before M4:
   - [x] Scans in the `Instance` (MLE discovery, MAC active scan with beacons from attached routers, energy scan) and async `scan` / `energy_scan` wrappers
   - [x] esp-rs `openthread`-compatible surface (feature `openthread-compat`, module `compat`): `OpenThread` with the lifecycle, status, getters, scan / energy scan, tables, multicast, link mode, poll period and SRP client calls
   - [ ] Compat surface, open (the `Instance` lacks the data, the methods return defaults or `NotImplemented`): MLE and IP counters, MAC unicast / broadcast / duplicate / FCS counters, neighbor age / frame counters / last RSSI / error rates, route table ext address / link qualities / age, CSL period and timeout, child timeout setter, child supervision, `detach_gracefully`, `buffer_info`, subtype labels and lease / TTL settings of the SRP client, pending dataset components (`active_dataset_diag`), the DNS client calls (`dns_browse`, `dns_resolve_service[_and_host_address]`, `dns_resolve_address` with esp-rs `DnsResponse`; the native async DNS wrappers exist), ping sender, joiner and `with_instance` / raw rx / tx
-  - [ ] Async facade, open: an async wrapper for the MAC active scan
+  - [ ] Async facade, open: an async wrapper for the MAC active scan; a cancel API for discovery / energy scans (dropping the scan future does not stop the scan)
+  - [ ] Check the beacon payload sent by attached routers against OpenThread (OT disables the outgoing Thread beacon payload by default for Thread 1.2+, `OPENTHREAD_CONFIG_MAC_OUTGOING_BEACON_PAYLOAD_ENABLE`); gate it behind a config option if so
+  - [ ] Buffer pools: a single MLE/TMF message over 1024 bytes cannot be queued in the MLE outbox and pending / cached CoAP messages over 2 kB are refused with `NoBufs`; check large Network Diagnostics answers and size the pools against OT's largest messages
   - [ ] Differential tests of the `Instance` against an OpenThread node (Phase 11)
-- [ ] rs-matter integration (`opentrust-matter`):
-  - [ ] `edge-nal` UDP socket traits (bind/send/receive over IPv6) for Matter traffic
+- [ ] rs-matter integration (`opentrust-matter`, rs-matter pinned to revision `95e4110`, Rust 1.92):
+  - [x] rs-matter `NetStack` / `NetSocket` (transport `NetworkSend` / `NetworkReceive` / `NetworkMulticast`) over the native `UdpSocket` for Matter traffic (rs-matter-stack 0.4 does not consume `edge-nal`); two-node virtual-time test; shared async test harness in `opentrust_sim::testing` with a virtual `embassy-time` driver
   - [ ] Thread Network Commissioning cluster backend: scan, add/update dataset, connect, status
   - [ ] SRP service registration + DNS-SD browse for Matter discovery
   - [ ] Thread Network Diagnostics cluster data (role, RLOC16, neighbors, counters)

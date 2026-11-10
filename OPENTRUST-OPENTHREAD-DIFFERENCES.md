@@ -683,6 +683,16 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - `NotImplemented` / no effect: `set_csl_period`, `set_child_timeout`, `set_child_supervision_*`. `scan` is the MLE discovery scan and ignores `duration_millis`. `srp_set_conf` applies only host name and addresses, `srp_add_service` ignores subtype labels, `srp_remove_service` ignores `immediate`.
 - Not provided: the DNS client calls, `detach_gracefully`, `buffer_info`, `with_instance`, raw `rx` / `tx`, the pending-dataset components. The native API covers DNS (`OpenTrust::dns_*`).
 
+## rs-matter integration (`opentrust-matter`)
+
+Reference points: `rs-matter-embassy` (`src/ot.rs`, `src/nal.rs`, `src/wireless/thread.rs`) over the esp-rs `openthread` crate and `edge-nal-openthread`.
+
+- **No edge-nal layer.** `rs-matter-stack` 0.4 consumes its own `NetStack` / `NetSocket` traits (the transport's `NetworkSend` / `NetworkReceive` / `NetworkMulticast`), not `edge-nal`; `rs-matter-embassy` bridges them with `NalSocket` over `edge-nal-openthread`. `MatterNetStack` implements them directly over `opentrust_embassy::UdpSocket` (one fewer layer, no `edge-nal` dependency, MSRV from rs-matter only). The three halves of a split socket are the same `SocketHalf` type sharing one socket.
+- **IPv4 is refused**, not silently accepted: a bind, peer or group that is IPv4 is `ErrorCode::NoNetworkInterface` / `InvalidPeerAddr` (the esp-rs path returns an unsupported error from edge-nal).
+- **Not `Send`.** The rs-matter `send-sync` feature (work-stealing executors) is not supported: the sockets use `Cell`s and the handle shares a `RefCell` behind the `RawMutex`.
+- **A REED answers Address Queries** for its ML-EID now: `Instance::sync_netif` subscribes a router-eligible FTD child to the all-routers groups (OT `Mle::SetStateChild`); before, a REED's ML-EID was unreachable from the mesh until it became a router (found by the Matter port test, where the leader sends to the child's ML-EID).
+- **Test harness.** `opentrust_sim::testing` (feature `testing`) holds the in-memory medium and lock-step virtual-time driver of the `opentrust-embassy` tests plus a virtual `embassy-time` driver, so rs-matter's own timers run in the same virtual time as the Thread nodes (rs-matter's tests use the real-time `embassy-time/std` driver). One time driver per binary: a test binary using the harness must not enable `embassy-time/std` (rs-matter `os`).
+
 ## Message buffers
 
 - OpenThread has one message pool (`OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS`, default 44 buffers of 128 bytes) shared by every queue. OpenTrust uses the same buffer size and chained storage (`opentrust_core::bufpool`) but each queue (UDP receive queues, outbox, Border Agent outbox, indirect queue, forwarder held datagrams, CoAP pending requests and cached responses, DNS/SRP datagrams) owns its own pool with a const-generic size, so exhaustion in one queue does not starve another and the total is a compile-time bound. Allocation failure is `NoBufs`, as in OpenThread.

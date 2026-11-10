@@ -3,7 +3,8 @@ name = "opentrust-matter"
 description = "rs-matter integration for the OpenTrust Thread stack (Matter over Thread)"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# rs-matter needs 1.92 (the workspace MSRV is 1.85).
+rust-version = "1.92"
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -13,15 +14,33 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-embassy/defmt", "opentrust-net/defmt"]
-log = ["dep:log", "opentrust-core/log", "opentrust-embassy/log", "opentrust-net/log"]
+default = ["ftd"]
+# Router-capable node (REED role, route table); without it the node is an
+# end device.
+ftd = ["opentrust-embassy/ftd"]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-embassy/defmt", "rs-matter/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-embassy/log", "rs-matter/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
-opentrust-embassy = { workspace = true }
-opentrust-net = { workspace = true }
+opentrust-platform = { workspace = true }
+opentrust-instance = { workspace = true }
+opentrust-meshcop = { workspace = true }
+opentrust-dns = { workspace = true }
+opentrust-embassy = { path = "../opentrust-embassy", version = "0.1.0", default-features = false }
+rs-matter = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-futures = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
+
+[dev-dependencies]
+opentrust-sim = { workspace = true, features = ["testing"] }
+# `std` (alloc, no `os`: the test harness brings its own embassy-time driver)
+# and the RustCrypto backend for the Matter side of the tests.
+rs-matter = { workspace = true, features = ["std", "rustcrypto"] }
 
 [lints]
 workspace = true

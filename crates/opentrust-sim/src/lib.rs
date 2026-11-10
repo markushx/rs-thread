@@ -37,3 +37,6 @@ pub use rng::SimRng;
 pub fn ext_address(n: u8) -> opentrust_instance::ExtAddress {
     opentrust_instance::ExtAddress([0x02, 0, 0, 0, 0, 0, 0, n])
 }
+
+#[cfg(feature = "testing")]
+pub mod testing;
