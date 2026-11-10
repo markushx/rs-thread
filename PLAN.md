@@ -285,8 +285,9 @@ Security-relevant decisions for the review before M4:
   - [ ] Differential tests of the `Instance` against an OpenThread node (Phase 11)
 - [ ] rs-matter integration (`opentrust-matter`, rs-matter pinned to revision `95e4110`, Rust 1.92):
   - [x] rs-matter `NetStack` / `NetSocket` (transport `NetworkSend` / `NetworkReceive` / `NetworkMulticast`) over the native `UdpSocket` for Matter traffic (rs-matter-stack 0.4 does not consume `edge-nal`); two-node virtual-time test; shared async test harness in `opentrust_sim::testing` with a virtual `embassy-time` driver
+  - [x] `Mdns` over the SRP client + DNS-SD client (`SrpMdns`): host from the extended address, `_matterc._udp` / `_matter._tcp` with subtypes and TXT kept in sync with `Matter::mdns_services`, removed when the future is dropped; operational / commissionable resolve and browse through `dns_resolve_service` / `dns_browse`; `NetifDiag` + `NetChangeNotif` (`ThreadNetif`); test with a fake SRP / DNS-SD server on the leader
+  - [ ] `SrpMdns`, open: the `Instance` SRP client has 4 service slots (commissionable + 3 fabrics; Matter needs 5 fabrics), lease / TTL are the client defaults, a browse answers one pass per request (no re-query while the window is open), no `MdnsBrowseMatch` for subtype-only answers, resolution of a peer registered with several hosts
   - [ ] Thread Network Commissioning cluster backend: scan, add/update dataset, connect, status
-  - [ ] SRP service registration + DNS-SD browse for Matter discovery
   - [ ] Thread Network Diagnostics cluster data (role, RLOC16, neighbors, counters)
   - [ ] ICD support: SED/SSED polling intervals controllable by Matter ICD manager
   - [ ] Example: rs-matter on-off light over Thread in sim, then on nRF52840/ESP32-C6

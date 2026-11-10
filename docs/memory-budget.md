@@ -10,9 +10,9 @@ the test asserts an upper bound per feature set (`src/size_test.rs`).
 
 | Feature set | Before pooling | Now |
 |---|---|---|
-| default (ftd + commissioner + border-agent) | 150000 | 107136 |
-| `ftd` only | 116240 | 82528 |
-| MTD (`--no-default-features`) | 102800 | 74576 |
+| default (ftd + commissioner + border-agent) | 150000 | 107424 |
+| `ftd` only | 116240 | 82816 |
+| MTD (`--no-default-features`) | 102800 | 74864 |
 
 ## Per component (default feature set)
 
@@ -20,7 +20,7 @@ the test asserts an upper bound per feature set (`src/size_test.rs`).
 |---|---|---|
 | commissioning (`cm`: joiner 7616, commissioner 7536, border agent 15408, border agent outbox 1672) | 43664 | 34416 |
 | core (MAC 5848, IPv6 5768, MAC tx 4640, settings 4104, MLE outbox 1384, events 1840) | 33464 | 27048 |
-| DNS/SRP clients | 14792 | 13872 |
+| DNS/SRP clients (five SRP subtypes per service, for Matter's commissionable service) | 14792 | 14160 |
 | mesh forwarder | 11784 | 7720 |
 | MLE | 8328 | 8328 |
 | TMF agent | 10584 | 4488 |

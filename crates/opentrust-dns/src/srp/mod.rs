@@ -88,7 +88,7 @@ pub const MAX_HOST_NAME: usize = 64;
 /// Longest service type (without the domain), e.g. `_matter._tcp`.
 pub const MAX_SERVICE_NAME: usize = 64;
 /// Subtypes per service.
-pub const MAX_SUBTYPES: usize = 4;
+pub const MAX_SUBTYPES: usize = 5;
 /// Host addresses.
 pub const MAX_HOST_ADDRS: usize = 4;
 /// Server candidates remembered per kind for server switching.
