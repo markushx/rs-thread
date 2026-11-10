@@ -403,6 +403,41 @@ impl defmt::Format for Prefix64 {
     }
 }
 
+/// How a frame or datagram is protected at the IEEE 802.15.4 link layer:
+/// the security class a received frame was accepted with, or the one an
+/// outgoing frame must get (Thread 1.4.1 section 7.2.1).
+///
+/// Only [`LinkSecurity::Network`] is "link-layer secured" for the layers
+/// above the MAC (IPv6 filter, TMF, forwarding). Key ID mode 2 uses a
+/// well-known key and is equivalent to no security there; key ID mode 0
+/// (the KEK) is restricted to the Joiner Entrust exchange.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum LinkSecurity {
+    /// No link-layer security.
+    None,
+    /// Key ID mode 1: the MAC key derived from the network key.
+    Network,
+    /// Key ID mode 0: the KEK of a Joiner's DTLS session (Joiner Entrust).
+    Kek,
+    /// Key ID mode 2: the well-known key (MLE Announce, OT `kKeyIdMode2`).
+    Mode2,
+}
+
+impl LinkSecurity {
+    /// Secured with the network key (key ID mode 1)?
+    pub const fn is_network(self) -> bool {
+        matches!(self, Self::Network)
+    }
+}
+
+impl From<bool> for LinkSecurity {
+    /// `true`: [`LinkSecurity::Network`], `false`: [`LinkSecurity::None`].
+    fn from(secured: bool) -> Self {
+        if secured { Self::Network } else { Self::None }
+    }
+}
+
 /// IPv6 address helpers.
 pub mod ipv6 {
     use super::*;

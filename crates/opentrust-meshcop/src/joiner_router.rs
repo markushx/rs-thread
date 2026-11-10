@@ -144,6 +144,12 @@ impl JoinerRouter {
         self.configured_port = Some(port);
     }
 
+    /// The link-local address of the Joiner whose Joiner Entrust is in
+    /// flight (the only peer of key ID mode 0 frames).
+    pub fn entrust_in_flight(&self) -> Option<Ipv6Addr> {
+        self.in_flight
+    }
+
     /// The open Joiner port, if any.
     pub fn open_port(&self) -> Option<u16> {
         self.open_port

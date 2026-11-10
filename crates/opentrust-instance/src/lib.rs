@@ -71,6 +71,9 @@
 
 mod api;
 mod bbr;
+mod cm_comm;
+mod cm_glue;
+mod cm_io;
 mod commissioning;
 mod datapath;
 mod diag;
@@ -80,6 +83,8 @@ mod stack;
 mod tmf;
 
 pub use api::{PingReply, UdpSocket};
+#[cfg(feature = "border-agent")]
+pub use commissioning::BaDatagram;
 pub use commissioning::InstanceCrypto;
 #[cfg(feature = "ftd")]
 pub use diag::RouteInfo;
@@ -145,7 +150,14 @@ pub const MAX_UDP_PAYLOAD: usize = 1232;
 pub type TmfExtension = fn(TmfUri, &[u8]) -> Option<(CoapCode, heapless::Vec<u8, 64>)>;
 
 /// The TMF agent with the capacities of the instance.
-pub(crate) type TmfAgent = Agent<4, 32, 4, 320>;
+pub(crate) type TmfAgent = Agent<4, 32, 4, TMF_MSG>;
+
+/// Largest TMF message: a Relay Receive / Transmit carries a whole DTLS
+/// record of the Joiner (FTD only; an end device relays nothing).
+#[cfg(feature = "ftd")]
+pub(crate) const TMF_MSG: usize = 1024;
+#[cfg(not(feature = "ftd"))]
+pub(crate) const TMF_MSG: usize = 320;
 
 /// Event for the application (OpenThread: `otStateChangedCallback` flags,
 /// the receive callbacks of UDP and ICMPv6 and the result callbacks of the
@@ -227,6 +239,17 @@ pub enum Event {
     SrpClient(SrpEvent),
     /// A DNS query completed ([`Instance::dns_take_result`]).
     DnsResult(QueryId),
+    /// The Joiner changed state.
+    JoinerState(opentrust_meshcop::joiner::JoinerState),
+    /// Joining ended (OT joiner callback): `Ok` after the Joiner Entrust
+    /// (the credentials are the Active Dataset and Thread was started).
+    JoinerResult(core::result::Result<(), opentrust_core::Error>),
+    /// A notification of the on-mesh Commissioner.
+    #[cfg(feature = "commissioner")]
+    Commissioner(opentrust_meshcop::commissioner::CommissionerEvent),
+    /// A notification of the Border Agent.
+    #[cfg(feature = "border-agent")]
+    BorderAgent(opentrust_meshcop::border_agent::BorderAgentEvent),
 }
 
 /// Configuration of an [`Instance`].
@@ -381,6 +404,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             mactx: stack::MacTx::default(),
             events: Deque::new(),
             iid_secret,
+            disc_rx: Deque::new(),
+            joiner_discovering: false,
+            border_agent_port: None,
         };
         let mut udp = UdpSockets::new();
         let _ = udp.register_receiver(opentrust_net::udp::MLE_UDP_PORT, ReceiverId::MLE);
@@ -467,6 +493,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy |= self.service_tmf(now);
             busy |= self.service_dns_srp(now);
             busy |= self.service_bbr(now);
+            busy |= self.service_commissioning(now);
             busy |= self.service_outbox(now);
             if !busy {
                 break;
@@ -681,7 +708,7 @@ mod tests {
             src: opentrust_mac::frame::Address::Short(ShortAddress(0x0401)),
             dst: opentrust_mesh::forwarder::MacDest::Short(parent.1),
             payload: &[0x7a, 1, 2, 3],
-            link_security: false,
+            security: opentrust_core::types::LinkSecurity::None,
             frame_pending: false,
             indirect: false,
             csl: false,

@@ -55,7 +55,7 @@
 use core::net::Ipv6Addr;
 
 use opentrust_core::time::Instant;
-use opentrust_core::types::{ExtAddress, Prefix64, Rloc16};
+use opentrust_core::types::{ExtAddress, LinkSecurity, Prefix64, Rloc16};
 use opentrust_core::{Error, Result};
 use opentrust_lowpan::forward::{LowpanFrame, parse_frame};
 use opentrust_lowpan::frag::{Fragmenter, TagCounter};
@@ -116,8 +116,8 @@ pub struct TxFrame<'a> {
     pub dst: MacDest,
     /// MAC payload (6LoWPAN: mesh header, fragment header, IPHC, data).
     pub payload: &'a [u8],
-    /// Apply link-layer security.
-    pub link_security: bool,
+    /// Link-layer security (key ID mode) to apply.
+    pub security: LinkSecurity,
     /// Set the Frame Pending bit (more frames follow for a sleepy child).
     pub frame_pending: bool,
     /// Send as an indirect transmission (after a data poll).
@@ -296,7 +296,7 @@ pub enum Rx<'a> {
 struct Held {
     eid: Ipv6Addr,
     len: usize,
-    link_security: bool,
+    security: LinkSecurity,
     buf: [u8; MTU],
 }
 
@@ -428,9 +428,10 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         resolver: &mut AddressResolver<N>,
         src: &Ipv6Addr,
         dst: &Ipv6Addr,
-        link_security: bool,
+        security: impl Into<LinkSecurity>,
         events: &mut impl FnMut(ResolverEvent),
     ) -> core::result::Result<Route, RouteError> {
+        let security = security.into();
         use opentrust_net::addr::{is_link_local_multicast, is_routing_locator};
         let mle = r.mle;
         let mlp: &Prefix64 = r.netif.mesh_local_prefix();
@@ -453,7 +454,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             };
         }
         if dst.is_multicast() {
-            let to_parent = mle.role() == Role::Child && link_security;
+            let to_parent = mle.role() == Role::Child && security.is_network();
             return Ok(Route::Direct {
                 dst: match (to_parent, mle.parent()) {
                     (true, Some(p)) => MacDest::Short(p.router.neighbor.rloc16),
@@ -557,7 +558,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         datagram: &[u8],
         src: &Ipv6Addr,
         route: Route,
-        link_security: bool,
+        security: LinkSecurity,
         sink: &mut S,
     ) -> Result<()>
     where
@@ -594,7 +595,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 },
                 dst,
                 payload: &buf[..n],
-                link_security,
+                security,
                 frame_pending: false,
                 indirect: false,
                 csl: false,
@@ -620,7 +621,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         &mut self,
         now: Instant,
         datagram: &[u8],
-        link_security: bool,
+        security: impl Into<LinkSecurity>,
         r: &Routing<'_, C, U, M, CP, ND>,
         resolver: &mut AddressResolver<N>,
         events: &mut impl FnMut(ResolverEvent),
@@ -634,7 +635,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         self.send_datagram_with(
             now,
             datagram,
-            link_security,
+            security.into(),
             false,
             r,
             resolver,
@@ -660,7 +661,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         &mut self,
         now: Instant,
         datagram: &[u8],
-        link_security: bool,
+        security: impl Into<LinkSecurity>,
         mpl_retransmission: bool,
         r: &Routing<'_, C, U, M, CP, ND>,
         resolver: &mut AddressResolver<N>,
@@ -672,6 +673,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         ND: NetworkData + ?Sized,
         S: FrameSink + ?Sized,
     {
+        let security = security.into();
         let Some(h) = hdr_of(datagram) else {
             return SendResult::Dropped(DropReason::Invalid);
         };
@@ -698,7 +700,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 SendResult::Dropped(DropReason::Drop)
             };
         }
-        match Self::route(now, r, resolver, &h.src, &h.dst, link_security, events) {
+        match Self::route(now, r, resolver, &h.src, &h.dst, security, events) {
             Ok(Route::Indirect { child }) => match self.indirect.enqueue(child, datagram) {
                 Ok(()) => {
                     self.csl_flush(r, sink);
@@ -706,7 +708,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 }
                 Err(_) => SendResult::Dropped(DropReason::NoBufs),
             },
-            Ok(route) => match self.transmit(r, datagram, &h.src, route, link_security, sink) {
+            Ok(route) => match self.transmit(r, datagram, &h.src, route, security, sink) {
                 Ok(()) => SendResult::Sent,
                 Err(Error::NoBufs) => SendResult::Dropped(DropReason::NoBufs),
                 Err(_) => SendResult::Dropped(DropReason::Link),
@@ -718,7 +720,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                     self.held[i] = Some(Held {
                         eid: h.dst,
                         len: datagram.len(),
-                        link_security,
+                        security,
                         buf,
                     });
                     SendResult::Held
@@ -908,7 +910,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 dst: MacDest::Short(rloc16),
             };
             if self
-                .transmit(r, &buf[..n], &h.src, route, true, sink)
+                .transmit(r, &buf[..n], &h.src, route, LinkSecurity::Network, sink)
                 .is_ok()
             {
                 sent += 1;
@@ -968,7 +970,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 }
                 continue;
             }
-            let result = self.send_datagram(now, data, h.link_security, r, resolver, events, sink);
+            let result = self.send_datagram(now, data, h.security, r, resolver, events, sink);
             if result == SendResult::Dropped(DropReason::NoRoute) {
                 sink.dest_unreachable(&data[..data.len().min(Ipv6Header::LEN)]);
             }
@@ -1018,7 +1020,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         payload: &[u8],
         mac_src: Address,
         mac_dst: Address,
-        link_security: bool,
+        link_security: impl Into<LinkSecurity>,
         r: &Routing<'_, C, U, M, CP, ND>,
         resolver: &mut AddressResolver<N>,
         events: &mut impl FnMut(ResolverEvent),
@@ -1029,6 +1031,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         ND: NetworkData + ?Sized,
         S: FrameSink + ?Sized,
     {
+        let link_security = link_security.into();
         let frame = match parse_frame(payload) {
             Ok(f) => f,
             Err(_) => return Rx::Dropped(DropReason::Invalid),
@@ -1047,7 +1050,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             // OT `HandleReceivedFrame`: mesh header frames are an FTD feature.
             return Rx::Dropped(DropReason::Invalid);
         }
-        if !link_security {
+        if !link_security.is_network() {
             return Rx::Dropped(DropReason::Security);
         }
         let (msrc, mdst) = (Rloc16(header.source), Rloc16(header.destination));
@@ -1104,7 +1107,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             src: Address::Short(mle.rloc16().into()),
             dst: MacDest::Short(hop),
             payload: &out[..n],
-            link_security: true,
+            security: LinkSecurity::Network,
             frame_pending: false,
             indirect: false,
             csl: false,
@@ -1124,7 +1127,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         payload: &[u8],
         src: &Address,
         dst: &Address,
-        link_security: bool,
+        link_security: LinkSecurity,
         r: &Routing<'_, C, U, M, CP, ND>,
         sink: &mut S,
     ) -> Rx<'a>

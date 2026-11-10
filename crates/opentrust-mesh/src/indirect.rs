@@ -26,7 +26,7 @@
 //! child has other messages, and enqueuing a datagram drops a queued
 //! supervision message (OT `AddMessageForSleepyChild`).
 
-use opentrust_core::types::Rloc16;
+use opentrust_core::types::{LinkSecurity, Rloc16};
 use opentrust_core::{Error, Result};
 use opentrust_lowpan::frag::Fragmenter;
 use opentrust_lowpan::iphc::ContextProvider;
@@ -400,7 +400,7 @@ impl<const N: usize> IndirectQueue<N> {
                     src: Address::Short(own_rloc16.into()),
                     dst: MacDest::Short(child),
                     payload: &buf[..f.len],
-                    link_security: true,
+                    security: LinkSecurity::Network,
                     frame_pending: false,
                     indirect: true,
                     csl: true,
@@ -435,7 +435,7 @@ impl<const N: usize> IndirectQueue<N> {
                 src: Address::Short(own_rloc16.into()),
                 dst: MacDest::Short(child),
                 payload: &buf[..f.len],
-                link_security: true,
+                security: LinkSecurity::Network,
                 frame_pending: f.frame_pending,
                 indirect: true,
                 csl: false,

@@ -20,6 +20,7 @@
 //! of starting a second reassembly.
 
 use opentrust_core::time::{Duration, Instant};
+use opentrust_core::types::LinkSecurity;
 use opentrust_core::{Error, Result};
 use opentrust_mac::frame::Address;
 
@@ -49,7 +50,7 @@ struct Slot<const MAX: usize> {
     size: u16,
     tag: u16,
     filled: usize,
-    secure: bool,
+    secure: LinkSecurity,
     deadline: Instant,
     buf: [u8; MAX],
 }
@@ -62,7 +63,7 @@ impl<const MAX: usize> Slot<MAX> {
             size: 0,
             tag: 0,
             filled: 0,
-            secure: false,
+            secure: LinkSecurity::None,
             deadline: Instant::ZERO,
             buf: [0; MAX],
         }
@@ -136,7 +137,9 @@ impl<const SLOTS: usize, const MAX_DATAGRAM: usize> Reassembler<SLOTS, MAX_DATAG
     /// - `src` / `dst`: the originator and final destination of the
     ///   datagram as used for IPHC (the mesh header addresses if the frame
     ///   had one, else the MAC addresses); `src` is part of the match key,
-    /// - `link_security`: whether the frame was secured at the link layer,
+    /// - `link_security`: how the frame was secured at the link layer (a
+    ///   `bool` means network key or none); fragments of one datagram must
+    ///   all have the same class, so differently protected frames never mix,
     /// - `payload`: the MAC payload after any mesh header, starting with
     ///   the FRAG1/FRAGN header.
     ///
@@ -150,9 +153,10 @@ impl<const SLOTS: usize, const MAX_DATAGRAM: usize> Reassembler<SLOTS, MAX_DATAG
         ctxs: &C,
         src: &Address,
         dst: &Address,
-        link_security: bool,
+        link_security: impl Into<LinkSecurity>,
         payload: &[u8],
     ) -> Result<Reassembled<'_>> {
+        let link_security = link_security.into();
         self.expire(now);
         let (hdr, hlen) = FragmentHeader::parse(payload)?;
         let data = &payload[hlen..];

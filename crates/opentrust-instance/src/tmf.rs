@@ -52,6 +52,12 @@ pub(crate) fn register_uris(agent: &mut TmfAgent) {
     ] {
         let _ = agent.register(u);
     }
+    // Relay of Joiner DTLS records: the Joiner Router takes `/c/tx`, the
+    // Commissioner / Border Agent `/c/rx`.
+    #[cfg(feature = "ftd")]
+    let _ = agent.register(Uri::RelayTx);
+    #[cfg(feature = "commissioner")]
+    let _ = agent.register(Uri::RelayRx);
     // Leader / router side requests (OT: `OPENTHREAD_FTD` handlers).
     #[cfg(feature = "ftd")]
     for u in [
@@ -93,6 +99,18 @@ struct Deferred {
     reset_counters: bool,
     diag_event: bool,
     diag_answer: Option<(core::net::Ipv6Addr, crate::diag::Out)>,
+    relay: Option<crate::cm_comm::Relay>,
+}
+
+impl<S, C: CryptoBackend, R> NodeHandler<'_, S, C, R> {
+    /// Keep a relay / dataset-changed request for after the dispatch (it
+    /// needs the commissioning roles and the agent).
+    fn defer_relay(&mut self, uri: Uri, req: &Request<'_>) {
+        let con = req.msg.ty() == opentrust_coap::message::Type::Con;
+        if let Ok(v) = Vec::from_slice(req.msg.payload()) {
+            self.out.relay = Some((uri, con, v));
+        }
+    }
 }
 
 struct NodeHandler<'a, S, C: CryptoBackend, R> {
@@ -259,7 +277,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
             }
             Uri::DatasetChanged => {
                 let _ = rsp.respond(Code::CHANGED, &[]);
+                self.defer_relay(uri, req);
             }
+            Uri::RelayTx | Uri::RelayRx => self.defer_relay(uri, req),
             other => {
                 if let Some(f) = self.ext
                     && let Some((code, body)) = f(other, req.msg.payload())
@@ -292,42 +312,47 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let r = self
             .agent
             .handle_dispatch(now, &mut self.sink, &env, meta, payload, &mut h);
-        let out = core::mem::take(&mut h.out);
+        let mut out = core::mem::take(&mut h.out);
+        let relay = out.relay.take();
         match r {
             TmfRx::Response { user, msg, .. } => {
-                #[cfg(feature = "ftd")]
-                let solicit = router_id::client_response(user, &msg);
-                #[cfg(not(feature = "ftd"))]
-                let solicit: Option<()> = None;
-                if let Some(_rep) = solicit {
+                if self.commissioning_response(now, user, Ok((msg.code(), msg.payload()))) {
+                    // The Commissioner or the Border Agent took it.
+                } else {
                     #[cfg(feature = "ftd")]
-                    self.mle.address_solicit_reply(&mut self.core, now, _rep);
-                } else if user == USER_SERVER_DATA {
-                    self.notifier.response(now, true);
-                } else if user == crate::diag::USER_DIAG_GET {
-                    if let Ok(v) = Vec::from_slice(msg.payload()) {
-                        if self.diag_in.is_full() {
-                            let _ = self.diag_in.pop_front();
+                    let solicit = router_id::client_response(user, &msg);
+                    #[cfg(not(feature = "ftd"))]
+                    let solicit: Option<()> = None;
+                    if let Some(_rep) = solicit {
+                        #[cfg(feature = "ftd")]
+                        self.mle.address_solicit_reply(&mut self.core, now, _rep);
+                    } else if user == USER_SERVER_DATA {
+                        self.notifier.response(now, true);
+                    } else if user == crate::diag::USER_DIAG_GET {
+                        if let Ok(v) = Vec::from_slice(msg.payload()) {
+                            if self.diag_in.is_full() {
+                                let _ = self.diag_in.pop_front();
+                            }
+                            let _ = self.diag_in.push_back(v);
+                            self.core.push_event(crate::Event::DiagAnswer);
                         }
-                        let _ = self.diag_in.push_back(v);
-                        self.core.push_event(crate::Event::DiagAnswer);
+                    } else if self.bbrg.queue_outcome(
+                        user,
+                        crate::bbr::Outcome::Response(msg.code(), {
+                            let mut v = Vec::new();
+                            let _ = v.extend_from_slice(msg.payload());
+                            v
+                        }),
+                    ) {
+                    } else if let Some(t) = mgmt::set_user_type(user) {
+                        let _ = mgmt::set_response(&msg);
+                        self.core.datasets.mgmt_set_finished(now, t);
+                    } else if user == anycast::USER_ANYCAST_LOCATE
+                        && let Ok(l) =
+                            anycast::parse_response(&msg, self.core.cfg.cur.mesh_local_prefix)
+                    {
+                        self.glue.located = Some(l);
                     }
-                } else if self.bbrg.queue_outcome(
-                    user,
-                    crate::bbr::Outcome::Response(msg.code(), {
-                        let mut v = Vec::new();
-                        let _ = v.extend_from_slice(msg.payload());
-                        v
-                    }),
-                ) {
-                } else if let Some(t) = mgmt::set_user_type(user) {
-                    let _ = mgmt::set_response(&msg);
-                    self.core.datasets.mgmt_set_finished(now, t);
-                } else if user == anycast::USER_ANYCAST_LOCATE
-                    && let Ok(l) =
-                        anycast::parse_response(&msg, self.core.cfg.cur.mesh_local_prefix)
-                {
-                    self.glue.located = Some(l);
                 }
             }
             TmfRx::Failed { user, .. } => self.tmf_failed(now, user, false),
@@ -367,6 +392,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         if out.reset_counters {
             self.core.mac.reset_counters();
         }
+        if let Some(r) = relay {
+            self.handle_relay(now, r);
+        }
         if let Some((dst, o)) = out.diag_answer {
             let own = self.mle.rloc16();
             let mlp = self.core.cfg.cur.mesh_local_prefix;
@@ -385,6 +413,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     fn tmf_failed(&mut self, now: Instant, user: u32, timeout: bool) {
+        let e = if timeout {
+            opentrust_core::Error::ResponseTimeout
+        } else {
+            opentrust_core::Error::Abort
+        };
+        if self.commissioning_response(now, user, Err(e)) {
+            return;
+        }
         #[cfg(feature = "ftd")]
         if let Some(r) = router_id::client_failure(user) {
             self.mle.address_solicit_reply(&mut self.core, now, r);

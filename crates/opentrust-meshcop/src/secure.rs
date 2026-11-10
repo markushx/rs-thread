@@ -27,16 +27,7 @@ pub use opentrust_dtls::MAX_CONTENT_LEN;
 ///   in key ID mode 0 ([`LinkSecurity::Kek`], Thread 1.4.1 section
 ///   7.2.1.1, OT `kSubTypeJoinerEntrust`).
 /// - Everything else uses the network key ([`LinkSecurity::Network`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum LinkSecurity {
-    /// No link-layer security.
-    None,
-    /// Key ID mode 0 with the KEK of the Joiner's DTLS session.
-    Kek,
-    /// Key ID mode 1 (or 2) with the network key.
-    Network,
-}
+pub use opentrust_core::types::LinkSecurity;
 
 /// A CoAP [`Transport`] that encrypts with `session` and hands the record
 /// to `out`.

@@ -275,6 +275,12 @@ where
         self.discerner.as_ref()
     }
 
+    /// The Joiner Router being joined through (from the DTLS connection
+    /// until the Joiner finishes).
+    pub fn joiner_router(&self) -> Option<&Candidate> {
+        self.current.as_ref()
+    }
+
     /// The ranked Joiner Router candidates of the last discovery.
     pub fn candidates(&self) -> impl Iterator<Item = &Candidate> {
         self.candidates.iter().flatten()

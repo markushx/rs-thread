@@ -6,9 +6,9 @@ use heapless::Vec;
 use opentrust_core::Result;
 use opentrust_core::crypto::{CryptoBackend, SecurityLevel};
 use opentrust_core::time::Instant;
-use opentrust_core::types::{Rloc16, ShortAddress};
+use opentrust_core::types::{LinkSecurity, Rloc16, ShortAddress};
 use opentrust_mac::frame::{
-    Address, CslIe, FrameBuilder, FrameType, FrameVersion, KeyIdentifier, SecurityHeader,
+    Address, CslIe, FrameBuilder, FrameType, FrameVersion, KeyIdMode, KeyIdentifier, SecurityHeader,
 };
 use opentrust_mac::mac::{Event as MacEvent, FrameBuf, RxFrame, TxHandle};
 pub(crate) use opentrust_mesh::forwarder::Routing;
@@ -74,13 +74,26 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
                 rendezvous_time: None,
             });
         }
-        if f.link_security {
-            // Frame counter and key index are filled in by the key manager.
-            b = b.security(SecurityHeader::new(
-                SecurityLevel::EncMic32,
-                0,
-                KeyIdentifier::Index(1),
-            ));
+        // Frame counter and key identifier are filled in by the key manager.
+        let key = match f.security {
+            LinkSecurity::None => None,
+            LinkSecurity::Network => Some(KeyIdentifier::Index(1)),
+            LinkSecurity::Mode2 => Some(KeyIdentifier::Source4 {
+                source: [0xff; 4],
+                index: 0xff,
+            }),
+            LinkSecurity::Kek => {
+                // Key ID mode 0 only to one neighbor by extended address
+                // (the CCM* nonce is bound to the extended addresses).
+                if !matches!(f.dst, MacDest::Extended(_)) || !matches!(f.src, Address::Extended(_))
+                {
+                    return Err(opentrust_core::Error::InvalidArgs);
+                }
+                Some(KeyIdentifier::Implicit)
+            }
+        };
+        if let Some(key) = key {
+            b = b.security(SecurityHeader::new(SecurityLevel::EncMic32, 0, key));
         }
         let n = b.build()?;
         let frame = FrameBuf::from_slice(&buf[..n]).map_err(|_| opentrust_core::Error::NoBufs)?;
@@ -293,7 +306,22 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let src = f.src_address();
         let dst = f.dst_address();
         let payload = f.payload();
-        let link_security = rx.security.is_some();
+        // The security class: only key ID mode 1 counts as link-layer
+        // secured above the MAC; mode 2 uses a public key; mode 0 (the KEK)
+        // is only for the Joiner Entrust exchange (`commissioning`).
+        let security = match rx.security.as_ref().map(|s| s.key_id_mode) {
+            None => LinkSecurity::None,
+            Some(KeyIdMode::Index) => LinkSecurity::Network,
+            Some(KeyIdMode::Implicit) => LinkSecurity::Kek,
+            Some(KeyIdMode::Source4) => LinkSecurity::Mode2,
+            Some(KeyIdMode::Source8) => return,
+        };
+        let link_security = security.is_network();
+        if security == LinkSecurity::Kek
+            && !self.accept_kek_frame(src, dst, rx.security.as_ref().map(|s| s.frame_counter))
+        {
+            return;
+        }
         // Link-layer replay protection (Thread 1.4.1 section 7.2.1.2).
         if let Some(sec) = &rx.security
             && let Some(ks) = sec.key_sequence
@@ -368,7 +396,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 payload,
                 src,
                 dst,
-                link_security,
+                security,
                 &r,
                 &mut self.resolver,
                 &mut |e| {
@@ -393,6 +421,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             }
             #[cfg(not(feature = "ftd"))]
             let _ = mesh_src;
+            if security == LinkSecurity::Kek {
+                self.receive_kek_datagram(now, src, &dg[..dg_len]);
+                return;
+            }
             self.receive_datagram(now, &mut dg[..dg_len], link_security);
         }
     }
@@ -473,6 +505,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let Ok(u) = UdpHeader::parse(&dg[Ipv6Header::LEN.min(dg.len())..]) else {
             return false;
         };
+        if self.cm.joiner_port == Some(u.dst_port) {
+            // Joiner DTLS records: only between link-local neighbors.
+            return h.src.is_unicast_link_local() && h.dst.is_unicast_link_local();
+        }
         u.dst_port == opentrust_net::udp::MLE_UDP_PORT
             || self.glue.unsecure_ports.contains(&u.dst_port)
     }
@@ -484,8 +520,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         dg: &[u8],
         scratch: &Scratch,
         out: RxOutcome,
-        link_security: bool,
+        link_security: impl Into<LinkSecurity>,
     ) {
+        let link_security = link_security.into();
         if let Some(d) = out.deliver {
             let bytes = d.bytes(dg, scratch);
             self.deliver(now, &d, bytes);
@@ -527,6 +564,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     fn dispatch_receiver(&mut self, now: Instant, id: ReceiverId, meta: &UdpMeta, payload: &[u8]) {
+        if id == crate::cm_io::JOINER_RECEIVER {
+            self.receive_joiner_port(now, meta, payload);
+            return;
+        }
         if id == ReceiverId::MLE {
             let link = self.core.rx_link;
             let mut scratch = [0u8; 1280];
@@ -554,7 +595,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy = true;
             self.core.mactx.channel = o.tx.0;
             self.core.mactx.pan_id = o.tx.1;
-            let _ = self.send_udp_datagram(now, &o.info, o.src_port, o.dst_port, &o.payload);
+            let security = o.security.unwrap_or(o.info.link_security.into());
+            let _ =
+                self.send_udp_datagram(now, &o.info, security, o.src_port, o.dst_port, &o.payload);
             self.core.mactx.channel = None;
             self.core.mactx.pan_id = None;
         }
@@ -585,6 +628,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         &mut self,
         now: Instant,
         info: &SendInfo,
+        security: LinkSecurity,
         src_port: u16,
         dst_port: u16,
         payload: &[u8],
@@ -600,7 +644,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         .write(o)?;
         o[UdpHeader::LEN..].copy_from_slice(payload);
-        self.ip6_send(now, info, PROTO_UDP, &buf[..total])
+        self.ip6_send_sec(now, info, security, PROTO_UDP, &buf[..total])
     }
 
     /// `Ip6::send` and the follow-up (local delivery, forwarding).
@@ -608,6 +652,19 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         &mut self,
         now: Instant,
         info: &SendInfo,
+        proto: u8,
+        payload: &[u8],
+    ) -> Result<()> {
+        self.ip6_send_sec(now, info, info.link_security.into(), proto, payload)
+    }
+
+    /// [`ip6_send`](Self::ip6_send) with the link-layer security of the
+    /// frames (key ID mode 0 / 2 for the Joiner Entrust / MLE Announce).
+    pub(crate) fn ip6_send_sec(
+        &mut self,
+        now: Instant,
+        info: &SendInfo,
+        security: LinkSecurity,
         proto: u8,
         payload: &[u8],
     ) -> Result<()> {
@@ -627,24 +684,29 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 .ip6
                 .send(&mut ctx, info, proto, payload, &mut out, &mut scratch)?
         };
-        self.ip6_outcome(now, &out[..sent.len], &scratch, sent.rx, info.link_security);
+        self.ip6_outcome(now, &out[..sent.len], &scratch, sent.rx, security);
         Ok(())
     }
 
     /// Send a datagram (already processed by IPv6) through the forwarder.
-    pub(crate) fn send_ip6(&mut self, now: Instant, dg: &[u8], link_security: bool) -> SendResult {
-        self.send_ip6_with(now, dg, link_security, false)
+    pub(crate) fn send_ip6(
+        &mut self,
+        now: Instant,
+        dg: &[u8],
+        security: impl Into<LinkSecurity>,
+    ) -> SendResult {
+        self.send_ip6_with(now, dg, security.into(), false)
     }
 
     fn send_ip6_mpl(&mut self, now: Instant, dg: &[u8]) {
-        let _ = self.send_ip6_with(now, dg, true, true);
+        let _ = self.send_ip6_with(now, dg, LinkSecurity::Network, true);
     }
 
     fn send_ip6_with(
         &mut self,
         now: Instant,
         dg: &[u8],
-        link_security: bool,
+        link_security: LinkSecurity,
         mpl: bool,
     ) -> SendResult {
         let mut events: Vec<ResolverEvent, 4> = Vec::new();

@@ -94,6 +94,9 @@ pub struct Outgoing {
     pub dst_port: u16,
     /// UDP payload.
     pub payload: Vec<u8, MAX_UDP_PAYLOAD>,
+    /// Link-layer security of the frames instead of the one of `info`
+    /// (key ID mode 0 for the Joiner Entrust, mode 2 for MLE Announce).
+    pub security: Option<opentrust_core::types::LinkSecurity>,
     /// Channel and PAN ID to send the frames with.
     pub tx: (Option<u8>, Option<u16>),
 }
@@ -120,6 +123,7 @@ impl Outbox {
                 dst_port,
                 payload,
                 tx: (None, None),
+                security: None,
             })
             .map_err(|_| Error::NoBufs)
     }
@@ -215,7 +219,17 @@ pub struct Core<S, C: CryptoBackend, R> {
     /// Frames the MLE wants sent on another channel / PAN (Discovery).
     pub(crate) events: Deque<crate::Event, 16>,
     pub(crate) iid_secret: [u8; 32],
+    /// Discovery Responses for the Joiner (sub-TLVs of the Discovery TLV).
+    pub(crate) disc_rx: Deque<(DiscoveryResponseInfo, Vec<u8, DISCOVERY_TLVS>), 4>,
+    /// The Joiner is discovering: keep Discovery Responses.
+    pub(crate) joiner_discovering: bool,
+    /// UDP port of the Border Agent (native commissioner flag of the
+    /// Discovery Response).
+    pub(crate) border_agent_port: Option<u16>,
 }
+
+/// Room for the Thread Discovery TLV value of a Discovery Response.
+pub(crate) const DISCOVERY_TLVS: usize = 128;
 
 impl<S, C: CryptoBackend, R> core::fmt::Debug for Core<S, C, R> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -414,6 +428,12 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         )?;
         if let Some(o) = self.mle_out.q.back_mut() {
             o.tx = (opts.channel, opts.pan_id);
+            // The only link-secured MLE message with options is the Announce,
+            // which OT sends with key ID mode 2 (receivers on another key).
+            if opts.link_security {
+                o.info.link_security = false;
+                o.security = Some(opentrust_core::types::LinkSecurity::Mode2);
+            }
         }
         Ok(())
     }
@@ -670,15 +690,38 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
     }
 
     fn accept_discovery_request(&mut self, info: &DiscoveryRequestInfo) -> bool {
-        let _ = info;
-        true
+        // OT `IsJoiningAllowed`: a Joiner is answered only while the
+        // Commissioning Data has non-empty Steering Data.
+        !info.joiner
+            || opentrust_meshcop::discovery::joining_allowed(
+                self.netdata.view().commissioning_data(),
+            )
     }
 
-    fn discovery_response(&mut self, _out: &mut [u8]) -> Result<usize> {
-        Err(Error::NotImplemented)
+    fn discovery_response(&mut self, out: &mut [u8]) -> Result<usize> {
+        let active = self
+            .datasets
+            .read(DatasetType::Active, self.now)
+            .ok_or(Error::InvalidState)?;
+        opentrust_meshcop::discovery::build_response_with_border_agent(
+            &active,
+            self.netdata.view().commissioning_data(),
+            self.border_agent_port,
+            out,
+        )
     }
 
-    fn discovery_response_received(&mut self, _info: &DiscoveryResponseInfo, _tlvs: &[u8]) {}
+    fn discovery_response_received(&mut self, info: &DiscoveryResponseInfo, tlvs: &[u8]) {
+        // For the Joiner (only while one is discovering).
+        if self.joiner_discovering
+            && let Ok(v) = Vec::from_slice(tlvs)
+        {
+            if self.disc_rx.is_full() {
+                let _ = self.disc_rx.pop_front();
+            }
+            let _ = self.disc_rx.push_back((*info, v));
+        }
+    }
 
     fn apply_restored_identity(&mut self, ext: &ExtAddress, ml_iid: &Iid) {
         self.ext = *ext;

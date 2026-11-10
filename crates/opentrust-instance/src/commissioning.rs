@@ -3,6 +3,7 @@
 //! session (`ftd`), the on-mesh Commissioner (`commissioner`) and the
 //! Border Agent (`border-agent`).
 
+use heapless::Deque;
 use opentrust_core::crypto::CryptoBackend;
 use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::crypto::ecjpake::{P256, SoftP256};
@@ -16,6 +17,8 @@ use opentrust_meshcop::joiner::Joiner;
 use opentrust_meshcop::joiner_router::JoinerRouter;
 #[cfg(feature = "ftd")]
 use opentrust_meshcop::leader::LeaderState;
+
+use crate::cm_io::JoinerAction;
 
 /// The cryptography an [`Instance`](crate::Instance) needs: the
 /// [`CryptoBackend`] (AES-CCM*, SHA-256, HMAC, CMAC), ECDSA P-256 (SRP
@@ -59,6 +62,28 @@ pub(crate) struct Commissioning<C: InstanceCrypto> {
     /// The Border Agent.
     #[cfg(feature = "border-agent")]
     pub ba: BorderAgent<C, C::Curve>,
+    /// Datagrams of the Border Agent for the external Commissioner.
+    #[cfg(feature = "border-agent")]
+    pub ba_out: Deque<BaDatagram, 4>,
+    /// The unsecure Joiner UDP port (Joiner, or Joiner Router).
+    pub joiner_port: Option<u16>,
+    /// Highest key ID mode 0 frame counter accepted under the current KEK.
+    pub kek_rx_fc: Option<u32>,
+    /// Key ID mode 0 frames dropped (no KEK exchange with the sender).
+    pub kek_drops: u32,
+    pub actions: Deque<JoinerAction, 4>,
+}
+
+/// A DTLS datagram of the Border Agent to the external Commissioner.
+#[cfg(feature = "border-agent")]
+#[derive(Debug, Clone)]
+pub struct BaDatagram {
+    /// The listener (Border Agent or ePSKc port) it is sent from.
+    pub listener: opentrust_meshcop::border_agent::Listener,
+    /// The Commissioner.
+    pub peer: opentrust_coap::endpoint::Peer,
+    /// The DTLS records.
+    pub data: heapless::Vec<u8, 1280>,
 }
 
 impl<C: InstanceCrypto> Commissioning<C> {
@@ -77,6 +102,12 @@ impl<C: InstanceCrypto> Commissioning<C> {
             comm: Commissioner::new(crypto.clone(), crypto.curve()),
             #[cfg(feature = "border-agent")]
             ba: BorderAgent::new(crypto.clone(), crypto.curve(), ba_id),
+            #[cfg(feature = "border-agent")]
+            ba_out: Deque::new(),
+            joiner_port: None,
+            kek_rx_fc: None,
+            kek_drops: 0,
+            actions: Deque::new(),
         }
     }
 
