@@ -54,6 +54,7 @@
 
 use core::net::Ipv6Addr;
 
+use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
 use opentrust_core::time::Instant;
 use opentrust_core::types::{ExtAddress, LinkSecurity, Prefix64, Rloc16};
 use opentrust_core::{Error, Result};
@@ -321,17 +322,23 @@ struct Held {
     eid: Ipv6Addr,
     len: usize,
     security: LinkSecurity,
-    buf: [u8; MTU],
+    buf: Chain,
 }
 
 /// The forwarder: holds datagrams for pending address queries (`HOLD` of
 /// them), the reassembly table (`SLOTS` datagrams), the datagram tag
 /// counter and the indirect queue for sleepy children (`QUEUE` messages).
 #[derive(Debug)]
-pub struct MeshForwarder<const HOLD: usize = 2, const SLOTS: usize = 2, const QUEUE: usize = 4> {
+pub struct MeshForwarder<
+    const HOLD: usize = 2,
+    const SLOTS: usize = 2,
+    const QUEUE: usize = 4,
+    const HOLD_BUFS: usize = 12,
+> {
     /// Messages for sleepy children, released on data polls.
     pub indirect: IndirectQueue<QUEUE>,
     held: [Option<Held>; HOLD],
+    held_pool: BufPool<HOLD_BUFS, POOL_BUF_SIZE>,
     reasm: Reassembler<SLOTS>,
     tags: TagCounter,
     rx_buf: [u8; MTU],
@@ -349,12 +356,15 @@ fn hdr_of(datagram: &[u8]) -> Option<Ipv6Header> {
     Ipv6Header::parse(datagram).ok()
 }
 
-impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HOLD, SLOTS, QUEUE> {
+impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS: usize>
+    MeshForwarder<HOLD, SLOTS, QUEUE, HOLD_BUFS>
+{
     /// New forwarder; `tag_seed` seeds the datagram tags.
     pub fn new(tag_seed: u16) -> Self {
         Self {
             indirect: IndirectQueue::new(tag_seed.wrapping_add(0x4000)),
             held: [const { None }; HOLD],
+            held_pool: BufPool::new(),
             reasm: Reassembler::new(),
             tags: TagCounter::new(tag_seed),
             rx_buf: [0; MTU],
@@ -393,7 +403,9 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
         self.reasm.clear();
         self.indirect.clear();
         for h in &mut self.held {
-            *h = None;
+            if let Some(h) = h.take() {
+                self.held_pool.free(h.buf);
+            }
         }
     }
 
@@ -745,17 +757,18 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
                 Err(_) => SendResult::Dropped(DropReason::Link),
             },
             Err(RouteError::AddressQuery) => match self.held.iter().position(Option::is_none) {
-                Some(i) => {
-                    let mut buf = [0u8; MTU];
-                    buf[..datagram.len()].copy_from_slice(datagram);
-                    self.held[i] = Some(Held {
-                        eid: h.dst,
-                        len: datagram.len(),
-                        security,
-                        buf,
-                    });
-                    SendResult::Held
-                }
+                Some(i) => match self.held_pool.alloc(datagram) {
+                    Ok(buf) => {
+                        self.held[i] = Some(Held {
+                            eid: h.dst,
+                            len: datagram.len(),
+                            security,
+                            buf,
+                        });
+                        SendResult::Held
+                    }
+                    Err(_) => SendResult::Dropped(DropReason::NoBufs),
+                },
                 None => SendResult::Dropped(DropReason::NoBufs),
             },
             Err(RouteError::NoRoute) => SendResult::Dropped(DropReason::NoRoute),
@@ -993,7 +1006,10 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             let Some(h) = self.held[i].take_if(|h| h.eid == *eid) else {
                 continue;
             };
-            let data = &h.buf[..h.len];
+            let mut copy = [0u8; MTU];
+            let n = self.held_pool.read(&h.buf, &mut copy[..h.len]);
+            self.held_pool.free(h.buf);
+            let data = &copy[..n];
             if !resolved {
                 let local = hdr_of(data).is_some_and(|x| r.netif.has_unicast(&x.src));
                 if !local {
