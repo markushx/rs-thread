@@ -43,6 +43,7 @@
 
 use core::net::Ipv6Addr;
 
+use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
 use opentrust_core::message::Priority;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::{Error, Result};
@@ -305,7 +306,7 @@ pub enum Event {
 }
 
 #[derive(Debug)]
-struct Pending<const MSG: usize> {
+struct Pending {
     peer: Peer,
     opts: SendOpts,
     mid: u16,
@@ -319,17 +320,17 @@ struct Pending<const MSG: usize> {
     next: Instant,
     user: Option<u32>,
     len: usize,
-    buf: [u8; MSG],
+    buf: Chain,
 }
 
 #[derive(Debug)]
-struct Cached<const MSG: usize> {
+struct Cached {
     peer: Peer,
     opts: SendOpts,
     mid: u16,
     expires: Instant,
     len: usize,
-    buf: [u8; MSG],
+    buf: Chain,
 }
 
 /// Sans-IO CoAP endpoint.
@@ -338,12 +339,19 @@ struct Cached<const MSG: usize> {
 /// responses (OT default 10), `MSG`: maximum encoded message size (each
 /// pending request and cached response stores a copy).
 #[derive(Debug)]
-pub struct Endpoint<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize> {
+pub struct Endpoint<
+    const REQ: usize,
+    const RES: usize,
+    const CACHE: usize,
+    const MSG: usize,
+    const POOL: usize = 16,
+> {
     params: TxParams,
     next_mid: u16,
     resources: [Option<(&'static str, ResourceId)>; RES],
-    pending: [Option<Pending<MSG>>; REQ],
-    cache: [Option<Cached<MSG>>; CACHE],
+    pending: [Option<Pending>; REQ],
+    cache: [Option<Cached>; CACHE],
+    pool: BufPool<POOL, POOL_BUF_SIZE>,
     scratch: [u8; MSG],
 }
 
@@ -351,8 +359,8 @@ fn is_anycast_locator(a: &Ipv6Addr) -> bool {
     opentrust_core::types::ipv6::iid(a).is_aloc()
 }
 
-impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
-    Endpoint<REQ, RES, CACHE, MSG>
+impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize, const POOL: usize>
+    Endpoint<REQ, RES, CACHE, MSG, POOL>
 {
     /// Create an endpoint. `first_message_id` should be random (OT seeds
     /// the counter with a random `u16`).
@@ -363,6 +371,7 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
             resources: [None; RES],
             pending: [const { None }; REQ],
             cache: [const { None }; CACHE],
+            pool: BufPool::new(),
             scratch: [0; MSG],
         }
     }
@@ -416,16 +425,34 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
     /// Drop all requests, cached responses (OT `ClearAllRequestsAndResponses`).
     /// Resources stay registered.
     pub fn clear(&mut self) {
-        self.pending.iter_mut().for_each(|p| *p = None);
-        self.cache.iter_mut().for_each(|c| *c = None);
+        for i in 0..REQ {
+            self.release_pending(i);
+        }
+        for i in 0..CACHE {
+            self.release_cached(i);
+        }
+    }
+
+    /// Empty request slot `i` and return its buffers to the pool.
+    fn release_pending(&mut self, i: usize) {
+        if let Some(p) = self.pending[i].take() {
+            self.pool.free(p.buf);
+        }
+    }
+
+    /// Empty cache slot `i` and return its buffers to the pool.
+    fn release_cached(&mut self, i: usize) {
+        if let Some(c) = self.cache[i].take() {
+            self.pool.free(c.buf);
+        }
     }
 
     /// Drop the requests sent to `addr` without notification
     /// (OT `ClearRequests`).
     pub fn clear_requests(&mut self, addr: &Ipv6Addr) {
-        for p in self.pending.iter_mut() {
-            if matches!(p, Some(x) if x.peer.addr == *addr) {
-                *p = None;
+        for i in 0..REQ {
+            if matches!(&self.pending[i], Some(x) if x.peer.addr == *addr) {
+                self.release_pending(i);
             }
         }
     }
@@ -434,9 +461,9 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
     /// event is generated. `true` if one was pending.
     pub fn cancel(&mut self, user: u32) -> bool {
         let mut found = false;
-        for p in self.pending.iter_mut() {
-            if matches!(p, Some(x) if x.user == Some(user)) {
-                *p = None;
+        for i in 0..REQ {
+            if matches!(&self.pending[i], Some(x) if x.user == Some(user)) {
+                self.release_pending(i);
                 found = true;
             }
         }
@@ -589,14 +616,13 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
                 }),
                 user,
                 len,
-                buf: [0; MSG],
+                buf: self.pool.alloc(data)?,
             };
             p.token[..token.len()].copy_from_slice(token);
-            p.buf[..len].copy_from_slice(data);
             self.pending[idx] = Some(p);
             let r = tr.send(peer, opts, &self.scratch[..len]);
             if r.is_err() {
-                self.pending[idx] = None;
+                self.release_pending(idx);
             }
             r
         } else {
@@ -754,15 +780,18 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
         if idx >= CACHE {
             return;
         }
-        let mut c = Cached {
+        self.release_cached(idx);
+        let Ok(buf) = self.pool.alloc(&self.scratch[..len]) else {
+            return;
+        };
+        let c = Cached {
             peer: *peer,
             opts: *opts,
             mid,
             expires: now.saturating_add(self.params.exchange_lifetime()),
             len,
-            buf: [0; MSG],
+            buf,
         };
-        c.buf[..len].copy_from_slice(&self.scratch[..len]);
         self.cache[idx] = Some(c);
     }
 
@@ -819,7 +848,8 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
             .flatten()
             .find(|c| c.mid == msg.message_id() && c.peer == info.peer);
         if let Some(c) = hit {
-            let _ = tr.send(&c.peer, &c.opts, &c.buf[..c.len]);
+            let n = self.pool.read(&c.buf, &mut self.scratch[..c.len]);
+            let _ = tr.send(&c.peer, &c.opts, &self.scratch[..n]);
             return Rx::Handled;
         }
         let mut pathbuf = [0u8; MAX_URI_PATH_LEN + 1];
@@ -888,7 +918,7 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
         match msg.ty() {
             Type::Rst => {
                 if msg.is_empty() {
-                    self.pending[i] = None;
+                    self.release_pending(i);
                     if let Some(user) = user {
                         return Rx::Failed {
                             user,
@@ -904,11 +934,11 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
                         p.acknowledged = true;
                     }
                     if user.is_none() {
-                        self.pending[i] = None;
+                        self.release_pending(i);
                     }
                     Rx::Handled
                 } else if msg.is_response() && token_match {
-                    self.pending[i] = None;
+                    self.release_pending(i);
                     deliver(user, msg, info.peer)
                 } else {
                     // ACK carrying a request or with a token mismatch.
@@ -920,7 +950,7 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
                     let _ = self.send_empty(tr, &info.peer, Type::Ack, msg.message_id());
                 }
                 if user.is_some() && !multicast {
-                    self.pending[i] = None;
+                    self.release_pending(i);
                 }
                 deliver(user, msg, info.peer)
             }
@@ -943,9 +973,9 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
     /// Run due retransmissions and expiries. Returns the next [`Event`];
     /// call repeatedly until it returns `None`.
     pub fn poll<T: Transport + ?Sized>(&mut self, now: Instant, tr: &mut T) -> Option<Event> {
-        for c in self.cache.iter_mut() {
-            if matches!(c, Some(x) if x.expires <= now) {
-                *c = None;
+        for i in 0..CACHE {
+            if matches!(&self.cache[i], Some(x) if x.expires <= now) {
+                self.release_cached(i);
             }
         }
         for i in 0..REQ {
@@ -957,7 +987,7 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
             }
             if !p.confirmable || p.retx_left == 0 {
                 let user = p.user;
-                self.pending[i] = None;
+                self.release_pending(i);
                 if let Some(user) = user {
                     return Some(Event::Timeout { user });
                 }
@@ -967,7 +997,8 @@ impl<const REQ: usize, const RES: usize, const CACHE: usize, const MSG: usize>
             p.timeout = p.timeout.saturating_mul(2);
             p.next = now.saturating_add(p.timeout);
             if !p.acknowledged {
-                let _ = tr.send(&p.peer, &p.opts, &p.buf[..p.len]);
+                let n = self.pool.read(&p.buf, &mut self.scratch[..p.len]);
+                let _ = tr.send(&p.peer, &p.opts, &self.scratch[..n]);
             }
         }
         None
