@@ -23,8 +23,8 @@ where
     C: InstanceCrypto,
     R: Rng + CryptoRng,
 {
-    ot: OpenTrust<'a, M, K, S, C, R>,
-    raw: RawUdpSocket,
+    pub(crate) ot: OpenTrust<'a, M, K, S, C, R>,
+    pub(crate) raw: RawUdpSocket,
     remote: Cell<Option<SocketAddrV6>>,
 }
 

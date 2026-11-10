@@ -476,6 +476,27 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         r
     }
 
+    /// The result of query `id` if it has completed, leaving the results of
+    /// other queries queued.
+    pub fn dns_take_result_for(&mut self, id: QueryId) -> Option<DnsOutcome> {
+        let n = self.dnssrp.results.len();
+        let mut found = None;
+        for i in 0..n {
+            let Some((q, o)) = self.dnssrp.results.pop_front() else {
+                break;
+            };
+            if found.is_none() && q == id && i < self.dnssrp.notified {
+                found = Some(o);
+            } else {
+                let _ = self.dnssrp.results.push_back((q, o));
+            }
+        }
+        if found.is_some() {
+            self.dnssrp.notified = self.dnssrp.notified.saturating_sub(1);
+        }
+        found
+    }
+
     // ------------------------------------------------------------ driving
 
     /// Feed the clients: attach state, Network Data, addresses, timers,

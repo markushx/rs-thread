@@ -17,6 +17,7 @@ default = ["ftd", "commissioner", "border-agent"]
 ftd = ["opentrust-instance/ftd"]
 commissioner = ["ftd", "opentrust-instance/commissioner"]
 border-agent = ["commissioner", "opentrust-instance/border-agent"]
+edge-nal = ["dep:edge-nal"]
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-platform/defmt", "opentrust-mac/defmt", "opentrust-net/defmt", "opentrust-mle/defmt", "opentrust-mesh/defmt", "opentrust-meshcop/defmt", "opentrust-instance/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-platform/log", "opentrust-mac/log", "opentrust-net/log", "opentrust-mle/log", "opentrust-mesh/log", "opentrust-meshcop/log", "opentrust-instance/log"]
 
@@ -33,10 +34,13 @@ embassy-sync = { workspace = true }
 embassy-futures = { workspace = true }
 heapless = { workspace = true }
 rand_core = { workspace = true }
+edge-nal = { version = "0.7", default-features = false, optional = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Enables the `edge-nal` feature for the tests (feature unification).
+opentrust-embassy = { path = ".", features = ["edge-nal"] }
 opentrust-sim = { workspace = true }
 
 [lints]

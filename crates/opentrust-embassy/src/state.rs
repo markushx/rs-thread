@@ -224,6 +224,20 @@ where
         self.with(|i, now| i.set_active_dataset(dataset, now))
     }
 
+    /// Subscribe to a multicast address (see
+    /// [`Instance::subscribe_multicast`]); already subscribed is not an error.
+    pub fn join_multicast(&self, addr: core::net::Ipv6Addr) -> opentrust_core::Result<()> {
+        match self.with(|i, _| i.subscribe_multicast(addr)) {
+            Err(opentrust_core::Error::Already) => Ok(()),
+            r => r,
+        }
+    }
+
+    /// Leave a multicast address (see [`Instance::unsubscribe_multicast`]).
+    pub fn leave_multicast(&self, addr: core::net::Ipv6Addr) -> opentrust_core::Result<()> {
+        self.with(|i, _| i.unsubscribe_multicast(addr))
+    }
+
     /// The current Thread role.
     pub fn role(&self) -> Role {
         self.res.lock(|s| s.inst.role())

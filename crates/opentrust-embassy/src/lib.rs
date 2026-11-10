@@ -27,6 +27,14 @@
 //!   API (and wakes the driver afterwards); [`UdpSocket`] is an async UDP
 //!   socket.
 //!
+//! # edge-nal
+//!
+//! With the `edge-nal` feature, [`UdpStack`] implements the `edge-nal`
+//! `UdpBind` / `UdpConnect` traits and [`UdpSocket`] the socket traits
+//! (`UdpReceive`, `UdpSend`, `Readable`, `MulticastV6`, `UdpSplit`; IPv4
+//! is rejected). `edge-nal` 0.7 needs Rust 1.88, so the feature raises the
+//! MSRV of the crate from 1.85 to 1.88; without it the MSRV is unchanged.
+//!
 //! The crate uses no executor and no timer crate: time comes from the `Clock`
 //! stored in the resources and the `Alarm` passed to `run`. Locking is
 //! generic over `embassy_sync::blocking_mutex::raw::RawMutex`
@@ -88,6 +96,8 @@
 //! # }
 //! ```
 
+#[cfg(feature = "edge-nal")]
+mod edge;
 mod run;
 mod state;
 mod udp;
@@ -95,3 +105,6 @@ mod udp;
 pub use opentrust_instance::{Event, Instance};
 pub use state::{EVENT_QUEUE_LEN, OpenTrust, Resources, WAITERS};
 pub use udp::UdpSocket;
+
+#[cfg(feature = "edge-nal")]
+pub use edge::{EdgeError, UdpStack};

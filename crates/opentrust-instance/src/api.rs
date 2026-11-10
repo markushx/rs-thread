@@ -484,6 +484,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.ip6.netif.subscribe_external(addr)
     }
 
+    /// Leave a multicast address subscribed with
+    /// [`subscribe_multicast`](Self::subscribe_multicast) (OT
+    /// `otIp6UnsubscribeMulticastAddress`); [`Error::NotFound`] if it was
+    /// not subscribed.
+    pub fn unsubscribe_multicast(&mut self, addr: Ipv6Addr) -> Result<()> {
+        self.core.ip6.netif.unsubscribe_external(&addr)
+    }
+
     // ------------------------------------------------------------ ICMPv6
 
     /// Send an ICMPv6 echo request (OT `otIcmp6SendEchoRequest`); the reply
@@ -523,6 +531,24 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// The oldest unread echo reply.
     pub fn take_ping_reply(&mut self) -> Option<PingReply> {
         self.ping.replies.pop_front()
+    }
+
+    /// The oldest unread echo reply with identifier `id` and sequence number
+    /// `seq`; other replies stay queued.
+    pub fn take_ping_reply_matching(&mut self, id: u16, seq: u16) -> Option<PingReply> {
+        let n = self.ping.replies.len();
+        let mut found = None;
+        for _ in 0..n {
+            let Some(r) = self.ping.replies.pop_front() else {
+                break;
+            };
+            if found.is_none() && r.id == id && r.seq == seq {
+                found = Some(r);
+            } else {
+                let _ = self.ping.replies.push_back(r);
+            }
+        }
+        found
     }
 
     pub(crate) fn ping_received(&mut self, now: Instant, d: &Delivery, bytes: &[u8]) {
