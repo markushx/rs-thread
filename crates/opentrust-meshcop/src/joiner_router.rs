@@ -108,7 +108,7 @@ pub struct JoinerRouter {
     configured_port: Option<u16>,
     open_port: Option<u16>,
     delayed: Vec<Delayed, MAX_DELAYED_ENTRUST>,
-    ep: Endpoint<1, 1, 1, ENTRUST_MSG>,
+    ep: Endpoint<1, 1, 1, ENTRUST_MSG, 4>,
     in_flight: Option<Ipv6Addr>,
 }
 

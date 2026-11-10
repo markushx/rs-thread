@@ -242,7 +242,7 @@ struct Forward {
     petition: bool,
 }
 
-type BaCoap = Endpoint<2, 7, 2, MAX_CONTENT_LEN>;
+type BaCoap = Endpoint<2, 7, 2, MAX_CONTENT_LEN, 8>;
 
 struct BaSession<B: CryptoBackend, C: P256> {
     dtls: Session<B, C>,
@@ -1118,8 +1118,8 @@ pub struct BorderAgentClient<B: CryptoBackend, C: P256> {
     dtls: Option<Session<B, C>>,
     peer: Peer,
     mlp: Prefix64,
-    coap: Endpoint<4, 2, 2, MAX_CONTENT_LEN>,
-    proxy: Endpoint<2, 1, 1, MAX_CONTENT_LEN>,
+    coap: Endpoint<4, 2, 2, MAX_CONTENT_LEN, 8>,
+    proxy: Endpoint<2, 1, 1, MAX_CONTENT_LEN, 6>,
     ut_mid: u16,
     tokens: TokenRng,
 }

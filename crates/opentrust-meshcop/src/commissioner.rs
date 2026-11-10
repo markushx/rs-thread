@@ -207,7 +207,7 @@ pub struct Commissioner<B: CryptoBackend, C: P256, const J: usize = DEFAULT_MAX_
     timer: Option<Instant>,
     joiners: [Option<Entry>; J],
     session: Option<JoinerSession<B, C>>,
-    coap: Endpoint<1, 1, 2, MAX_CONTENT_LEN>,
+    coap: Endpoint<1, 1, 2, MAX_CONTENT_LEN, 6>,
     events: Deque<CommissionerEvent, 8>,
 }
 

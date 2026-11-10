@@ -258,7 +258,7 @@ mod tests {
     }
 
     type Link = Coaps<SoftCrypto, SoftP256, TestRng, Udp>;
-    type Ep = Endpoint<2, 2, 2, 256>;
+    type Ep = Endpoint<2, 2, 2, 256, 4>;
 
     const JOINER: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x1234, 0, 0, 1);
     const AGENT: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x1234, 0, 0, 2);

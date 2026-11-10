@@ -210,8 +210,8 @@ pub struct Joiner<B: CryptoBackend, C: P256> {
     scan_channel: u8,
     dtls: Option<Session<B, C>>,
     peer: Option<Peer>,
-    coap: Endpoint<1, 1, 1, COAP_MSG>,
-    entrust_ep: Endpoint<1, 1, 1, COAP_MSG>,
+    coap: Endpoint<1, 1, 1, COAP_MSG, 4>,
+    entrust_ep: Endpoint<1, 1, 1, COAP_MSG, 4>,
     kek: Option<Kek>,
     timer: Option<Instant>,
 }
