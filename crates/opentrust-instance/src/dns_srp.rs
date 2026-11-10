@@ -76,8 +76,8 @@ struct Dgram {
 /// State of the SRP and DNS clients.
 #[derive(Debug)]
 pub(crate) struct DnsSrp {
-    srp: SrpClient<4>,
-    dns: DnsClient<4>,
+    pub(crate) srp: SrpClient<4>,
+    pub(crate) dns: DnsClient<4>,
     srp_sock: Option<SocketHandle>,
     dns_sock: Option<SocketHandle>,
     out: Deque<Dgram, 2>,

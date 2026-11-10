@@ -682,6 +682,9 @@ mod mtd_tests {
     }
 }
 
+#[cfg(test)]
+mod size_test;
+
 #[cfg(all(test, feature = "ftd"))]
 mod tests {
     extern crate std;
