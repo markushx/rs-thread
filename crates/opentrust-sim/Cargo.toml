@@ -24,6 +24,9 @@ heapless = { workspace = true }
 opentrust-mle = { workspace = true }
 opentrust-dns = { workspace = true }
 opentrust-mesh = { workspace = true, features = ["ftd"] }
+opentrust-meshcop = { workspace = true, features = ["border-agent"] }
+opentrust-coap = { workspace = true }
+opentrust-dtls = { workspace = true }
 p256 = { workspace = true, features = ["ecdsa"] }
 sha2 = { workspace = true }
 
