@@ -275,7 +275,9 @@ Security-relevant decisions for the review before M4:
   - [x] Async facade (`opentrust-embassy`): `Resources` / `OpenTrust` handle, drop-safe `run(radio, alarm)`, multi-waiter `wait_changed`, `next_event`, `with` passthrough, async `UdpSocket`; tested over an async test medium in virtual time
   - [x] `edge-nal` UDP traits (feature `edge-nal`), async wrappers for ping / joiner / SRP wait / DNS (resolve address, browse, resolve service)
   - [x] Scans in the `Instance` (MLE discovery, MAC active scan with beacons from attached routers, energy scan) and async `scan` / `energy_scan` wrappers
-  - [ ] Async facade, open: an async wrapper for the MAC active scan, the esp-rs `openthread`-compatible surface
+  - [x] esp-rs `openthread`-compatible surface (feature `openthread-compat`, module `compat`): `OpenThread` with the lifecycle, status, getters, scan / energy scan, tables, multicast, link mode, poll period and SRP client calls
+  - [ ] Compat surface, open (the `Instance` lacks the data, the methods return defaults or `NotImplemented`): MLE and IP counters, MAC unicast / broadcast / duplicate / FCS counters, neighbor age / frame counters / last RSSI / error rates, route table ext address / link qualities / age, CSL period and timeout, child timeout setter, child supervision, `detach_gracefully`, `buffer_info`, subtype labels and lease / TTL settings of the SRP client, pending dataset components (`active_dataset_diag`), the DNS client calls (`dns_browse`, `dns_resolve_service[_and_host_address]`, `dns_resolve_address` with esp-rs `DnsResponse`; the native async DNS wrappers exist), ping sender, joiner and `with_instance` / raw rx / tx
+  - [ ] Async facade, open: an async wrapper for the MAC active scan
   - [ ] Differential tests of the `Instance` against an OpenThread node (Phase 11)
 - [ ] rs-matter integration (`opentrust-matter`):
   - [ ] `edge-nal` UDP socket traits (bind/send/receive over IPv6) for Matter traffic

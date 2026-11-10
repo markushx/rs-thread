@@ -42,6 +42,14 @@
 //! [`OpenTrust::with`] / [`OpenTrust::next_event`]) and the Thread network
 //! diagnostic requests.
 //!
+//! # esp-rs `openthread` surface
+//!
+//! With the `openthread-compat` feature, the [`compat`] module has
+//! `OpenThread`, `DeviceRole`, `NetStatus`, `Channels`, `ScanResult`,
+//! `NeighborInfo`, `RouteInfo`, the counters, `SrpConf` / `SrpService` and
+//! the methods `rs-matter-embassy` uses, with the esp-rs signatures where the
+//! instance has the data (see the module docs for the differences).
+//!
 //! # edge-nal
 //!//!
 //! With the `edge-nal` feature, [`UdpStack`] implements the `edge-nal`
@@ -111,6 +119,8 @@
 //! # }
 //! ```
 
+#[cfg(feature = "openthread-compat")]
+pub mod compat;
 #[cfg(feature = "edge-nal")]
 mod edge;
 mod requests;

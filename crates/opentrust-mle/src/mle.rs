@@ -279,6 +279,11 @@ impl<const C: usize> Mle<C> {
         self.attach.is_attaching()
     }
 
+    /// The device mode.
+    pub fn device_mode(&self) -> crate::tlv::DeviceMode {
+        self.cfg.mode
+    }
+
     /// `true` if the device mode has the receiver on when idle.
     pub fn is_rx_on_when_idle(&self) -> bool {
         self.cfg.mode.rx_on_when_idle()

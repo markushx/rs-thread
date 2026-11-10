@@ -17,7 +17,7 @@ use opentrust_meshcop::dataset::DatasetType;
 use opentrust_meshcop::tlv::SecurityPolicy;
 use opentrust_mle::Role;
 use opentrust_mle::persist::Restored;
-use opentrust_mle::tlv::{LeaderData, Timestamp};
+use opentrust_mle::tlv::{DeviceMode, LeaderData, Timestamp};
 use opentrust_net::header::{PROTO_ICMP6, PROTO_UDP};
 use opentrust_net::icmp6::{Icmp6Header, TYPE_ECHO_REPLY, TYPE_ECHO_REQUEST};
 use opentrust_net::ip6::{Delivery, SendInfo};
@@ -79,6 +79,24 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Active Dataset.
     pub fn thread_start(&mut self, now: Instant) -> Result<()> {
         self.start_inner(now, false)
+    }
+
+    /// Whether the IPv6 interface is enabled.
+    pub fn ip6_enabled(&self) -> bool {
+        self.ip6_enabled
+    }
+
+    /// The device mode (receiver on when idle, FTD, full Network Data).
+    pub fn link_mode(&self) -> DeviceMode {
+        self.mle.device_mode()
+    }
+
+    /// Change the device mode (OT `otThreadSetLinkMode`).
+    pub fn set_link_mode(&mut self, mode: DeviceMode, now: Instant) -> Result<()> {
+        self.core.now = now;
+        self.mle.set_device_mode(&mut self.core, now, mode)?;
+        self.poll(now);
+        Ok(())
     }
 
     /// Start Thread and become the leader of a new partition at once (OT
