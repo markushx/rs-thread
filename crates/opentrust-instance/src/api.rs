@@ -461,6 +461,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.udp.recv(s.0, buf)
     }
 
+    /// Whether a datagram is queued on the socket ([`udp_recv`](Self::udp_recv)
+    /// would return it).
+    pub fn udp_has_data(&self, s: UdpSocket) -> Result<bool> {
+        self.udp.has_data(s.0)
+    }
+
     /// Accept UDP datagrams to `port` without link-layer security (OT
     /// `otIp6AddUnsecurePort`).
     pub fn add_unsecure_port(&mut self, port: u16) -> Result<()> {

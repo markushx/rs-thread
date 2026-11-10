@@ -500,6 +500,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.mac.on_energy_scan_done(max_rssi, now);
     }
 
+    /// The host lost the completion of the in-flight [`RadioAction::Transmit`]
+    /// or [`RadioAction::EnergyScan`] (it dropped the future, which aborts the
+    /// operation on the radio): treat it as aborted. No-op if none is in
+    /// flight.
+    pub fn abort_radio_in_flight(&mut self, now: Instant) {
+        self.core.now = now;
+        self.core.mac.abort_in_flight(now);
+    }
+
     /// The next thing the radio has to do, if any. Call after
     /// [`poll`](Self::poll) until `None`.
     pub fn poll_radio_action(&mut self, now: Instant) -> Option<RadioAction> {

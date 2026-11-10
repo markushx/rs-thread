@@ -272,7 +272,8 @@ Security-relevant decisions for the review before M4:
   - [x] Key rotation event, Discovery / Announce `TxOptions` channel and PAN honoured by the MAC path, Network Diagnostics TMF server (`/d/dg`, `/d/dq`, `/d/dr`, `diag_get` / `diag_query` client, `neighbor_table` / `child_table` / `route_table` / `mac_counters` getters; sim tests `diag.rs`, `keyrot.rs`)
   - [ ] Network Diagnostics: multi-message answers, Child / Router Neighbor / Enhanced Route / MLE counters / vendor TLVs, `/d/dr` client
   - [ ] Initiator side of Enhanced ACK probing (`Mac::track_enh_ack_probing`) and aggregation of data request / ACK frames
-  - [ ] Async facade (`opentrust-embassy`): run the `Radio` trait against the `Instance` (select over `radio.receive`, the alarm for `next_deadline`, request channel), `edge-nal` UDP
+  - [x] Async facade (`opentrust-embassy`): `Resources` / `OpenTrust` handle, drop-safe `run(radio, alarm)`, multi-waiter `wait_changed`, `next_event`, `with` passthrough, async `UdpSocket`; tested over an async test medium in virtual time
+  - [ ] Async facade, open: `edge-nal` UDP traits, async wrappers for ping / joiner / SRP / DNS / scan, the esp-rs `openthread`-compatible surface
   - [ ] Differential tests of the `Instance` against an OpenThread node (Phase 11)
 - [ ] rs-matter integration (`opentrust-matter`):
   - [ ] `edge-nal` UDP socket traits (bind/send/receive over IPv6) for Matter traffic

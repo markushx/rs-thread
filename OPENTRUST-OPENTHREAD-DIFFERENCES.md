@@ -657,3 +657,12 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - **Fragment size**: direct frames are fragmented to the payload their addresses and key ID mode leave (extended addresses with security leave 94 / 95 bytes); OT computes the frame header length per frame as well.
 - **Border Agent transport**: the instance has no infrastructure interface; the host passes the external Commissioner's datagrams to `border_agent_receive` and sends those of `border_agent_take_datagram` (OT binds a socket on the backbone netif). DNS-SD advertisement remains the host's job.
 - **TMF message size**: FTD builds use 1024-byte TMF messages (Relay Receive / Transmit carry whole DTLS records); MTD builds keep 320.
+
+### Async facade (`opentrust-embassy`)
+
+- **Clock in the resources**: `Resources::new(instance, clock)` stores the `Clock` because every synchronous `Instance` call needs `now` (OpenThread reads its platform clock; esp-rs `openthread` reads `embassy-time`). `OpenTrust::run(radio, alarm)` takes only the radio and the alarm. The alarm must share the time base of the clock.
+- **`run` is generic over the raw mutex**, not tied to one executor. Calling a handle method from inside a `with` closure panics (the instance is a `RefCell`).
+- **`wait_changed` supports any number of waiters** (esp-rs `openthread` supports one): a generation counter plus `MultiWakerRegistration`. It fires on every `Event` except UDP readiness, not on OpenThread's changed-flag granularity; `wait_changed_after(generation)` avoids a lost wake-up between a state check and the wait.
+- **`next_event` is a bounded queue (16)**: when the application falls behind, the oldest event is dropped, like the instance's own queue. UDP readiness is not an event of this stream; each `UdpSocket` has its own waker, woken whenever the socket holds data after a driver step (so a dropped instance event cannot lose a wake-up).
+- **Cancellation**: dropping `run` during a transmission or energy scan marks the node; the next `run` reports it to the MAC as aborted (`Instance::abort_radio_in_flight`, a forward of `Mac::abort_in_flight`). Radio configuration commands (channel, filters, keys) cut off by a drop are not repeated; OT has no equivalent because its radio calls are synchronous.
+- **`UdpSocket::connect` is a local filter**, not a kernel association: `recv` drops datagrams from other peers, `send_connected` sends to the peer. `send` waits and retries on `NoBufs` instead of failing.

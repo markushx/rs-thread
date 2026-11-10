@@ -16,7 +16,7 @@ readme = "../../README.md"
 opentrust-core = { workspace = true }
 opentrust-platform = { workspace = true }
 opentrust-mac = { workspace = true }
-opentrust-instance = { workspace = true }
+opentrust-instance = { workspace = true, features = ["ftd", "commissioner", "border-agent"] }
 rand_core = { workspace = true }
 heapless = { workspace = true }
 
