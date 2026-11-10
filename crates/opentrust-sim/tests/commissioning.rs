@@ -144,13 +144,8 @@ fn joiner_joins_through_joiner_router_and_attaches() {
     let key = network_key(&mut net, 0).unwrap();
     assert_eq!(network_key(&mut net, JOINER), Some(key));
     // The rest of the Active Dataset comes from the parent.
-    let mlp = net
-        .inst(0)
-        .active_dataset(net.now)
-        .unwrap()
-        .tlvs()
-        .mesh_local_prefix()
-        .unwrap();
+    let lead_ds = net.inst(0).active_dataset(net.now).unwrap();
+    let mlp = lead_ds.tlvs().mesh_local_prefix().unwrap();
     assert!(net.run_until(secs(120), |n| {
         let now = n.now;
         n.node(JOINER)
@@ -158,9 +153,28 @@ fn joiner_joins_through_joiner_router_and_attaches() {
             .and_then(|d| d.tlvs().mesh_local_prefix().ok())
             == Some(mlp)
     }));
-    // It reaches the leader over the mesh.
+    let now = net.now;
+    let join_ds = net.node(JOINER).active_dataset(now).unwrap();
+    assert_eq!(join_ds.tlvs().ext_pan_id(), lead_ds.tlvs().ext_pan_id());
+    assert_eq!(join_ds.tlvs().network_name(), lead_ds.tlvs().network_name());
+    assert_eq!(join_ds.tlvs().channel(), lead_ds.tlvs().channel());
+    assert_eq!(join_ds.tlvs().pan_id(), lead_ds.tlvs().pan_id());
+    // It reaches the leader over the mesh by RLOC while still a child.
     let leader = net.inst(0).rloc().unwrap();
     assert!(ping(&mut net, JOINER, leader, 16, 1));
+    // A router-capable child is not resolvable by ML-EID (OT address query
+    // skips full-function children); once it is a router with converged
+    // routes, address queries work in both directions.
+    assert!(net.run_until(secs(300), |n| n.node(JOINER).role() == Role::Router));
+    let t = net.now + secs(60);
+    net.run_until(secs(60), |n| n.now >= t);
+    let leader_eid = net.node(0).ml_eid();
+    assert!(
+        ping(&mut net, JOINER, leader_eid, 16, 3),
+        "joiner -> leader"
+    );
+    let joiner_eid = net.node(JOINER).ml_eid();
+    assert!(ping(&mut net, 0, joiner_eid, 16, 3), "leader -> joiner");
     assert_key_never_in_clear(&net, &key);
     let events = net.take_events(0);
     assert!(events.iter().any(|e| matches!(
