@@ -7,6 +7,7 @@ use core::net::Ipv6Addr;
 
 use heapless::{Deque, Vec};
 use opentrust_coap::tmf::UdpSink;
+use opentrust_core::bufpool::{BufPool, Chain};
 use opentrust_core::crypto::CryptoBackend;
 use opentrust_core::settings::{ChildInfo, NetworkInfo, ParentInfo, SettingsKey};
 use opentrust_core::time::{Duration, Instant};
@@ -33,8 +34,6 @@ use opentrust_net::ip6::{Ip6, SendInfo};
 use opentrust_net::netif::AddressOrigin;
 use opentrust_platform::SettingsStore;
 use rand_core::Rng;
-
-use crate::MAX_UDP_PAYLOAD;
 
 /// Capacity of the child table (router role).
 pub const CHILDREN: usize = 8;
@@ -83,7 +82,8 @@ impl rand_core::TryRng for MacRng {
     }
 }
 
-/// An outgoing UDP datagram queued for the IPv6 layer.
+/// An outgoing UDP datagram queued for the IPv6 layer; the payload lives in
+/// the pool of its [`Outbox`].
 #[derive(Debug, Clone)]
 pub struct Outgoing {
     /// Addressing and options.
@@ -92,8 +92,7 @@ pub struct Outgoing {
     pub src_port: u16,
     /// UDP destination port.
     pub dst_port: u16,
-    /// UDP payload.
-    pub payload: Vec<u8, MAX_UDP_PAYLOAD>,
+    chain: Chain,
     /// Link-layer security of the frames instead of the one of `info`
     /// (key ID mode 0 for the Joiner Entrust, mode 2 for MLE Announce).
     pub security: Option<opentrust_core::types::LinkSecurity>,
@@ -101,13 +100,19 @@ pub struct Outgoing {
     pub tx: (Option<u8>, Option<u16>),
 }
 
-/// Bounded queue of outgoing UDP datagrams (TMF, MLE, application).
+/// Buffers of a queue payload pool (OpenThread message buffer size).
+pub(crate) const OUTBOX_BUF: usize = 128;
+
+/// Bounded queue of outgoing UDP datagrams (TMF, MLE, application). The
+/// payloads are chains of [`OUTBOX_BUF`]-byte buffers from a pool of
+/// `BLOCKS` buffers; a datagram that does not fit is refused with `NoBufs`.
 #[derive(Debug, Default)]
-pub struct Outbox {
-    pub(crate) q: Deque<Outgoing, 6>,
+pub struct Outbox<const BLOCKS: usize = 16> {
+    q: Deque<Outgoing, 6>,
+    pool: BufPool<BLOCKS, OUTBOX_BUF>,
 }
 
-impl Outbox {
+impl<const BLOCKS: usize> Outbox<BLOCKS> {
     pub(crate) fn push(
         &mut self,
         info: SendInfo,
@@ -115,21 +120,45 @@ impl Outbox {
         dst_port: u16,
         payload: &[u8],
     ) -> Result<()> {
-        let payload = Vec::from_slice(payload).map_err(|_| Error::NoBufs)?;
-        self.q
-            .push_back(Outgoing {
-                info,
-                src_port,
-                dst_port,
-                payload,
-                tx: (None, None),
-                security: None,
-            })
-            .map_err(|_| Error::NoBufs)
+        if self.q.is_full() {
+            return Err(Error::NoBufs);
+        }
+        let chain = self.pool.alloc(payload)?;
+        let _ = self.q.push_back(Outgoing {
+            info,
+            src_port,
+            dst_port,
+            chain,
+            tx: (None, None),
+            security: None,
+        });
+        Ok(())
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.q.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.q.is_empty()
+    }
+
+    /// The most recently queued datagram.
+    pub(crate) fn back_mut(&mut self) -> Option<&mut Outgoing> {
+        self.q.back_mut()
+    }
+
+    /// Take the oldest datagram, copying its payload to the start of `buf`
+    /// (the length is returned).
+    pub(crate) fn pop_front(&mut self, buf: &mut [u8]) -> Option<(Outgoing, usize)> {
+        let o = self.q.pop_front()?;
+        let n = self.pool.read(&o.chain, buf);
+        self.pool.free(o.chain);
+        Some((o, n))
     }
 }
 
-impl UdpSink for Outbox {
+impl<const BLOCKS: usize> UdpSink for Outbox<BLOCKS> {
     fn send(
         &mut self,
         info: &SendInfo,
@@ -196,7 +225,7 @@ pub struct Core<S, C: CryptoBackend, R> {
     pub(crate) role: Role,
     pub(crate) ip6: Ip6,
     /// MLE messages queued for the IPv6 layer.
-    pub(crate) mle_out: Outbox,
+    pub(crate) mle_out: Outbox<8>,
     /// Network Data this node serves and uses (the leader store's copy on
     /// the leader, the copy received through MLE elsewhere).
     pub(crate) netdata: NetData<NETDATA_LEN>,
@@ -430,7 +459,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             opentrust_net::udp::MLE_UDP_PORT,
             payload,
         )?;
-        if let Some(o) = self.mle_out.q.back_mut() {
+        if let Some(o) = self.mle_out.back_mut() {
             o.tx = (opts.channel, opts.pan_id);
             // The only link-secured MLE message with options is the Announce,
             // which OT sends with key ID mode 2 (receivers on another key).

@@ -9,6 +9,7 @@ mod fmt;
 #[doc(hidden)]
 pub use log as __log;
 
+pub mod bufpool;
 pub mod bytes;
 pub mod crypto;
 pub mod error;

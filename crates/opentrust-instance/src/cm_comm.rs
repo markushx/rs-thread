@@ -34,18 +34,17 @@ pub(crate) use mesh_transport;
 pub(crate) mod ba {
     use core::net::{Ipv6Addr, SocketAddrV6};
 
-    use heapless::Deque;
     use opentrust_coap::endpoint::{Peer, SendOpts};
     use opentrust_coap::message::{Code, Type};
     use opentrust_coap::uri::Uri;
+    use opentrust_core::Result;
     use opentrust_core::message::Priority;
     use opentrust_core::time::Instant;
-    use opentrust_core::{Error, Result};
     use opentrust_meshcop::border_agent::{BorderAgentIo, Listener};
     use opentrust_net::ip6::SendInfo;
 
     use crate::TmfAgent;
-    use crate::commissioning::BaDatagram;
+    use crate::commissioning::BaOut;
     use crate::stack::{MacRng, Outbox};
 
     /// [`BorderAgentIo`] over disjoint fields of the instance.
@@ -55,7 +54,7 @@ pub(crate) mod ba {
         pub rng: &'a mut MacRng,
         pub sink: &'a mut Outbox,
         pub rloc: Ipv6Addr,
-        pub down: &'a mut Deque<BaDatagram, 4>,
+        pub down: &'a mut BaOut,
         pub aloc: &'a mut Option<u16>,
     }
 
@@ -66,14 +65,7 @@ pub(crate) mod ba {
             peer: &Peer,
             data: &[u8],
         ) -> Result<()> {
-            let data = heapless::Vec::from_slice(data).map_err(|_| Error::NoBufs)?;
-            self.down
-                .push_back(BaDatagram {
-                    listener,
-                    peer: *peer,
-                    data,
-                })
-                .map_err(|_| Error::NoBufs)
+            self.down.push(listener, *peer, data)
         }
 
         fn tmf_post(

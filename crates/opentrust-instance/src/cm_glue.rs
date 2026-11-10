@@ -36,7 +36,7 @@ pub(crate) use link_io;
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     /// Timers and pending work of the commissioning roles.
     pub(crate) fn service_commissioning(&mut self, now: Instant) -> bool {
-        let before = self.sink.q.len();
+        let before = self.sink.len();
         // Joiner.
         let joining = self.cm.joiner.state() != JoinerState::Idle;
         self.core.joiner_discovering = self.cm.joiner.state() == JoinerState::Discover;
@@ -53,7 +53,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         #[cfg(feature = "ftd")]
         self.service_joiner_router(now);
         self.service_commissioner_roles(now);
-        busy |= self.sink.q.len() != before;
+        busy |= self.sink.len() != before;
         busy
     }
 

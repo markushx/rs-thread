@@ -70,7 +70,7 @@ impl<C: CryptoBackend> LinkIo<'_, C> {
         info.hop_limit = 255;
         info.link_security = false;
         self.out.push(info, src_port, dst.port, payload)?;
-        if let Some(o) = self.out.q.back_mut() {
+        if let Some(o) = self.out.back_mut() {
             o.security = Some(security);
         }
         Ok(())

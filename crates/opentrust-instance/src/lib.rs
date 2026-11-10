@@ -621,9 +621,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     fn has_pending_work(&self) -> bool {
-        !self.core.mle_out.q.is_empty()
+        !self.core.mle_out.is_empty()
             || !self.core.scan_rx.is_empty()
-            || !self.sink.q.is_empty()
+            || !self.sink.is_empty()
             || !self.core.mle_events.is_empty()
             || !self.core.child_changes.is_empty()
             || self.core.nd_rx.is_some()

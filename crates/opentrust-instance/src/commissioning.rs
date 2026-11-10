@@ -64,7 +64,7 @@ pub(crate) struct Commissioning<C: InstanceCrypto> {
     pub ba: BorderAgent<C, C::Curve>,
     /// Datagrams of the Border Agent for the external Commissioner.
     #[cfg(feature = "border-agent")]
-    pub ba_out: Deque<BaDatagram, 4>,
+    pub ba_out: BaOut,
     /// The unsecure Joiner UDP port (Joiner, or Joiner Router).
     pub joiner_port: Option<u16>,
     /// Highest key ID mode 0 frame counter accepted under the current KEK.
@@ -86,6 +86,52 @@ pub struct BaDatagram {
     pub peer: opentrust_coap::endpoint::Peer,
     /// The DTLS records.
     pub data: heapless::Vec<u8, 1280>,
+}
+
+/// Queue of [`BaDatagram`]s; the records are stored in a pool of
+/// [`crate::stack::OUTBOX_BUF`]-byte buffers (`NoBufs` when it is full).
+#[cfg(feature = "border-agent")]
+#[derive(Debug, Default)]
+pub(crate) struct BaOut {
+    q: Deque<
+        (
+            opentrust_meshcop::border_agent::Listener,
+            opentrust_coap::endpoint::Peer,
+            opentrust_core::bufpool::Chain,
+        ),
+        4,
+    >,
+    pool: opentrust_core::bufpool::BufPool<12, { crate::stack::OUTBOX_BUF }>,
+}
+
+#[cfg(feature = "border-agent")]
+impl BaOut {
+    pub(crate) fn push(
+        &mut self,
+        listener: opentrust_meshcop::border_agent::Listener,
+        peer: opentrust_coap::endpoint::Peer,
+        data: &[u8],
+    ) -> opentrust_core::Result<()> {
+        if self.q.is_full() {
+            return Err(opentrust_core::Error::NoBufs);
+        }
+        let chain = self.pool.alloc(data)?;
+        let _ = self.q.push_back((listener, peer, chain));
+        Ok(())
+    }
+
+    pub(crate) fn pop_front(&mut self) -> Option<BaDatagram> {
+        let (listener, peer, chain) = self.q.pop_front()?;
+        let mut data = heapless::Vec::new();
+        let _ = data.resize_default(chain.len());
+        self.pool.read(&chain, &mut data);
+        self.pool.free(chain);
+        Some(BaDatagram {
+            listener,
+            peer,
+            data,
+        })
+    }
 }
 
 impl<C: InstanceCrypto> Commissioning<C> {
@@ -110,7 +156,7 @@ impl<C: InstanceCrypto> Commissioning<C> {
             #[cfg(feature = "border-agent")]
             ba: BorderAgent::new(crypto.clone(), crypto.curve(), ba_id),
             #[cfg(feature = "border-agent")]
-            ba_out: Deque::new(),
+            ba_out: BaOut::default(),
             joiner_port: None,
             kek_rx_fc: None,
             kek_drops: 0,
