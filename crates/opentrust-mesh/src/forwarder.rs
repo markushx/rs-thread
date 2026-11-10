@@ -75,6 +75,30 @@ use crate::radio::RadioLink;
 /// Largest MAC payload of a frame without mesh header (short addresses,
 /// PAN ID compression, AES-CCM*-32 security).
 pub const MAX_FRAME_PAYLOAD: usize = 106;
+/// Largest MAC payload of a direct frame from `src` to `dst` with
+/// `security` (IEEE 802.15.4-2006 frame, PAN ID compression, AES-CCM*-32).
+fn frame_payload_limit(src: &Address, dst: MacDest, security: LinkSecurity) -> usize {
+    let src_len = match src {
+        Address::Extended(_) => 8,
+        Address::Short(_) => 2,
+        _ => 0,
+    };
+    let dst_len = match dst {
+        MacDest::Extended(_) => 8,
+        _ => 2,
+    };
+    // Auxiliary security header (control, frame counter, key identifier)
+    // and the 4-byte MIC.
+    let sec = match security {
+        LinkSecurity::None => 0,
+        LinkSecurity::Kek => 5 + 4,
+        LinkSecurity::Network => 6 + 4,
+        LinkSecurity::Mode2 => 10 + 4,
+    };
+    // PSDU 127 - FCS 2 - frame control 2 - sequence 1 - PAN ID 2.
+    (127 - 2 - 2 - 1 - 2) - dst_len - src_len - sec
+}
+
 /// Largest MAC payload of a frame with mesh header: the minimum over all
 /// possible next hops (extended addresses), as OpenThread's fixed
 /// `kMeshHeaderFrameMtu` rule.
@@ -583,6 +607,13 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize> MeshForwarder<HO
             Route::Indirect { .. } => return Err(Error::InvalidArgs),
         };
         let mac_src = Self::mac_source(r, src);
+        // A direct frame with extended addresses or another key ID mode has
+        // more (or less) MAC overhead than the short-address default.
+        let max = if mesh.is_none() {
+            max.min(frame_payload_limit(&mac_src, dst, security))
+        } else {
+            max
+        };
         let tag = self.tags.next_tag();
         let mut f = Fragmenter::new(r.contexts, mac_src, dst.address(), datagram, tag, mesh, max);
         let mut buf = [0u8; 128];

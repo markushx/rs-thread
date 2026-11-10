@@ -64,6 +64,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy = true;
             match a {
                 JoinerAction::Discovery(ch, pan, tlv) => {
+                    // Listen on the scanned channel for the responses (OT
+                    // `DiscoverScanner` tunes the MAC).
+                    let _ = self.core.mac.set_channel(ch);
                     let _ = self
                         .mle
                         .send_discovery_request(&mut self.core, pan, Some(ch), &tlv);

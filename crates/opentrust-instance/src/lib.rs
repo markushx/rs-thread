@@ -71,6 +71,7 @@
 
 mod api;
 mod bbr;
+mod cm_api;
 mod cm_comm;
 mod cm_glue;
 mod cm_io;
@@ -353,7 +354,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let leader_session_id = rng.next_u32() as u16;
         let mut ba_id = [0u8; 16];
         rng.fill_bytes(&mut ba_id);
-        let cm = commissioning::Commissioning::new(&crypto, leader_session_id, ba_id);
+        let cm = commissioning::Commissioning::new(
+            &crypto,
+            config.ext_address,
+            leader_session_id,
+            ba_id,
+        );
 
         let keys = KeyManager::new(crypto.clone(), api::placeholder_key());
         let mac = Mac::new(
@@ -749,7 +755,7 @@ mod tests {
                 {
                     let f =
                         opentrust_mac::frame::Frame::parse(&tx.psdu[..tx.psdu.len() - 2]).unwrap();
-                    if f.pan_id().map(|p| p.0) == Some(0xbeef) {
+                    if f.dst_pan_id().map(|p| p.0) == Some(0xbeef) {
                         seen = true;
                     }
                 }

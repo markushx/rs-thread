@@ -72,6 +72,8 @@ pub(crate) struct Commissioning<C: InstanceCrypto> {
     /// Key ID mode 0 frames dropped (no KEK exchange with the sender).
     pub kek_drops: u32,
     pub actions: Deque<JoinerAction, 4>,
+    /// The factory EUI-64 (Joiner ID derivation).
+    pub eui64: opentrust_core::types::ExtAddress,
 }
 
 /// A DTLS datagram of the Border Agent to the external Commissioner.
@@ -87,7 +89,12 @@ pub struct BaDatagram {
 }
 
 impl<C: InstanceCrypto> Commissioning<C> {
-    pub(crate) fn new(crypto: &C, leader_session_id: u16, ba_id: [u8; 16]) -> Self {
+    pub(crate) fn new(
+        crypto: &C,
+        eui64: opentrust_core::types::ExtAddress,
+        leader_session_id: u16,
+        ba_id: [u8; 16],
+    ) -> Self {
         #[cfg(not(feature = "ftd"))]
         let _ = leader_session_id;
         #[cfg(not(feature = "border-agent"))]
@@ -108,6 +115,7 @@ impl<C: InstanceCrypto> Commissioning<C> {
             kek_rx_fc: None,
             kek_drops: 0,
             actions: Deque::new(),
+            eui64,
         }
     }
 

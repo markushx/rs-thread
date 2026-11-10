@@ -60,9 +60,13 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
                 FrameVersion::V2006
             })
             .sequence(0)
-            .pan_id(opentrust_core::types::PanId(
+            // Another destination PAN (Discovery Response to a scanner) keeps
+            // our own PAN ID as the source PAN ID (OT `SetSource` /
+            // `SetDestination`); the scanner learns the PAN from it.
+            .dst_pan(opentrust_core::types::PanId(
                 self.tx.pan_id.unwrap_or(self.mac.pan_id().0),
             ))
+            .src_pan(self.mac.pan_id())
             .dst(mac_address(f.dst))
             .src(f.src)
             .frame_pending(f.frame_pending)

@@ -27,6 +27,8 @@ macro_rules! mesh_transport {
         }
     };
 }
+#[cfg(feature = "commissioner")]
+pub(crate) use mesh_transport;
 
 #[cfg(feature = "border-agent")]
 pub(crate) mod ba {
