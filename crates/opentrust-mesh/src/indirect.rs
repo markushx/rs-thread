@@ -26,6 +26,7 @@
 //! child has other messages, and enqueuing a datagram drops a queued
 //! supervision message (OT `AddMessageForSleepyChild`).
 
+use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
 use opentrust_core::types::{LinkSecurity, Rloc16};
 use opentrust_core::{Error, Result};
 use opentrust_lowpan::frag::Fragmenter;
@@ -59,7 +60,7 @@ struct Entry {
     frames_done: u16,
     /// Failed attempts of the frame in flight.
     attempts: u8,
-    datagram: [u8; MAX_DATAGRAM],
+    datagram: Chain,
 }
 
 /// A frame for a child produced by [`IndirectQueue::next_frame`].
@@ -94,24 +95,26 @@ pub enum PollOutcome {
 
 /// Per-child message queue with room for `N` messages in total.
 #[derive(Debug)]
-pub struct IndirectQueue<const N: usize> {
+pub struct IndirectQueue<const N: usize, const P: usize = 16> {
     slots: [Option<Entry>; N],
+    pool: BufPool<P, POOL_BUF_SIZE>,
     next_order: u32,
     tags: opentrust_lowpan::frag::TagCounter,
     dirty: bool,
 }
 
-impl<const N: usize> Default for IndirectQueue<N> {
+impl<const N: usize, const P: usize> Default for IndirectQueue<N, P> {
     fn default() -> Self {
         Self::new(1)
     }
 }
 
-impl<const N: usize> IndirectQueue<N> {
+impl<const N: usize, const P: usize> IndirectQueue<N, P> {
     /// Empty queue; `tag_seed` seeds the datagram tag counter.
     pub const fn new(tag_seed: u16) -> Self {
         Self {
             slots: [const { None }; N],
+            pool: BufPool::new(),
             next_order: 0,
             tags: opentrust_lowpan::frag::TagCounter::new(tag_seed),
             dirty: false,
@@ -123,8 +126,15 @@ impl<const N: usize> IndirectQueue<N> {
         if !self.is_empty() {
             self.dirty = true;
         }
-        for s in &mut self.slots {
-            *s = None;
+        for i in 0..N {
+            self.release(i);
+        }
+    }
+
+    /// Empty slot `i` and return its buffers to the pool.
+    fn release(&mut self, i: usize) {
+        if let Some(e) = self.slots[i].take() {
+            self.pool.free(e.datagram);
         }
     }
 
@@ -199,7 +209,8 @@ impl<const N: usize> IndirectQueue<N> {
         let order = self.next_order;
         self.next_order = self.next_order.wrapping_add(1);
         let tag = self.tags.next_tag();
-        let mut e = Entry {
+        let chain = self.pool.alloc(datagram)?;
+        let e = Entry {
             child,
             kind,
             order,
@@ -207,9 +218,8 @@ impl<const N: usize> IndirectQueue<N> {
             len: datagram.len(),
             frames_done: 0,
             attempts: 0,
-            datagram: [0; MAX_DATAGRAM],
+            datagram: chain,
         };
-        e.datagram[..datagram.len()].copy_from_slice(datagram);
         self.slots[i] = Some(e);
         self.dirty |= !had;
         Ok(())
@@ -229,11 +239,12 @@ impl<const N: usize> IndirectQueue<N> {
     }
 
     fn drop_supervision(&mut self, child: Rloc16) {
-        for s in &mut self.slots {
-            if s.as_ref()
+        for i in 0..N {
+            if self.slots[i]
+                .as_ref()
                 .is_some_and(|e| e.child == child && e.kind == Kind::Supervision)
             {
-                *s = None;
+                self.release(i);
             }
         }
     }
@@ -251,9 +262,9 @@ impl<const N: usize> IndirectQueue<N> {
     /// `ClearAllMessagesForSleepyChild`); returns how many messages.
     pub fn remove_child(&mut self, child: Rloc16) -> usize {
         let mut n = 0;
-        for s in &mut self.slots {
-            if s.as_ref().is_some_and(|e| e.child == child) {
-                *s = None;
+        for i in 0..N {
+            if self.slots[i].as_ref().is_some_and(|e| e.child == child) {
+                self.release(i);
                 n += 1;
             }
         }
@@ -271,7 +282,8 @@ impl<const N: usize> IndirectQueue<N> {
         self.drop_supervision(child);
         let i = self.head(child)?;
         let e = self.slots[i].take()?;
-        out[..e.len].copy_from_slice(&e.datagram[..e.len]);
+        self.pool.read(&e.datagram, &mut out[..e.len]);
+        self.pool.free(e.datagram);
         self.dirty |= self.count(child) == 0;
         Some(e.len)
     }
@@ -297,6 +309,8 @@ impl<const N: usize> IndirectQueue<N> {
             });
         };
         let e = self.slots[i].as_ref().ok_or(Error::NotFound)?;
+        let mut datagram = [0u8; MAX_DATAGRAM];
+        self.pool.read(&e.datagram, &mut datagram[..e.len]);
         if e.kind == Kind::Supervision {
             return Ok(IndirectFrame {
                 len: 0,
@@ -309,7 +323,7 @@ impl<const N: usize> IndirectQueue<N> {
             contexts,
             Address::Short(own_rloc16.into()),
             Address::Short(child.into()),
-            &e.datagram[..e.len],
+            &datagram[..e.len],
             e.tag,
             None,
             max_payload,
@@ -340,10 +354,14 @@ impl<const N: usize> IndirectQueue<N> {
     ) {
         let Some(i) = self.head(child) else { return };
         let mut scratch = [0u8; 128];
+        let mut datagram = [0u8; MAX_DATAGRAM];
         let done = {
             let Some(e) = self.slots[i].as_mut() else {
                 return;
             };
+            if ok && e.kind == Kind::Datagram {
+                self.pool.read(&e.datagram, &mut datagram[..e.len]);
+            }
             if !ok {
                 e.attempts += 1;
                 e.attempts >= MAX_POLL_TX_ATTEMPTS
@@ -356,7 +374,7 @@ impl<const N: usize> IndirectQueue<N> {
                     contexts,
                     Address::Short(own_rloc16.into()),
                     Address::Short(child.into()),
-                    &e.datagram[..e.len],
+                    &datagram[..e.len],
                     e.tag,
                     None,
                     max_payload,
@@ -370,7 +388,7 @@ impl<const N: usize> IndirectQueue<N> {
             }
         };
         if done {
-            self.slots[i] = None;
+            self.release(i);
             self.dirty |= self.count(child) == 0;
         }
     }
