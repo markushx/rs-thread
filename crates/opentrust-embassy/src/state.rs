@@ -39,6 +39,14 @@ pub(crate) struct State<S, C: InstanceCrypto, R> {
     event_waiters: MultiWakerRegistration<WAITERS>,
     pub(crate) tx_waiters: MultiWakerRegistration<WAITERS>,
     pub(crate) udp: [UdpSlot; UDP_SOCKETS],
+    /// Waiters of the async request wrappers ([`crate::requests`]): woken on
+    /// every state event and when `req_deadline` passes.
+    pub(crate) req_waiters: MultiWakerRegistration<WAITERS>,
+    /// The earliest timeout of a pending request (`run` wakes at it).
+    pub(crate) req_deadline: Option<Instant>,
+    /// The last Joiner result, `None` while joining or before a join.
+    pub(crate) joiner_result: Option<Result<(), opentrust_core::Error>>,
+    pub(crate) ping_seq: u16,
     /// A transmit / energy scan was started by `run` but its future was
     /// dropped before the result was reported.
     pub(crate) interrupted: bool,
@@ -50,6 +58,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> State<S, C, R> {
     pub(crate) fn drain(&mut self) {
         let mut changed = false;
         while let Some(ev) = self.inst.poll_event() {
+            if let Event::JoinerResult(r) = ev {
+                self.joiner_result = Some(r);
+            }
             if matches!(ev, Event::UdpReadable(_)) {
                 // Handled by the per-socket wakers below (the instance
                 // queue may drop events, the sockets' queues do not).
@@ -65,6 +76,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> State<S, C, R> {
             self.generation = self.generation.wrapping_add(1);
             self.changed.wake();
             self.event_waiters.wake();
+            self.req_waiters.wake();
         }
         for slot in &mut self.udp {
             if let Some(s) = slot.sock
@@ -112,6 +124,10 @@ impl<M: RawMutex, K: Clock, S, C: InstanceCrypto, R> Resources<M, K, S, C, R> {
                     sock: None,
                     waker: WakerRegistration::new(),
                 }),
+                req_waiters: MultiWakerRegistration::new(),
+                req_deadline: None,
+                joiner_result: None,
+                ping_seq: 0,
                 interrupted: false,
             })),
             kick: Signal::new(),

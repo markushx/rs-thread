@@ -61,8 +61,17 @@ where
                 let action = s.inst.poll_radio_action(now);
                 s.drain();
                 s.tx_waiters.wake();
+                if s.req_deadline.is_some_and(|d| d <= now) {
+                    // A request timed out: its waiters re-check and
+                    // re-register their deadlines.
+                    s.req_deadline = None;
+                    s.req_waiters.wake();
+                }
                 let deadline = if action.is_none() {
-                    s.inst.next_deadline()
+                    [s.inst.next_deadline(), s.req_deadline]
+                        .into_iter()
+                        .flatten()
+                        .min()
                 } else {
                     None
                 };

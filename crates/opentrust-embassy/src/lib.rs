@@ -27,8 +27,22 @@
 //!   API (and wakes the driver afterwards); [`UdpSocket`] is an async UDP
 //!   socket.
 //!
-//! # edge-nal
+//! # Request wrappers
 //!
+//! [`OpenTrust::ping`], [`OpenTrust::joiner_start`],
+//! [`OpenTrust::srp_wait_host_registered`] /
+//! [`OpenTrust::srp_wait_service_registered`] and
+//! [`OpenTrust::dns_resolve_address`] / [`OpenTrust::dns_browse`] /
+//! [`OpenTrust::dns_resolve_service`] issue a request and await its result
+//! without taking events from [`OpenTrust::next_event`] (see the
+//! `requests` module docs of the source for the rules). Timeouts are driven
+//! by `run`. Not wrapped, because the [`Instance`] has no such API yet:
+//! the MLE discovery / active scan, the energy scan and the Thread network
+//! diagnostic requests (use [`OpenTrust::with`] and events for the
+//! diagnostics).
+//!
+//! # edge-nal
+//!//!
 //! With the `edge-nal` feature, [`UdpStack`] implements the `edge-nal`
 //! `UdpBind` / `UdpConnect` traits and [`UdpSocket`] the socket traits
 //! (`UdpReceive`, `UdpSend`, `Readable`, `MulticastV6`, `UdpSplit`; IPv4
@@ -98,11 +112,17 @@
 
 #[cfg(feature = "edge-nal")]
 mod edge;
+mod requests;
 mod run;
 mod state;
 mod udp;
 
+pub use opentrust_instance::{
+    DnsError, PingReply, QueryConfig, ResolvedAddresses, ResolvedService, ServiceId,
+};
 pub use opentrust_instance::{Event, Instance};
+pub use opentrust_meshcop::joiner::JoinerConfig;
+pub use requests::DnsClientError;
 pub use state::{EVENT_QUEUE_LEN, OpenTrust, Resources, WAITERS};
 pub use udp::UdpSocket;
 

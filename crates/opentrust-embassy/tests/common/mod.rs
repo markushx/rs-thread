@@ -59,11 +59,13 @@ struct AirNode {
 /// All nodes hear each other (full mesh, no loss, no air time).
 pub struct Air {
     nodes: Vec<AirNode>,
+    blocked: Vec<(usize, usize)>,
 }
 
 impl Air {
     pub fn new(n: usize) -> RefCell<Self> {
         RefCell::new(Self {
+            blocked: Vec::new(),
             nodes: (0..n)
                 .map(|_| AirNode {
                     sleeping: true,
@@ -75,6 +77,11 @@ impl Air {
                 })
                 .collect(),
         })
+    }
+
+    /// Nodes `a` and `b` do not hear each other.
+    pub fn block(&mut self, a: usize, b: usize) {
+        self.blocked.push((a, b));
     }
 
     pub fn in_tx(&self, id: usize) -> bool {
@@ -179,7 +186,12 @@ impl Radio for AirRadio<'_> {
         let mut air = self.air.borrow_mut();
         let mut ack: Option<Vec<u8>> = None;
         for j in 0..air.nodes.len() {
-            if j == self.id || air.nodes[j].sleeping || air.nodes[j].channel != channel {
+            if j == self.id
+                || air.blocked.contains(&(self.id, j))
+                || air.blocked.contains(&(j, self.id))
+                || air.nodes[j].sleeping
+                || air.nodes[j].channel != channel
+            {
                 continue;
             }
             let mut will_ack = false;
@@ -354,5 +366,17 @@ pub fn drive<T>(
         for c in clocks {
             c.set(t);
         }
+    }
+}
+
+/// Wait until `cond` holds for the instance of `ot` (checked after every
+/// state change of the node).
+pub async fn wait_until(ot: Ot<'_, '_>, mut cond: impl FnMut(&mut SimInstance) -> bool) {
+    loop {
+        let g = ot.generation();
+        if ot.with(|i, _| cond(i)) {
+            return;
+        }
+        ot.wait_changed_after(g).await;
     }
 }
