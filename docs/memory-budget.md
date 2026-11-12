@@ -90,3 +90,32 @@ Notes, no optimisation done:
   each queue owns its pool because the queues are borrowed as disjoint
   fields by the view structs (ADR 0003) and a handle-based pool cannot be
   lent to several of them at once without passing it through every view.
+
+## nRF52840 firmware (`examples/nrf52840-leader`)
+
+Measured on the nRF52840 DK: `cargo build --release` of the leader firmware
+(`opt-level = "s"`, fat LTO, `panic = "abort"`, rustc 1.95), `Instance` with the
+`ftd` feature only (no commissioner / border agent), soft crypto (including
+the ECDSA / EC-JPAKE code `opentrust-instance` always pulls in), a 4096-byte
+`RamSettings`, defmt over RTT.
+
+| Section | Bytes |
+|---|---|
+| Flash: vector table 256 + `.text` 351660 + `.rodata` 22280 + `.data` image 80 | 374276 (about 365 KiB of 1024 KiB) |
+| RAM, static: `.data` 80 + `.bss` 85084 + `.uninit` 1024 | 86188 (about 84 KiB of 256 KiB) |
+| of which `Resources` (the `Instance`, 4096-byte settings, state) | about 82000 |
+| Stack high-water: construction of the `Instance` / `Resources` (moved by value) | 111856 |
+| Stack high-water: running as Leader, advertising | 127688 |
+
+Notes:
+
+- Stack is measured by painting the RAM between `.bss` and the stack pointer
+  (`stack_high_water` in the firmware). The 125 kB of stack is not yet
+  explained; it is far more than the 80 kB static `Instance` and points at
+  large by-value temporaries (construction and moves of the `Instance`, large
+  locals in the poll path). With the static RAM this leaves about 40 kB of the
+  256 kB free, not enough for rs-matter (see the Matter light section above).
+  Constructing the `Instance` in place (`StaticCell::init_with`-style) and
+  finding the large stack frames is the first RAM optimisation to do.
+- `.text` is dominated by the cryptography (P-256 ECDSA / EC-JPAKE, AES, SHA);
+  no per-crate breakdown was made.
