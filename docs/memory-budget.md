@@ -37,6 +37,38 @@ queues), indirect queue, forwarder held datagrams, CoAP endpoint (pending
 requests and cached responses), DNS/SRP datagrams. An allocation that does not
 fit fails with `NoBufs`. The pool sizes are const generics with defaults.
 
+## Matter light node (`opentrust-matter`)
+
+RAM of the on-off light of `crates/opentrust-matter/tests/light.rs` (x86_64
+`size_of_val`, debug build; the release build prints the same numbers).
+Regenerate with
+`cargo test -p opentrust-matter --test light -- --nocapture`.
+
+| Object | Bytes |
+|---|---|
+| `Resources` (default `Instance` with a 4096-byte `RamSettings`, state, wakers) | 110400 |
+| `ThreadRunner` (net stack, netif, net ctl, mDNS, persist with its settings buffer) | 1304 |
+| `MatterStack<64 kB bump, ThreadNetworks>`: `Matter` 26632 + bump 65536 + buffers, IM state, networks store, ... | 110376 |
+| future of `run_thread_oper` | 3448 |
+| `OnOffHandler` | 168 |
+| Total | about 225700 |
+
+Notes, no optimisation done:
+
+- 32-bit targets are smaller (pointers and `usize`), roughly 10 to 15%, so
+  about 190 to 200 kB on a Cortex-M4. That leaves 50 to 60 kB of the nRF52840's
+  256 kB for the stacks of the tasks, the executor, the radio driver, BLE
+  (`trouble-host`) while commissioning and the application. Tight but
+  plausible; it does not fit with the default settings on a 64 kB budget
+  elsewhere in the system.
+- The bump allocator (65536 bytes here, the size rs-matter's examples use for
+  an unoptimised build) holds the pinned futures of the stack. An optimised
+  embedded build needs much less of it; the actual peak was not measured.
+- Levers that exist already: an MTD / `ftd`-less `Instance` (74864 against
+  107424 bytes), fewer subscriptions / fabrics / responders (rs-matter
+  features `stack-max-*`, `max-fabrics-*`), a smaller bump.
+- The ESP32-C6 (512 kB) and ESP32-H2 (320 kB) have room.
+
 ## Target devices
 
 | Device | RAM | Instance (default) | Instance (MTD) |
