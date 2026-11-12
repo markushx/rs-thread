@@ -10,25 +10,19 @@ use defmt::info;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_futures::select::select;
-use embassy_nrf::config::{Config, HfclkSource};
-use embassy_nrf::radio::ieee802154::Radio as HwRadio;
-use embassy_nrf::{bind_interrupts, peripherals, radio};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
+use nrf52840_leader::Board;
 use opentrust_core::crypto::soft::SoftCrypto;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_embassy::{Event, OpenTrust, Resources};
 use opentrust_instance::{ExtAddress, Instance};
-use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRadio, NrfRng};
+use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
 use opentrust_platform::{Radio, RamSettings};
 use panic_probe as _;
 use static_cell::StaticCell;
 
 defmt::timestamp!("{=u64:us}", embassy_time::Instant::now().as_micros());
-
-bind_interrupts!(struct Irqs {
-    RADIO => radio::InterruptHandler<peripherals::RADIO>;
-});
 
 type Res = Resources<NoopRawMutex, EmbassyClock, RamSettings<4096>, SoftCrypto, NrfRng<'static>>;
 static RES: StaticCell<Res> = StaticCell::new();
@@ -45,13 +39,8 @@ fn ext_address() -> ExtAddress {
 }
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
-    let mut config = Config::default();
-    config.hfclk_source = HfclkSource::ExternalXtal;
-    let p = embassy_nrf::init(config);
-
-    let rng = NrfRng::new_blocking(p.RNG);
-    let mut radio = NrfRadio::new(HwRadio::new(p.RADIO, Irqs));
+async fn main(spawner: Spawner) {
+    let Board { rng, mut radio } = nrf52840_leader::init(&spawner);
     let caps = radio.init().await.unwrap();
     let instance = Instance::new(
         opentrust_instance::Config::router(ext_address(), caps),
@@ -73,9 +62,8 @@ async fn main(_spawner: Spawner) {
             info!("energy scan done: {}", r.is_ok());
 
             info!("round {}: active scan, 300 ms per channel", round);
-            let started = ot.with(|i, now: Instant| {
-                i.active_scan_start(0, Duration::from_millis(300), now)
-            });
+            let started =
+                ot.with(|i, now: Instant| i.active_scan_start(0, Duration::from_millis(300), now));
             if started.is_err() {
                 info!("active scan did not start");
                 continue;

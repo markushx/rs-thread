@@ -9,9 +9,12 @@ publish = false
 [workspace]
 
 [features]
-default = ["radio-embassy"]
-# Radio backend of `opentrust-nrf` (selected here; more backends may follow).
-radio-embassy = ["opentrust-nrf/radio-embassy"]
+default = ["radio-nrf802154"]
+# Radio backend of `opentrust-nrf`: exactly one. `radio-nrf802154` (Nordic driver + MPSL)
+# is the default; `radio-embassy` is the pure-Rust one
+# (`--no-default-features --features radio-embassy`).
+radio-embassy = ["opentrust-nrf/radio-embassy", "cortex-m/critical-section-single-core"]
+radio-nrf802154 = ["opentrust-nrf/radio-nrf802154"]
 
 [dependencies]
 opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }
@@ -25,7 +28,9 @@ embassy-time = { version = "0.5", features = ["defmt"] }
 embassy-nrf = { version = "0.11", features = ["nrf52840", "time-driver-rtc1", "gpiote", "unstable-pac", "defmt"] }
 embassy-sync = "0.8"
 embassy-futures = "0.1"
-cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+# The critical-section implementation comes with the backend: the single-core one
+# (PRIMASK) for radio-embassy, MPSL-aware one (keeps its IRQs unmasked) for radio-nrf802154.
+cortex-m = "0.7"
 cortex-m-rt = "0.7"
 defmt = "1"
 defmt-rtt = "1"

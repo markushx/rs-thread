@@ -13,12 +13,20 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-# Radio backends (exactly one is expected to be enabled; more may follow, e.g.
-# the Nordic 802.15.4 driver with MPSL for hardware ACK, CSL and BLE coexistence).
+# Radio backends: exactly one must be enabled (both is a compile error).
 default = ["radio-embassy"]
-# The embassy-nrf `radio::ieee802154` driver (no MAC offload).
+# The embassy-nrf `radio::ieee802154` driver (no MAC offload), pure Rust.
 radio-embassy = []
-defmt = ["dep:defmt", "opentrust-platform/defmt", "opentrust-core/defmt"]
+# Nordic's 802.15.4 radio driver (C) with MPSL (prebuilt library) through the
+# sysgrok `nrf-802154` crate: hardware ACK, CSMA-CA, CSL, transmit security,
+# BLE coexistence. Needs `clang` and `cmake` to build, and Rust 1.93.
+radio-nrf802154 = ["dep:nrf-802154", "dep:nrf-mpsl", "nrf-mpsl/critical-section-impl"]
+defmt = [
+    "dep:defmt",
+    "opentrust-platform/defmt",
+    "opentrust-core/defmt",
+    "nrf-802154?/defmt",
+]
 
 [dependencies]
 opentrust-core = { workspace = true }
@@ -31,6 +39,10 @@ defmt = { workspace = true, optional = true }
 # empty so that the workspace still builds and tests.
 [target.'cfg(target_arch = "arm")'.dependencies]
 embassy-nrf = { version = "0.11", features = ["nrf52840", "unstable-pac"] }
+# Not on crates.io in the needed version yet: 0.1.0 lacks timed receive, CSL
+# and secured enhanced ACKs. Pinned to a commit of sysgrok/nrf-802154.
+nrf-802154 = { git = "https://github.com/sysgrok/nrf-802154", rev = "012c01c563093169c36871b8eb3a1b3268eeb714", default-features = false, features = ["nrf52840"], optional = true }
+nrf-mpsl = { version = "0.4", default-features = false, features = ["nrf52840"], optional = true }
 
 [lints]
 workspace = true
