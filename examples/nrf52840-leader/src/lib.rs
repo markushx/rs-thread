@@ -75,13 +75,13 @@ pub fn init(spawner: &Spawner) -> Board {
 }
 
 /// The Active Dataset (TLV encoded) shared by the firmware binaries and the
-/// OpenThread peer in the interoperability tests: channel 15, PAN ID 0x1234,
+/// OpenThread peer in the interoperability tests: channel 25, PAN ID 0x1234,
 /// network name "OpenTrust", extended PAN ID dead00beef00cafe, mesh-local
 /// prefix fddead00beef::/64, network key 00112233445566778899aabbccddeeff.
 /// The same bytes, hex encoded, are [`DATASET_HEX`].
 pub const DATASET_TLVS: [u8; 100] = [
-    0x00, 0x03, 0x00, 0x00, 0x0f, // channel
-    0x35, 0x06, 0x00, 0x04, 0x07, 0xff, 0xf8, 0x00, // channel mask
+    0x00, 0x03, 0x00, 0x00, 0x19, // channel 25
+    0x35, 0x06, 0x00, 0x04, 0x00, 0x1f, 0xff, 0xe0, // channel mask (11..=26)
     0x02, 0x08, 0xde, 0xad, 0x00, 0xbe, 0xef, 0x00, 0xca, 0xfe, // ext PAN ID
     0x03, 0x09, b'O', b'p', b'e', b'n', b'T', b'r', b'u', b's', b't', // name
     0x04, 0x10, 0x3a, 0xa5, 0x5f, 0x91, 0xca, 0x47, 0xd1, 0xe4, 0xe7, 0x1a, 0x08, 0xcb, 0x35, 0xe9,
@@ -96,4 +96,4 @@ pub const DATASET_TLVS: [u8; 100] = [
 
 /// [`DATASET_TLVS`] as the hex string for `dataset set active` of the
 /// OpenThread CLI.
-pub const DATASET_HEX: &str = "000300000f3506000407fff8000208dead00beef00cafe03094f70656e547275737404103aa55f91ca47d1e4e71a08cb35e91591051000112233445566778899aabbccddeeff0708fddead00beef00000c0402a0f7f80e08000000000001000001021234";
+pub const DATASET_HEX: &str = "000300001935060004001fffe00208dead00beef00cafe03094f70656e547275737404103aa55f91ca47d1e4e71a08cb35e91591051000112233445566778899aabbccddeeff0708fddead00beef00000c0402a0f7f80e08000000000001000001021234";

@@ -1,5 +1,5 @@
 //! OpenTrust leader on the nRF52840 DK: forms a Thread network with a fixed
-//! test dataset (channel 15, PAN ID 0x1234, name "OpenTrust") and logs the
+//! test dataset (channel 25, PAN ID 0x1234, name "OpenTrust") and logs the
 //! role, RLOC16, ML-EID and MAC counters over RTT.
 
 #![no_std]

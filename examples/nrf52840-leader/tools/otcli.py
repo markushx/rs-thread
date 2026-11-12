@@ -20,7 +20,7 @@ def open_port(path):
     return fd
 
 
-def read_until_done(fd, timeout):
+def read_until_done(fd, timeout, marker='Done'):
     buf = b''
     end = time.time() + timeout
     while time.time() < end:
@@ -28,7 +28,7 @@ def read_until_done(fd, timeout):
         if r:
             buf += os.read(fd, 4096)
             lines = buf.decode(errors='replace').splitlines()
-            if any(l.strip() == 'Done' or l.startswith('Error') for l in lines):
+            if any(l.strip() == marker or l.startswith('Error') for l in lines):
                 break
     return buf.decode(errors='replace')
 
@@ -47,7 +47,15 @@ def run(port, cmds, timeout=10):
                 time.sleep(float(c[6:]))
                 continue
             os.write(fd, c.encode() + b'\n')
-            print(read_until_done(fd, timeout).rstrip())
+            # `ping` prints its summary line first, then Done.
+            marker = 'Done'
+            t = timeout
+            if c.startswith('ping'):
+                n = int(c.split()[3]) if len(c.split()) > 3 else 1
+                t = timeout + n * 1.5
+            print(read_until_done(fd, t, marker).rstrip())
+            if c.startswith('ping'):
+                time.sleep(0.2)
     finally:
         os.close(fd)
 
