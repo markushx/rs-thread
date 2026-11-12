@@ -15,6 +15,8 @@ default = ["radio-nrf802154"]
 # (`--no-default-features --features radio-embassy`).
 radio-embassy = ["opentrust-nrf/radio-embassy", "cortex-m/critical-section-single-core"]
 radio-nrf802154 = ["opentrust-nrf/radio-nrf802154"]
+# `node` binary: attach as a child and never upgrade to a router (default: router eligible).
+child-only = []
 
 [dependencies]
 opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }

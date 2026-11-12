@@ -95,8 +95,8 @@ async fn main(spawner: Spawner) {
 
     let app = async {
         ot.with(|i, now| {
-            let mut ds = i.create_dataset(15).unwrap();
-            ds.set_pan_id(0x1234).unwrap();
+            let ds =
+                opentrust_instance::Dataset::from_tlvs(&nrf52840_leader::DATASET_TLVS).unwrap();
             i.set_active_dataset(&ds, now).unwrap();
             i.ip6_set_enabled(true);
             i.become_leader(now).unwrap();
