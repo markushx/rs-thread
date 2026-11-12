@@ -1,0 +1,36 @@
+[package]
+name = "opentrust-nrf"
+description = "nRF52840 platform drivers (802.15.4 radio, RNG, clock/alarm) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+# Radio backends (exactly one is expected to be enabled; more may follow, e.g.
+# the Nordic 802.15.4 driver with MPSL for hardware ACK, CSL and BLE coexistence).
+default = ["radio-embassy"]
+# The embassy-nrf `radio::ieee802154` driver (no MAC offload).
+radio-embassy = []
+defmt = ["dep:defmt", "opentrust-platform/defmt", "opentrust-core/defmt"]
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-platform = { workspace = true }
+embassy-time = { version = "0.5", default-features = false }
+rand_core = { workspace = true }
+defmt = { workspace = true, optional = true }
+
+# The hardware drivers only exist on ARM targets; on the host the crate is
+# empty so that the workspace still builds and tests.
+[target.'cfg(target_arch = "arm")'.dependencies]
+embassy-nrf = { version = "0.11", features = ["nrf52840", "unstable-pac"] }
+
+[lints]
+workspace = true
