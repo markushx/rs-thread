@@ -14,6 +14,9 @@
 //! | `rs_matter::stack::net::{NetStack, NetSocket}` + `NetworkSend` / `NetworkReceive` / `NetworkMulticast` | [`net::MatterNetStack`] / [`net::MatterSocket`] | `UdpSocket` (one socket for Matter port 5540) |
 //! | `rs_matter::stack::mdns::Mdns` | [`mdns::SrpMdns`] | SRP client (registration) + DNS-SD client (resolve / browse) |
 //! | `NetifDiag` + `NetChangeNotif` | [`netif::ThreadNetif`] | address list, `wait_changed` (any number of waiters) |
+//! | `NetCtl` + `NetCtlStatus` (Thread Network Commissioning) | [`netctl::ThreadNetCtl`] | MLE discovery scan, dataset TLVs, `thread_start`, role wait with a timeout |
+//! | `WirelessDiag` + `ThreadDiag` (Thread Network Diagnostics) | [`netctl::ThreadNetCtl`] (impl in [`threaddiag`]) | role, dataset, leader data, neighbor / route tables, MAC counters |
+//! | ICD network parameters (`Icd::net_params`) | [`icd::IcdFollower`] | data poll period, link mode |
 //!
 //! # rs-matter revision
 //!
@@ -31,8 +34,9 @@
 //! (through `domain`), which moved the lockfile to 0.9.3 (rustc 1.87) for the
 //! whole workspace.
 //!
-//! Not covered yet: `NetCtl` (Thread Network Commissioning), `ThreadDiag`,
-//! the `ThreadDriver` runner with settings persistence, and the ICD hooks.
+//! Not covered yet: the `ThreadDriver` runner with settings persistence of
+//! the networks store, and the ICD child timeout / CSL / supervision (the
+//! `Instance` has none of them).
 //! Known limits of what is there: the `Instance` SRP client has four
 //! service slots (the commissionable service plus three fabrics), lease and
 //! TTL are the client defaults, and a browse request is answered with one
@@ -58,10 +62,12 @@
 mod fmt;
 
 pub mod error;
+pub mod icd;
 pub mod mdns;
 pub mod net;
 pub mod netctl;
 pub mod netif;
+pub mod threaddiag;
 
 pub use opentrust_embassy::{OpenTrust, Resources};
 pub use rs_matter;

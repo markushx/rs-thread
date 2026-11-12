@@ -128,7 +128,7 @@ pub use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
 pub use opentrust_meshcop::dataset::Dataset;
 pub use opentrust_meshcop::discovery::ScanResult as DiscoverResult;
 pub use opentrust_meshcop::tlv::SecurityPolicy;
-pub use opentrust_mle::tlv::DeviceMode;
+pub use opentrust_mle::tlv::{DeviceMode, LeaderData};
 pub use opentrust_mle::{MleConfig, Role};
 pub use opentrust_net::udp::{RecvInfo, UdpMeta, UdpSendOpts};
 pub use opentrust_platform::radio::{PsduRxInfo, RadioCaps};
