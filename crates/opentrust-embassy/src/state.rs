@@ -42,6 +42,8 @@ pub(crate) struct UdpSlot {
 pub(crate) struct State<S, C: InstanceCrypto, R> {
     pub(crate) inst: Instance<S, C, R>,
     generation: u32,
+    /// The last seen [`SettingsStore::change_count`].
+    settings_changes: u32,
     changed: MultiWakerRegistration<WAITERS>,
     events: Deque<Event, EVENT_QUEUE_LEN>,
     event_waiters: MultiWakerRegistration<WAITERS>,
@@ -93,6 +95,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> State<S, C, R> {
             }
             let _ = self.events.push_back(ev);
         }
+        let sc = self.inst.settings().change_count();
+        if sc != self.settings_changes {
+            self.settings_changes = sc;
+            changed = true;
+        }
         if changed {
             self.generation = self.generation.wrapping_add(1);
             self.changed.wake();
@@ -137,6 +144,7 @@ impl<M: RawMutex, K: Clock, S, C: InstanceCrypto, R> Resources<M, K, S, C, R> {
             state: Mutex::new(RefCell::new(State {
                 inst: instance,
                 generation: 0,
+                settings_changes: 0,
                 changed: MultiWakerRegistration::new(),
                 events: Deque::new(),
                 event_waiters: MultiWakerRegistration::new(),

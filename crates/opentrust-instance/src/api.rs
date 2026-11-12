@@ -185,6 +185,21 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.settings.wipe();
     }
 
+    /// The settings store (read access, for example to serialise it for
+    /// persistence; see [`SettingsStore::change_count`]).
+    pub fn settings(&self) -> &S {
+        &self.core.settings
+    }
+
+    /// The settings store with write access, for restoring persisted
+    /// settings before [`thread_start`](Self::thread_start) (the instance
+    /// reads datasets, network info and the SLAAC secret when it starts).
+    /// Changing settings of a running node behind its back is not
+    /// supported.
+    pub fn settings_mut(&mut self) -> &mut S {
+        &mut self.core.settings
+    }
+
     /// Consume the instance and return its settings store (a power cycle in
     /// tests: build a new instance from the old settings).
     pub fn into_settings(self) -> S {

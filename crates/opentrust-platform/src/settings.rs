@@ -34,6 +34,17 @@ pub trait SettingsStore {
     /// Remove all settings.
     fn wipe(&mut self);
 
+    /// A counter that changes whenever the store is written (`set`, `add`,
+    /// `delete`, `wipe`; the wrapping value itself is meaningless). The async
+    /// facade compares it after every step of the node and wakes
+    /// `wait_changed` when it moved, so a persistence task notices settings
+    /// writes that come with no other state change (for example the frame
+    /// counter store-ahead). The default `0` means "not tracked": such a
+    /// store is only noticed together with the next state event.
+    fn change_count(&self) -> u32 {
+        0
+    }
+
     /// Number of values stored for `key`.
     fn count(&self, key: SettingsKey) -> usize {
         let mut n = 0;
@@ -53,12 +64,16 @@ const HEADER: usize = 4;
 #[derive(Debug, Clone, Default)]
 pub struct RamSettings<const CAP: usize> {
     data: Vec<u8, CAP>,
+    changes: u32,
 }
 
 impl<const CAP: usize> RamSettings<CAP> {
     /// Create an empty store.
     pub const fn new() -> Self {
-        Self { data: Vec::new() }
+        Self {
+            data: Vec::new(),
+            changes: 0,
+        }
     }
 
     /// Bytes currently used (including record headers).
@@ -121,6 +136,7 @@ impl<const CAP: usize> SettingsStore for RamSettings<CAP> {
     }
 
     fn set(&mut self, key: SettingsKey, value: &[u8]) -> Result<()> {
+        self.changes = self.changes.wrapping_add(1);
         // Work on a copy only when the new value would not fit after removal;
         // simplest all-or-nothing approach: compute the space freed first.
         let freed: usize = self
@@ -142,10 +158,12 @@ impl<const CAP: usize> SettingsStore for RamSettings<CAP> {
     }
 
     fn add(&mut self, key: SettingsKey, value: &[u8]) -> Result<()> {
+        self.changes = self.changes.wrapping_add(1);
         self.push(key, value)
     }
 
     fn delete(&mut self, key: SettingsKey, index: Option<usize>) -> Result<()> {
+        self.changes = self.changes.wrapping_add(1);
         match index {
             Some(i) => {
                 let (start, len) = self.find(key, i).ok_or(Error::NotFound)?;
@@ -164,7 +182,12 @@ impl<const CAP: usize> SettingsStore for RamSettings<CAP> {
     }
 
     fn wipe(&mut self) {
+        self.changes = self.changes.wrapping_add(1);
         self.data.clear();
+    }
+
+    fn change_count(&self) -> u32 {
+        self.changes
     }
 }
 
@@ -188,6 +211,22 @@ mod tests {
         assert_eq!(buf[0], 9);
         assert_eq!(s.count(K), 1);
         assert_eq!(s.get(K, 1, &mut buf), Err(Error::NotFound));
+    }
+
+    #[test]
+    fn change_count_moves_on_writes_only() {
+        let mut s = RamSettings::<64>::new();
+        let c0 = s.change_count();
+        let mut b = [0u8; 4];
+        let _ = s.get(K, 0, &mut b);
+        assert_eq!(s.change_count(), c0);
+        s.set(K, &[1]).unwrap();
+        let c1 = s.change_count();
+        assert_ne!(c1, c0);
+        s.add(C, &[2]).unwrap();
+        s.delete(C, None).unwrap();
+        s.wipe();
+        assert_eq!(s.change_count(), c1.wrapping_add(3));
     }
 
     #[test]
