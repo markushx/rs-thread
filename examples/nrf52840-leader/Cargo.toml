@@ -1,0 +1,40 @@
+[package]
+name = "nrf52840-leader"
+description = "OpenTrust leader on the nRF52840 DK (standalone firmware, not a workspace member)"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone: the firmware has its own target, linker script and profile.
+[workspace]
+
+[features]
+default = ["radio-embassy"]
+# Radio backend of `opentrust-nrf` (selected here; more backends may follow).
+radio-embassy = ["opentrust-nrf/radio-embassy"]
+
+[dependencies]
+opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }
+opentrust-platform = { path = "../../crates/opentrust-platform", features = ["defmt"] }
+opentrust-instance = { path = "../../crates/opentrust-instance", default-features = false, features = ["ftd", "defmt"] }
+opentrust-embassy = { path = "../../crates/opentrust-embassy", default-features = false, features = ["ftd", "defmt"] }
+opentrust-nrf = { path = "../../crates/opentrust-nrf", default-features = false, features = ["defmt"] }
+
+embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-time = { version = "0.5", features = ["defmt"] }
+embassy-nrf = { version = "0.11", features = ["nrf52840", "time-driver-rtc1", "gpiote", "unstable-pac", "defmt"] }
+embassy-sync = "0.8"
+embassy-futures = "0.1"
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7"
+defmt = "1"
+defmt-rtt = "1"
+panic-probe = { version = "1", features = ["print-defmt"] }
+static_cell = "2"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+debug = 2
+panic = "abort"
