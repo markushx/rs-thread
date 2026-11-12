@@ -55,4 +55,12 @@ pub async fn form_network(ots: &[Ot<'_, '_>; 2], ds: &Dataset) {
     wait_attached(ots[1]).await;
 }
 
+/// The virtual `embassy-time` driver is one per binary: tests of a binary
+/// that drive time must not run concurrently.
+pub fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+pub mod kv;
 pub mod srp;

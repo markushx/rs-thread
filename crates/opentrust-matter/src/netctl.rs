@@ -20,6 +20,7 @@ use rs_matter::dm::clusters::net_comm::{
     NetworkType, ThreadCapabilitiesBitmap, WirelessCreds,
 };
 use rs_matter::dm::clusters::wifi_diag::WirelessDiag;
+use rs_matter::dm::networks::NetChangeNotif;
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::utils::timers::{Duration, Timer};
 
@@ -288,5 +289,18 @@ where
 {
     fn connected(&self) -> Result<bool, Error> {
         Ok(is_attached(self.ot.role()))
+    }
+}
+
+impl<M, K, S, C, R> NetChangeNotif for ThreadNetCtl<'_, M, K, S, C, R>
+where
+    M: RawMutex,
+    K: Clock,
+    S: SettingsStore,
+    C: InstanceCrypto,
+    R: Rng + CryptoRng,
+{
+    async fn wait_changed(&self) {
+        self.ot.wait_changed().await;
     }
 }
