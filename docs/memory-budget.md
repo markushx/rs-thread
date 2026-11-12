@@ -93,19 +93,28 @@ Notes, no optimisation done:
 
 ## nRF52840 firmware (`examples/nrf52840-leader`)
 
-Measured on the nRF52840 DK: `cargo build --release` of the leader firmware
+Measured on the nRF52840 DK with both radio backends: `cargo build --release` of the leader firmware
 (`opt-level = "s"`, fat LTO, `panic = "abort"`, rustc 1.95), `Instance` with the
 `ftd` feature only (no commissioner / border agent), soft crypto (including
 the ECDSA / EC-JPAKE code `opentrust-instance` always pulls in), a 4096-byte
 `RamSettings`, defmt over RTT.
 
-| Section | Bytes |
-|---|---|
-| Flash: vector table 256 + `.text` 351660 + `.rodata` 22280 + `.data` image 80 | 374276 (about 365 KiB of 1024 KiB) |
-| RAM, static: `.data` 80 + `.bss` 85084 + `.uninit` 1024 | 86188 (about 84 KiB of 256 KiB) |
-| of which `Resources` (the `Instance`, 4096-byte settings, state) | about 82000 |
-| Stack high-water: construction of the `Instance` / `Resources` (moved by value) | 111856 |
-| Stack high-water: running as Leader, advertising | 127688 |
+| Section | `radio-embassy` | `radio-nrf802154` (default) |
+|---|---|---|
+| Flash: vector table 256 + `.text` + `.rodata` + `.data` image | 374496 (`.text` 351880, `.rodata` 22280, `.data` 80): about 366 KiB of 1024 KiB | 440172 (`.text` 413188, `.rodata` 23548, `.data` 3180): about 430 KiB of 1024 KiB |
+| RAM, static: `.data` + `.bss` + `.uninit` 1024 | 86196 (`.bss` 85092): about 84 KiB of 256 KiB | 95072 (`.data` 3180, `.bss` 90868): about 93 KiB of 256 KiB |
+| of which `Resources` (the `Instance`, 4096-byte settings, state) | about 82000 | about 82000 |
+| Stack high-water: construction of the `Instance` / `Resources` (moved by value) | 111856 | 111864 |
+| Stack high-water: running as Leader, advertising | 127688 | 127688 |
+
+The Nordic backend costs about 66 kB of flash (driver, MPSL and service layer
+libraries, the Rust glue) and about 9 kB of static RAM (driver state, MPSL,
+the receive queue of 16 frames), and nothing in stack: the stack peaks are
+the stack's own. The MAC code the Nordic backend makes unnecessary is still
+in the image (the MAC chooses at run time; `SoftMacNeeds` is `RETRANSMIT` only
+with `radio-nrf802154` against `0x6ff` with `radio-embassy`), so the software
+ACK / CSMA / security paths are dead weight in the Nordic build that a
+feature split of the MAC could remove.
 
 Notes:
 
