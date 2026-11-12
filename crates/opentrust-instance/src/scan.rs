@@ -155,6 +155,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.mac.set_beacon_payload(payload);
     }
 
+    #[inline(never)]
     pub(crate) fn service_scan(&mut self, now: Instant) -> bool {
         self.update_beacon(now);
         let mut busy = false;

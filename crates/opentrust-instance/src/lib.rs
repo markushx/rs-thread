@@ -337,6 +337,19 @@ impl Config {
     }
 }
 
+/// Build a value in its own stack frame and write it to `dst`, so the
+/// temporaries of the constructor do not add up in the caller's frame.
+///
+/// # Safety
+///
+/// `dst` must be valid for writes and suitably aligned.
+#[allow(unsafe_code)]
+#[inline(never)]
+unsafe fn put<T>(dst: *mut T, f: impl FnOnce() -> T) {
+    // SAFETY: the caller guarantees `dst`.
+    unsafe { dst.write(f()) }
+}
+
 /// A Thread node. See the [crate documentation](crate).
 ///
 /// Type parameters: `S` the persistent [`SettingsStore`], `C` the crypto
@@ -387,7 +400,36 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Create an instance. Nothing is sent and the radio is not touched
     /// until [`thread_start`](Self::thread_start) /
     /// [`become_leader`](Self::become_leader).
-    pub fn new(config: Config, settings: S, crypto: C, mut rng: R) -> Self {
+    ///
+    /// The value is large (see `docs/memory-budget.md`); on a small target
+    /// build it in place with [`init`](Self::init) instead of moving it
+    /// through the stack.
+    pub fn new(config: Config, settings: S, crypto: C, rng: R) -> Self {
+        let mut slot = core::mem::MaybeUninit::<Self>::uninit();
+        Self::init(&mut slot, config, settings, crypto, rng);
+        // SAFETY: `init` initialised every field.
+        #[allow(unsafe_code)]
+        unsafe {
+            slot.assume_init()
+        }
+    }
+
+    /// Create an instance in place in `slot` (for example a
+    /// `StaticCell<MaybeUninit<Instance>>` or a `static`), so that no value
+    /// of the size of the instance (tens of kB) ever lives on the stack. The
+    /// components are written one at a time; the largest stack temporary is
+    /// the largest component (a few kB). Returns the initialised instance.
+    #[allow(unsafe_code)]
+    #[inline(never)]
+    pub fn init(
+        slot: &mut core::mem::MaybeUninit<Self>,
+        config: Config,
+        settings: S,
+        crypto: C,
+        mut rng: R,
+    ) -> &mut Self {
+        use core::ptr::addr_of_mut;
+
         let mut iid = [0u8; 8];
         rng.fill_bytes(&mut iid);
         let mac_seed = rng.next_u64();
@@ -398,41 +440,47 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let leader_session_id = rng.next_u32() as u16;
         let mut ba_id = [0u8; 16];
         rng.fill_bytes(&mut ba_id);
-        let cm = commissioning::Commissioning::new(
-            &crypto,
-            config.ext_address,
-            leader_session_id,
-            ba_id,
-        );
 
-        let keys = KeyManager::new(crypto.clone(), api::placeholder_key());
-        let mac = Mac::new(
-            config.radio,
-            config.ext_address,
-            keys,
-            MacRng::new(mac_seed),
-        );
-        let mut ip6 = Ip6::new();
-        let _ = ip6.netif.set_link_local(&config.ext_address);
-        let cur = opentrust_meshcop::manager::CurrentConfig {
-            channel: mac.channel(),
-            pan_id: mac.pan_id().0,
-            mesh_local_prefix: opentrust_core::types::Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 0]),
-            network_key: api::placeholder_key(),
-        };
-        let core = Core {
-            mac,
-            rng,
-            settings,
-            crypto,
-            now: Instant::ZERO,
-            ext: config.ext_address,
-            ml_iid: Iid(iid),
-            role: Role::Disabled,
-            ip6,
-            netdata: NetData::new(),
-            datasets: Datasets::new(),
-            cfg: NetConfig {
+        let ext = config.ext_address;
+        let p = slot.as_mut_ptr();
+        // SAFETY: `p` is valid for writes of `Self`; every field of `Self`
+        // and of `Core` is written exactly once below, then the value is
+        // fully initialised. Each large component is built by `put` in its
+        // own stack frame, straight into its field.
+        unsafe {
+            commissioning::Commissioning::init(
+                addr_of_mut!((*p).cm),
+                &crypto,
+                ext,
+                leader_session_id,
+                ba_id,
+            );
+            let c = addr_of_mut!((*p).core);
+            put(addr_of_mut!((*c).mac), || {
+                let keys = KeyManager::new(crypto.clone(), api::placeholder_key());
+                Mac::new(config.radio, ext, keys, MacRng::new(mac_seed))
+            });
+            let cur = opentrust_meshcop::manager::CurrentConfig {
+                channel: (*c).mac.channel(),
+                pan_id: (*c).mac.pan_id().0,
+                mesh_local_prefix: opentrust_core::types::Prefix64([0xfd, 0, 0, 0, 0, 0, 0, 0]),
+                network_key: api::placeholder_key(),
+            };
+            addr_of_mut!((*c).rng).write(rng);
+            addr_of_mut!((*c).settings).write(settings);
+            addr_of_mut!((*c).crypto).write(crypto);
+            addr_of_mut!((*c).now).write(Instant::ZERO);
+            addr_of_mut!((*c).ext).write(ext);
+            addr_of_mut!((*c).ml_iid).write(Iid(iid));
+            addr_of_mut!((*c).role).write(Role::Disabled);
+            put(addr_of_mut!((*c).ip6), || {
+                let mut ip6 = Ip6::new();
+                let _ = ip6.netif.set_link_local(&ext);
+                ip6
+            });
+            put(addr_of_mut!((*c).netdata), NetData::new);
+            put(addr_of_mut!((*c).datasets), Datasets::new);
+            addr_of_mut!((*c).cfg).write(NetConfig {
                 cur,
                 ext_pan_id: None,
                 network_name: None,
@@ -441,58 +489,62 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 ds_events: Deque::new(),
                 nd_version_bump: false,
                 applied: false,
-            },
-            mle_events: Deque::new(),
-            child_changes: Deque::new(),
-            nd_rx: None,
-            solicit: Deque::new(),
-            mle_out: Outbox::default(),
-            rx_link: opentrust_mle::endpoint::LinkRxInfo::default(),
-            parent: None,
-            poll_period: None,
-            user_poll_period: None,
-            mactx: stack::MacTx::default(),
-            events: Deque::new(),
-            iid_secret,
-            disc_rx: Deque::new(),
-            joiner_discovering: false,
-            scan_rx: Deque::new(),
-            scanning: false,
-            border_agent_port: None,
-        };
-        let mut udp = UdpSockets::new();
-        let _ = udp.register_receiver(opentrust_net::udp::MLE_UDP_PORT, ReceiverId::MLE);
-        let _ = udp.register_receiver(opentrust_net::ip6::TMF_UDP_PORT, ReceiverId::TMF);
-        let mut agent = TmfAgent::new(msg_seed);
-        tmf::register_uris(&mut agent);
-        Self {
-            mle: Mle::new(config.mle),
-            core,
-            agent,
-            sink: Outbox::default(),
+            });
+            put(addr_of_mut!((*c).mle_events), Deque::new);
+            addr_of_mut!((*c).child_changes).write(Deque::new());
+            addr_of_mut!((*c).nd_rx).write(None);
+            addr_of_mut!((*c).solicit).write(Deque::new());
+            put(addr_of_mut!((*c).mle_out), Outbox::default);
+            addr_of_mut!((*c).rx_link).write(opentrust_mle::endpoint::LinkRxInfo::default());
+            addr_of_mut!((*c).parent).write(None);
+            addr_of_mut!((*c).poll_period).write(None);
+            addr_of_mut!((*c).user_poll_period).write(None);
+            put(addr_of_mut!((*c).mactx), stack::MacTx::default);
+            put(addr_of_mut!((*c).events), Deque::new);
+            addr_of_mut!((*c).iid_secret).write(iid_secret);
+            put(addr_of_mut!((*c).disc_rx), Deque::new);
+            addr_of_mut!((*c).joiner_discovering).write(false);
+            put(addr_of_mut!((*c).scan_rx), Deque::new);
+            addr_of_mut!((*c).scanning).write(false);
+            addr_of_mut!((*c).border_agent_port).write(None);
+
+            put(addr_of_mut!((*p).mle), || Mle::new(config.mle));
+            put(addr_of_mut!((*p).agent), || {
+                let mut agent = TmfAgent::new(msg_seed);
+                tmf::register_uris(&mut agent);
+                agent
+            });
+            put(addr_of_mut!((*p).sink), Outbox::default);
             #[cfg(feature = "ftd")]
-            solicit: RouterIdOutbox::new(),
-            prng: MacRng::new(prng_seed),
-            udp,
-            resolver: AddressResolver::new(),
-            fwd: MeshForwarder::new(msg_seed ^ 0x5a5a),
+            put(addr_of_mut!((*p).solicit), RouterIdOutbox::new);
+            addr_of_mut!((*p).prng).write(MacRng::new(prng_seed));
+            put(addr_of_mut!((*p).udp), || {
+                let mut udp = UdpSockets::new();
+                let _ = udp.register_receiver(opentrust_net::udp::MLE_UDP_PORT, ReceiverId::MLE);
+                let _ = udp.register_receiver(opentrust_net::ip6::TMF_UDP_PORT, ReceiverId::TMF);
+                udp
+            });
+            put(addr_of_mut!((*p).resolver), AddressResolver::new);
+            put(addr_of_mut!((*p).fwd), || {
+                MeshForwarder::new(msg_seed ^ 0x5a5a)
+            });
             #[cfg(feature = "ftd")]
-            leader: Leader::new(),
-            local: LocalData::new(),
-            notifier: Notifier::new(),
-            publisher: Publisher::new(),
-            alocs: AlocSet::new(),
-            slaac: Slaac::new(),
-            glue: netdata_glue::GlueState::default(),
-            dnssrp: dns_srp::DnsSrp::new(),
-            bbrg: bbr::BbrGlue::new(),
-            diag_in: Deque::new(),
-            cm,
-            tmf_ext: None,
-            ping: api::PingState::default(),
-            scan: scan::ScanState::default(),
-            ip6_enabled: false,
-            started: false,
+            put(addr_of_mut!((*p).leader), Leader::new);
+            put(addr_of_mut!((*p).local), LocalData::new);
+            put(addr_of_mut!((*p).notifier), Notifier::new);
+            put(addr_of_mut!((*p).publisher), Publisher::new);
+            put(addr_of_mut!((*p).alocs), AlocSet::new);
+            put(addr_of_mut!((*p).slaac), Slaac::new);
+            put(addr_of_mut!((*p).glue), netdata_glue::GlueState::default);
+            put(addr_of_mut!((*p).dnssrp), dns_srp::DnsSrp::new);
+            put(addr_of_mut!((*p).bbrg), bbr::BbrGlue::new);
+            put(addr_of_mut!((*p).diag_in), Deque::new);
+            addr_of_mut!((*p).tmf_ext).write(None);
+            addr_of_mut!((*p).ping).write(api::PingState::default());
+            put(addr_of_mut!((*p).scan), scan::ScanState::default);
+            addr_of_mut!((*p).ip6_enabled).write(false);
+            addr_of_mut!((*p).started).write(false);
+            &mut *p
         }
     }
 

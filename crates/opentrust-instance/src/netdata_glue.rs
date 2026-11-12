@@ -58,6 +58,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     // ------------------------------------------------------------ timers
 
     /// Run the timers of the layers.
+    #[inline(never)]
     pub(crate) fn service_timers(&mut self, now: Instant) -> bool {
         // Key rotation advances the sequence on its own; adopting a newer one
         // from a neighbor or the dataset does too. MLE persists the network
@@ -86,6 +87,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// Dispatch the events of MLE and the dataset managers to their
     /// consumers.
+    #[inline(never)]
     pub(crate) fn service_mle_events(&mut self, now: Instant) -> bool {
         let mut busy = false;
         while let Some(ev) = self.core.mle_events.pop_front() {
@@ -277,6 +279,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// One round of the Network Data glue.
+    #[inline(never)]
     pub(crate) fn service_netdata(&mut self, now: Instant) -> bool {
         let mut busy = false;
         let role = self.mle.role();

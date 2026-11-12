@@ -1,11 +1,12 @@
 //! Shared state of one node: the instance, the notification state and the
 //! cheap `Copy` handle.
 
-use core::cell::RefCell;
+use core::cell::{Cell, UnsafeCell};
 use core::future::poll_fn;
+use core::mem::MaybeUninit;
+use core::ptr::addr_of_mut;
 use core::task::Poll;
 
-use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::{MultiWakerRegistration, WakerRegistration};
@@ -116,15 +117,35 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> State<S, C, R> {
     }
 }
 
+/// The state behind the raw mutex `M`: like `Mutex<M, RefCell<T>>`, but the
+/// value can be initialised in place ([`Resources::init`]).
+struct Guarded<M: RawMutex, T> {
+    raw: M,
+    busy: Cell<bool>,
+    data: UnsafeCell<T>,
+}
+
+// SAFETY: access to `data` is serialised by the raw mutex (as in embassy's
+// `Mutex`), `busy` is only touched inside it.
+#[allow(unsafe_code)]
+unsafe impl<M: RawMutex + Sync + Send, T: Send> Sync for Guarded<M, T> {}
+// SAFETY: as embassy's `Mutex`.
+#[allow(unsafe_code)]
+unsafe impl<M: RawMutex + Send, T: Send> Send for Guarded<M, T> {}
+
 /// The storage of one Thread node: the [`Instance`], the clock and the
 /// notification state. Create it once (in a `static`, `StaticCell` or on the
 /// stack), then make an [`OpenTrust`] handle with [`OpenTrust::new`].
+///
+/// The instance is tens of kB: on a small target build the whole thing in
+/// place with [`Resources::init`] (no stack temporary of that size) instead
+/// of [`Resources::new`].
 ///
 /// Type parameters: `M` the raw mutex, `K` the [`Clock`], `S` / `C` / `R` as
 /// in [`Instance`].
 pub struct Resources<M: RawMutex, K, S, C: InstanceCrypto, R> {
     clock: K,
-    state: Mutex<M, RefCell<State<S, C, R>>>,
+    state: Guarded<M, State<S, C, R>>,
     kick: Signal<M, ()>,
 }
 
@@ -138,36 +159,74 @@ impl<M: RawMutex, K: Clock, S, C: InstanceCrypto, R> Resources<M, K, S, C, R> {
     /// Wrap an initialized instance. `clock` is the time source for the API
     /// calls (the driver's [`Alarm`](opentrust_platform::Alarm) must run on
     /// the same time base).
+    ///
+    /// This moves the instance (tens of kB) through the stack; use
+    /// [`init`](Self::init) on small targets.
     pub fn new(instance: Instance<S, C, R>, clock: K) -> Self {
-        Self {
-            clock,
-            state: Mutex::new(RefCell::new(State {
-                inst: instance,
-                generation: 0,
-                settings_changes: 0,
-                changed: MultiWakerRegistration::new(),
-                events: Deque::new(),
-                event_waiters: MultiWakerRegistration::new(),
-                tx_waiters: MultiWakerRegistration::new(),
-                udp: core::array::from_fn(|_| UdpSlot {
-                    sock: None,
-                    waker: WakerRegistration::new(),
-                }),
-                req_waiters: MultiWakerRegistration::new(),
-                req_deadline: None,
-                joiner_result: None,
-                ping_seq: 0,
-                disc_q: Deque::new(),
-                energy_q: Deque::new(),
-                interrupted: false,
-            })),
-            kick: Signal::new(),
+        let mut slot = MaybeUninit::<Self>::uninit();
+        Self::init(&mut slot, clock, |i| {
+            i.write(instance);
+        });
+        // SAFETY: `init` initialised the whole value.
+        #[allow(unsafe_code)]
+        unsafe {
+            slot.assume_init()
+        }
+    }
+
+    /// Initialise the resources in place in `slot` (a `StaticCell` or a
+    /// `static`). `init_instance` initialises the instance in its final
+    /// location, typically with [`Instance::init`]:
+    ///
+    /// ```ignore
+    /// let res = Resources::init(RES.uninit(), clock, |slot| {
+    ///     Instance::init(slot, config, settings, crypto, rng);
+    /// });
+    /// ```
+    ///
+    /// `init_instance` must initialise its argument completely.
+    #[allow(unsafe_code)]
+    pub fn init(
+        slot: &mut MaybeUninit<Self>,
+        clock: K,
+        init_instance: impl FnOnce(&mut MaybeUninit<Instance<S, C, R>>),
+    ) -> &mut Self {
+        let p = slot.as_mut_ptr();
+        // SAFETY: `p` is valid for writes of `Self`; every field is written
+        // exactly once and `init_instance` initialises the instance (its
+        // contract) before the value is used.
+        unsafe {
+            addr_of_mut!((*p).clock).write(clock);
+            addr_of_mut!((*p).kick).write(Signal::new());
+            let g = addr_of_mut!((*p).state);
+            addr_of_mut!((*g).raw).write(M::INIT);
+            addr_of_mut!((*g).busy).write(Cell::new(false));
+            let s: *mut State<S, C, R> = UnsafeCell::raw_get(addr_of_mut!((*g).data));
+            init_instance(&mut *(addr_of_mut!((*s).inst) as *mut MaybeUninit<Instance<S, C, R>>));
+            addr_of_mut!((*s).generation).write(0);
+            addr_of_mut!((*s).settings_changes).write(0);
+            addr_of_mut!((*s).changed).write(MultiWakerRegistration::new());
+            addr_of_mut!((*s).events).write(Deque::new());
+            addr_of_mut!((*s).event_waiters).write(MultiWakerRegistration::new());
+            addr_of_mut!((*s).tx_waiters).write(MultiWakerRegistration::new());
+            addr_of_mut!((*s).udp).write(core::array::from_fn(|_| UdpSlot {
+                sock: None,
+                waker: WakerRegistration::new(),
+            }));
+            addr_of_mut!((*s).req_waiters).write(MultiWakerRegistration::new());
+            addr_of_mut!((*s).req_deadline).write(None);
+            addr_of_mut!((*s).joiner_result).write(None);
+            addr_of_mut!((*s).ping_seq).write(0);
+            addr_of_mut!((*s).disc_q).write(Deque::new());
+            addr_of_mut!((*s).energy_q).write(Deque::new());
+            addr_of_mut!((*s).interrupted).write(false);
+            &mut *p
         }
     }
 
     /// Take the instance back (e.g. to reuse its settings for a restart).
     pub fn into_instance(self) -> Instance<S, C, R> {
-        self.state.into_inner().into_inner().inst
+        self.state.data.into_inner().inst
     }
 
     pub(crate) fn clock(&self) -> &K {
@@ -179,7 +238,20 @@ impl<M: RawMutex, K: Clock, S, C: InstanceCrypto, R> Resources<M, K, S, C, R> {
     }
 
     pub(crate) fn lock<T>(&self, f: impl FnOnce(&mut State<S, C, R>) -> T) -> T {
-        self.state.lock(|c| f(&mut c.borrow_mut()))
+        self.state.raw.lock(|| {
+            assert!(!self.state.busy.replace(true), "already borrowed");
+            struct Release<'a>(&'a Cell<bool>);
+            impl Drop for Release<'_> {
+                fn drop(&mut self) {
+                    self.0.set(false);
+                }
+            }
+            let _release = Release(&self.state.busy);
+            // SAFETY: the raw mutex and the `busy` flag make this the only
+            // reference to the data (a re-entrant call panics above).
+            #[allow(unsafe_code)]
+            f(unsafe { &mut *self.state.data.get() })
+        })
     }
 }
 

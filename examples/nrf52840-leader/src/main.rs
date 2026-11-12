@@ -82,13 +82,12 @@ async fn main(spawner: Spawner) {
 
     let ext = ext_address();
     info!("ext address {:x}", ext.0);
-    let instance = Instance::new(
-        opentrust_instance::Config::router(ext, caps),
-        RamSettings::<4096>::new(),
-        SoftCrypto,
-        rng,
-    );
-    let res: &'static Res = RES.init(Resources::new(instance, EmbassyClock));
+    let config = opentrust_instance::Config::router(ext, caps);
+    // Built in place in static memory: the instance is ~100 kB, it never
+    // lives on the stack.
+    let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
+        Instance::init(slot, config, RamSettings::<4096>::new(), SoftCrypto, rng);
+    });
     info!("stack peak during init {} bytes", stack_high_water());
     // Steady state from here on: measure again from a clean pattern.
     paint_stack();

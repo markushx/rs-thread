@@ -135,33 +135,45 @@ impl BaOut {
 }
 
 impl<C: InstanceCrypto> Commissioning<C> {
-    pub(crate) fn new(
+    /// Build the state in place: the roles are 7 to 15 kB each, so they are
+    /// written straight into `slot` instead of through a stack temporary.
+    ///
+    /// # Safety
+    ///
+    /// `slot` must be valid for writes of `Self` and suitably aligned. Every
+    /// field is initialised on return.
+    #[allow(unsafe_code)]
+    #[inline(never)]
+    pub(crate) unsafe fn init(
+        slot: *mut Self,
         crypto: &C,
         eui64: opentrust_core::types::ExtAddress,
         leader_session_id: u16,
         ba_id: [u8; 16],
-    ) -> Self {
+    ) {
         #[cfg(not(feature = "ftd"))]
         let _ = leader_session_id;
         #[cfg(not(feature = "border-agent"))]
         let _ = ba_id;
-        Self {
-            joiner: Joiner::new(crypto.clone(), crypto.curve()),
+        use core::ptr::addr_of_mut;
+        // SAFETY: the caller guarantees `slot`; each field is written once.
+        unsafe {
+            addr_of_mut!((*slot).joiner).write(Joiner::new(crypto.clone(), crypto.curve()));
             #[cfg(feature = "ftd")]
-            jr: JoinerRouter::new(),
+            addr_of_mut!((*slot).jr).write(JoinerRouter::new());
             #[cfg(feature = "ftd")]
-            leader: LeaderState::new(leader_session_id),
+            addr_of_mut!((*slot).leader).write(LeaderState::new(leader_session_id));
             #[cfg(feature = "commissioner")]
-            comm: Commissioner::new(crypto.clone(), crypto.curve()),
+            addr_of_mut!((*slot).comm).write(Commissioner::new(crypto.clone(), crypto.curve()));
             #[cfg(feature = "border-agent")]
-            ba: BorderAgent::new(crypto.clone(), crypto.curve(), ba_id),
+            addr_of_mut!((*slot).ba).write(BorderAgent::new(crypto.clone(), crypto.curve(), ba_id));
             #[cfg(feature = "border-agent")]
-            ba_out: BaOut::default(),
-            joiner_port: None,
-            kek_rx_fc: None,
-            kek_drops: 0,
-            actions: Deque::new(),
-            eui64,
+            addr_of_mut!((*slot).ba_out).write(BaOut::default());
+            addr_of_mut!((*slot).joiner_port).write(None);
+            addr_of_mut!((*slot).kek_rx_fc).write(None);
+            addr_of_mut!((*slot).kek_drops).write(0);
+            addr_of_mut!((*slot).actions).write(Deque::new());
+            addr_of_mut!((*slot).eui64).write(eui64);
         }
     }
 

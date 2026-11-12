@@ -528,6 +528,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// Feed the clients: attach state, Network Data, addresses, timers,
     /// outgoing datagrams, events. Returns `true` if something happened.
+    #[inline(never)]
     pub(crate) fn service_dns_srp(&mut self, now: Instant) -> bool {
         let mut busy = false;
         let attached = self.mle.role().is_attached();

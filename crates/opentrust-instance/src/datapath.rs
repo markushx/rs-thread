@@ -195,6 +195,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     // ------------------------------------------------------------ MAC events
 
     /// Handle the MAC's events (received frames, data polls, results).
+    #[inline(never)]
     pub(crate) fn service_mac(&mut self, now: Instant) -> bool {
         let mut busy = self.flush_mac_queue();
         while let Some(ev) = self.core.mac.poll_event() {
@@ -595,29 +596,32 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     // ------------------------------------------------------------ IPv6 out
 
     /// Drain the queues of outgoing UDP datagrams.
+    #[inline(never)]
     pub(crate) fn service_outbox(&mut self, now: Instant) -> bool {
         let mut busy = false;
-        let mut payload = [0u8; crate::MAX_UDP_PAYLOAD];
-        loop {
-            let next = match self.core.mle_out.pop_front(&mut payload) {
-                Some(n) => Some(n),
-                None => self.sink.pop_front(&mut payload),
-            };
-            let Some((o, len)) = next else { break };
-            busy = true;
-            self.core.mactx.channel = o.tx.0;
-            self.core.mactx.pan_id = o.tx.1;
-            let security = o.security.unwrap_or(o.info.link_security.into());
-            let _ = self.send_udp_datagram(
-                now,
-                &o.info,
-                security,
-                o.src_port,
-                o.dst_port,
-                &payload[..len],
-            );
-            self.core.mactx.channel = None;
-            self.core.mactx.pan_id = None;
+        {
+            let mut payload = [0u8; crate::MAX_UDP_PAYLOAD];
+            loop {
+                let next = match self.core.mle_out.pop_front(&mut payload) {
+                    Some(n) => Some(n),
+                    None => self.sink.pop_front(&mut payload),
+                };
+                let Some((o, len)) = next else { break };
+                busy = true;
+                self.core.mactx.channel = o.tx.0;
+                self.core.mactx.pan_id = o.tx.1;
+                let security = o.security.unwrap_or(o.info.link_security.into());
+                let _ = self.send_udp_datagram(
+                    now,
+                    &o.info,
+                    security,
+                    o.src_port,
+                    o.dst_port,
+                    &payload[..len],
+                );
+                self.core.mactx.channel = None;
+                self.core.mactx.pan_id = None;
+            }
         }
         // MPL retransmissions.
         let mut out = [0u8; opentrust_net::header::MAX_DATAGRAM_LEN];

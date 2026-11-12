@@ -35,6 +35,7 @@ pub(crate) use link_io;
 
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     /// Timers and pending work of the commissioning roles.
+    #[inline(never)]
     pub(crate) fn service_commissioning(&mut self, now: Instant) -> bool {
         let before = self.sink.len();
         // Joiner.

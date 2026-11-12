@@ -124,6 +124,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// One round of the DUA / MLR glue. Returns `true` if something
     /// happened.
+    #[inline(never)]
     pub(crate) fn service_bbr(&mut self, now: Instant) -> bool {
         let mut moved = false;
         let b = &mut self.bbrg;

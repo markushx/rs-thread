@@ -442,6 +442,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// TMF timers and the requests MLE and the dataset managers queued.
+    #[inline(never)]
     pub(crate) fn service_tmf(&mut self, now: Instant) -> bool {
         let mut busy = false;
         #[cfg(feature = "ftd")]
