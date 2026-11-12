@@ -60,6 +60,7 @@ mod fmt;
 pub mod error;
 pub mod mdns;
 pub mod net;
+pub mod netctl;
 pub mod netif;
 
 pub use opentrust_embassy::{OpenTrust, Resources};
