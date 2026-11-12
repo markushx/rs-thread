@@ -36,6 +36,7 @@ const PING_ID: u16 = 0x4f54;
 
 /// Error of the async DNS wrappers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DnsClientError {
     /// The request was rejected (no server, queue full, invalid name, ...).
     Request(Error),

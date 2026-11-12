@@ -75,7 +75,7 @@ fn ext_address() -> ExtAddress {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     paint_stack();
-    let Board { rng, mut radio } = nrf52840_leader::init(&spawner);
+    let Board { rng, mut radio, .. } = nrf52840_leader::init(&spawner);
     let caps = radio.init().await.unwrap();
     info!("radio caps: {:?}", caps);
     info!("soft MAC needs: {:?}", caps.soft_mac_needs());

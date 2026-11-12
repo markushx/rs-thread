@@ -40,7 +40,7 @@ fn ext_address() -> ExtAddress {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let Board { rng, mut radio } = nrf52840_leader::init(&spawner);
+    let Board { rng, mut radio, .. } = nrf52840_leader::init(&spawner);
     let caps = radio.init().await.unwrap();
     let instance = Instance::new(
         opentrust_instance::Config::router(ext_address(), caps),

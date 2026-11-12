@@ -36,6 +36,15 @@
 //! `cargo run --release` flashes and runs through `probe-rs` (see the
 //! firmware's `.cargo/config.toml`).
 //!
+//! On macOS the `radio-nrf802154` build needs `ar` / `ranlib` / `clang` shims
+//! (llvm-ar instead of Apple's `ar`): `examples/nrf52840-leader/tools/mkshims.sh`
+//! creates them under `target/fw/shims` and prints the directory, so
+//! `export PATH="$(examples/nrf52840-leader/tools/mkshims.sh):$PATH"`.
+//!
+//! `examples/nrf52840-light` (own workspace, same build commands) runs the
+//! `opentrust-matter` on-off light on the DK; it uses the leader firmware's
+//! board bring-up.
+//!
 //! # Radio capabilities
 //!
 //! ## `radio-embassy`

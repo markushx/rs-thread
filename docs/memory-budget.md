@@ -63,7 +63,7 @@ Notes, no optimisation done:
   elsewhere in the system.
 - The bump allocator (65536 bytes here, the size rs-matter's examples use for
   an unoptimised build) holds the pinned futures of the stack. An optimised
-  embedded build needs much less of it; the actual peak was not measured.
+  embedded build needs much less: 26760 bytes were measured on the nRF52840 (see below).
 - Levers that exist already: an MTD / `ftd`-less `Instance` (74864 against
   107424 bytes), fewer subscriptions / fabrics / responders (rs-matter
   features `stack-max-*`, `max-fabrics-*`), a smaller bump.
@@ -101,11 +101,11 @@ the ECDSA / EC-JPAKE code `opentrust-instance` always pulls in), a 4096-byte
 
 | Section | `radio-embassy` | `radio-nrf802154` (default) |
 |---|---|---|
-| Flash: vector table 256 + `.text` + `.rodata` + `.data` image | 374496 (`.text` 351880, `.rodata` 22280, `.data` 80): about 366 KiB of 1024 KiB | 440172 (`.text` 413188, `.rodata` 23548, `.data` 3180): about 430 KiB of 1024 KiB |
+| Flash: vector table 256 + `.text` + `.rodata` + `.data` image | 365560 (before 374496): about 357 KiB of 1024 KiB | 431172 (before 440172): about 421 KiB of 1024 KiB |
 | RAM, static: `.data` + `.bss` + `.uninit` 1024 | 86196 (`.bss` 85092): about 84 KiB of 256 KiB | 95072 (`.data` 3180, `.bss` 90868): about 93 KiB of 256 KiB |
 | of which `Resources` (the `Instance`, 4096-byte settings, state) | about 82000 | about 82000 |
-| Stack high-water: construction of the `Instance` / `Resources` (moved by value) | 111856 | 111864 |
-| Stack high-water: running as Leader, advertising | 127688 | 127688 |
+| Stack high-water: construction of the `Instance` / `Resources` | 15820 (before 111856) | 15820 (before 111864) |
+| Stack high-water: running as Leader, advertising | 16920 (before 127688) | 16912 (before 127688) |
 
 The Nordic backend costs about 66 kB of flash (driver, MPSL and service layer
 libraries, the Rust glue) and about 9 kB of static RAM (driver state, MPSL,
@@ -119,12 +119,87 @@ feature split of the MAC could remove.
 Notes:
 
 - Stack is measured by painting the RAM between `.bss` and the stack pointer
-  (`stack_high_water` in the firmware). The 125 kB of stack is not yet
-  explained; it is far more than the 80 kB static `Instance` and points at
-  large by-value temporaries (construction and moves of the `Instance`, large
-  locals in the poll path). With the static RAM this leaves about 40 kB of the
-  256 kB free, not enough for rs-matter (see the Matter light section above).
-  Constructing the `Instance` in place (`StaticCell::init_with`-style) and
-  finding the large stack frames is the first RAM optimisation to do.
+  (`stack_high_water` in the firmware).
+- Flash dropped by about 9 kB with the RAM work (the by-value moves of the
+  instance were large `memcpy`s and temporaries).
+
 - `.text` is dominated by the cryptography (P-256 ECDSA / EC-JPAKE, AES, SHA);
   no per-crate breakdown was made.
+
+## Stack: where the 128 kB went, and the fix
+
+Finding (disassembly of the release ELF, sum of `sub sp` and `push` per
+function): the stack peak was not the running stack but one frame. The async
+`main` task's `poll` had a frame of 110752 bytes: `Instance::new` built the
+~82 kB instance (and the ~28 kB of the larger components, one temporary per
+component, nothing is overlapped) in that frame, then `Resources::new(instance,
+..)` moved it by value into the `StaticCell`. As a frame lives as long as the
+poll runs, the 111864 bytes of the construction were still counted while the
+node ran (`127688` = 110752 frame + about 17 kB of real depth). Below it, the
+poll path summed the `Instance::poll` steps inlined into one 7.4 kB frame
+(MTU-sized `[u8; 1280]` buffers of the outbox, MPL and datagram paths in
+`service_outbox`, `send_udp_datagram`, `ip6_send_sec`, `deliver`).
+
+Fix:
+
+- `Instance::init(&mut MaybeUninit<Instance>, ..)` and
+  `Resources::init(&mut MaybeUninit<Resources>, clock, |slot| Instance::init(..))`
+  build the value in place. Each component is built by a non-inlined `put`
+  helper straight into its field, so the temporaries do not add up; the largest
+  is about 11 kB. `Resources` keeps its state in its own raw mutex + borrow
+  flag cell (embassy's `Mutex<RefCell<_>>` cannot be initialised in place).
+  `new` stays for hosts and tests and calls `init`.
+- The `Instance::poll` service steps are `#[inline(never)]`, so the frames of
+  the steps are not summed into `poll`; the main task frame is 4.5 kB.
+
+Result on the DK, both backends: construction peak 15820 bytes, running
+16912 / 16920 bytes (was 111864 / 127688). The remaining deepest frames are
+`service_mac` (6.2 kB), `ip6_send_sec` (5.5 kB), `handle_tmf` (5.0 kB),
+`DnsClient::finish` (7.7 kB) and the `put` helpers during construction (up to
+11 kB); further reduction would need shared datagram scratch buffers instead
+of per-function `[u8; 1280]` arrays.
+
+## Matter light on the nRF52840 DK (`examples/nrf52840-light`)
+
+Firmware: the `opentrust-matter` on-off light (`ThreadRunner` +
+`MatterStack::run_thread_oper`, Thread only, no BLE) with a preset dataset
+(the node is Leader), `radio-nrf802154`, rs-matter test device attestation,
+RustCrypto backend of rs-matter (`rustcrypto`: pure Rust p256 / aes / sha2, no
+hardware crypto; it needs `alloc`, so there is a 4096-byte `embedded-alloc`
+heap, 0 bytes used while idle), `case-responder-only`, a no-op key-value store
+(nothing is persisted), defmt over RTT, LED1 follows the OnOff attribute.
+It builds, boots, becomes Leader and runs rs-matter (PASE window open,
+mDNS, responders); it logs the pairing code `3497-011-2332`, discriminator 3840
+and the QR code. Not commissioned (no controller and no BLE here); the LED
+path is untested.
+
+| Section | Bytes |
+|---|---|
+| Flash (`.text` 766896 + `.rodata` 56940 + vector table 256 + `.data` 3180) | 827332 (about 808 KiB of 1024 KiB) |
+| Static RAM (`.data` 3180 + `.bss` 175188, includes `.uninit` 1024) | 178368 (about 174 KiB of 256 KiB) |
+| of which `Resources` (`Instance`, 4096-byte `RamSettings`, state) | 82272 |
+| of which `MatterStack` (`Matter` 25696, rs-matter bump 28672, buffers, IM state, networks) | 72400 |
+| of which the rest (main task future with the 3048-byte run future, MPSL and driver about 9000, heap 4096, KV scratch 2048, RTT, executor) | about 23700 |
+| Stack high-water while running, idle, Thread Leader | 31352 (13200 right after start, 15660 during construction) |
+| Left for BLE, application and a deeper stack (256 kB - static - stack) | about 52000 |
+
+rs-matter's bump allocator needs 26760 bytes for the operational run (logged
+by rs-matter-stack at start-up; `BUMP` = 28 kB here, the sim test uses 64 kB).
+The 31 kB stack peak is rs-matter's: a 20 kB frame of an `embassy_futures`
+`select3` poll that inlines the stack's futures, plus the Thread path below it.
+A `MatterStack` with `BUMP` of 16 kB panics with "Out of bump memory" at start.
+
+### Headroom for BLE (estimate, not measured)
+
+Commissioning needs a BLE peripheral: `nrf-sdc` (SoftDevice Controller, one
+peripheral connection) needs a memory pool of roughly 6 to 10 kB on top of the
+MPSL RAM that is already counted, `trouble-host` with a small GATT table and
+L2CAP buffers roughly 8 to 12 kB, rs-matter's BTP session and the coex runner
+futures a few kB more (and a larger bump), so 20 to 30 kB static, plus some
+more stack for the BLE tasks. That fits in the 52 kB left, with about 20 to
+30 kB to spare, but the margin is thin for a real application (flash-backed
+persistence with its scratch buffer, a level or colour cluster, more
+subscriptions). Levers if needed: `RamSettings` 4096 to 2048 (2 kB), fewer
+MAC / forwarder buffers in `Instance`, fewer rs-matter subscriptions, fabrics
+and responders (`stack-max-*`, `max-fabrics-*`), MTD role, and sharing one
+datagram scratch between the stack's functions (stack depth).
