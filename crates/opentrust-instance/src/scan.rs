@@ -23,9 +23,11 @@ pub(crate) struct ScanState {
     prev_channel: Option<u8>,
     /// Responders already reported in this scan.
     seen: heapless::Vec<(opentrust_core::types::ExtAddress, u8), 16>,
-    /// What the MAC beacon was last computed for: (attached router, joining
-    /// permitted, native commissioner).
-    beacon_for: Option<(bool, bool, bool)>,
+    /// What the MAC beacon was last computed for: (beacons enabled,
+    /// payload enabled, joining permitted, native commissioner).
+    beacon_for: Option<(bool, bool, bool, bool)>,
+    /// Put the Thread beacon payload into beacons (off by default).
+    pub(crate) beacon_payload: bool,
 }
 
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
@@ -98,24 +100,38 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         Ok(())
     }
 
-    /// Answer MAC Beacon Requests while this device is an attached router
-    /// (OT sends beacons as a router; `joining_permitted` follows the
-    /// Steering Data, `native` the Border Agent).
+    /// Put the Thread beacon payload (protocol ID, joining permitted,
+    /// network name, extended PAN ID) into the beacons this device sends.
+    /// Off by default: Thread 1.2.1 removed beacon payloads, and OpenThread
+    /// sends them only with
+    /// `OPENTHREAD_CONFIG_MAC_OUTGOING_BEACON_PAYLOAD_ENABLE`. Useful for
+    /// Thread 1.1 Commissioners and Joiners that scan with Beacon Requests.
+    pub fn set_beacon_payload_enabled(&mut self, enabled: bool) {
+        self.scan.beacon_payload = enabled;
+    }
+
+    /// Answer MAC Beacon Requests while this device is attached and router
+    /// eligible (OT `Mle::SetStateChild` / `SetStateRouterOrLeader` call
+    /// `Mac::SetBeaconEnabled`). With the payload enabled,
+    /// `joining_permitted` follows the Steering Data and `native` the
+    /// Border Agent.
     fn update_beacon(&mut self, now: Instant) {
         #[cfg(feature = "ftd")]
-        let router = self.mle.role().is_attached() && self.mle.is_full_thread_device();
+        let router = self.mle.role().is_attached() && self.mle.is_router_eligible();
         #[cfg(not(feature = "ftd"))]
         let router = false;
+        let with_payload = router && self.scan.beacon_payload;
         let joining = opentrust_meshcop::discovery::joining_allowed(
             self.core.netdata.view().commissioning_data(),
         );
         let native = self.core.border_agent_port.is_some();
-        let key = (router, joining, native);
+        let key = (router, with_payload, joining, native);
         if self.scan.beacon_for == Some(key) {
             return;
         }
         self.scan.beacon_for = Some(key);
-        let payload = if router {
+        self.core.mac.set_beacon_enabled(router);
+        let payload = if with_payload {
             self.core
                 .datasets
                 .read(opentrust_meshcop::dataset::DatasetType::Active, now)

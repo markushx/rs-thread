@@ -1028,6 +1028,19 @@ fn beacon_request_answered_when_beacon_enabled() {
         .unwrap();
     m.on_rx(&psdu(&buf[..n]), &info(CH), t(1));
     assert!(tx_of(&actions(&mut m, t(1))).is_none());
+    // Enabled without a payload (the Thread 1.2.1+ default): a bare beacon.
+    m.set_beacon_enabled(true);
+    m.on_rx(&psdu(&buf[..n]), &info(CH), t(1));
+    let tx = tx_of(&actions(&mut m, t(1))).unwrap();
+    let f = Frame::parse(frame_of(&tx)).unwrap();
+    assert_eq!(f.frame_type(), FrameType::Beacon);
+    assert!(
+        crate::frame::Beacon::parse(f.payload())
+            .unwrap()
+            .payload
+            .is_empty()
+    );
+    m.on_tx_done(TxOutcome::Sent, t(1));
     m.set_beacon_payload(Some(ThreadBeaconPayload {
         version: 2,
         native: false,
@@ -1047,7 +1060,7 @@ fn beacon_request_answered_when_beacon_enabled() {
         [1; 8]
     );
     m.on_tx_done(TxOutcome::Sent, t(3));
-    assert_eq!(m.counters().tx_beacon, 1);
+    assert_eq!(m.counters().tx_beacon, 2);
 }
 
 // ---------------------------------------------------------------------------

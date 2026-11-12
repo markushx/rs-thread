@@ -65,10 +65,7 @@ fn discovery_scan_finds_the_leader() {
     );
 }
 
-#[test]
-fn active_scan_hears_the_leader_beacon() {
-    let mut net = network(6);
-    let leader_ext = net.node(0).ext_address();
+fn active_scan(net: &mut Network) -> Vec<opentrust_instance::BeaconScanResult> {
     net.with(1, |n, now| {
         n.active_scan_start(0, Duration::from_millis(100), now)
             .unwrap();
@@ -77,17 +74,31 @@ fn active_scan_hears_the_leader_beacon() {
         e,
         Event::ActiveScanDone
     ))));
-    let beacons: Vec<_> = net
-        .take_events(1)
+    net.take_events(1)
         .into_iter()
         .filter_map(|e| match e {
             Event::ActiveScanResult(r) => Some(r),
             _ => None,
         })
-        .collect();
+        .collect()
+}
+
+#[test]
+fn active_scan_hears_the_leader_beacon() {
+    let mut net = network(6);
+    let leader_ext = net.node(0).ext_address();
+    // Default (Thread 1.2.1+, OT without
+    // OPENTHREAD_CONFIG_MAC_OUTGOING_BEACON_PAYLOAD_ENABLE): no payload.
+    let beacons = active_scan(&mut net);
     assert_eq!(beacons.len(), 1, "{beacons:?}");
     assert_eq!(beacons[0].ext_addr, leader_ext);
     assert_eq!(beacons[0].channel, 15);
+    assert!(beacons[0].thread.is_none(), "{beacons:?}");
+
+    // Opt-in Thread beacon payload.
+    net.with(0, |n, _| n.set_beacon_payload_enabled(true));
+    let beacons = active_scan(&mut net);
+    assert_eq!(beacons.len(), 1, "{beacons:?}");
     let p = beacons[0].thread.expect("Thread beacon payload");
     assert_eq!(&p.network_name[..9], b"OpenTrust");
 }

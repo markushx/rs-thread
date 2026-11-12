@@ -226,6 +226,7 @@ pub struct Mac<
     channel: u8,
     rx_on_when_idle: bool,
     promiscuous: bool,
+    beacon_enabled: bool,
     beacon: Option<ThreadBeaconPayload>,
     dsn: u8,
     bsn: u8,
@@ -355,6 +356,7 @@ impl<
             channel: Channel::MIN,
             rx_on_when_idle: true,
             promiscuous: false,
+            beacon_enabled: false,
             beacon: None,
             dsn,
             bsn,
@@ -520,9 +522,15 @@ impl<
         }
     }
 
-    /// Answer Beacon Requests with a beacon carrying `payload` (`None`:
-    /// ignore Beacon Requests). OpenThread sends beacons when joinable or
-    /// router-capable; MLE/MeshCoP decide and set the payload.
+    /// Answer Beacon Requests with a beacon (OT `Mac::SetBeaconEnabled`;
+    /// MLE enables it while the device is router eligible and attached).
+    pub fn set_beacon_enabled(&mut self, enabled: bool) {
+        self.beacon_enabled = enabled;
+    }
+
+    /// The Thread beacon payload sent in beacons (`None`: a beacon without
+    /// payload). Thread 1.2.1 removed beacon payloads; OpenThread sends
+    /// them only with `OPENTHREAD_CONFIG_MAC_OUTGOING_BEACON_PAYLOAD_ENABLE`.
     pub fn set_beacon_payload(&mut self, payload: Option<ThreadBeaconPayload>) {
         self.beacon = payload;
     }
@@ -2271,12 +2279,16 @@ impl<
     }
 
     fn build_beacon(&mut self) -> Result<FrameBuf> {
-        let payload = self.beacon.ok_or(Error::InvalidState)?;
+        if !self.beacon_enabled {
+            return Err(Error::InvalidState);
+        }
         let mut pl = [0u8; 4 + ThreadBeaconPayload::LEN];
         let n = {
             let mut w = Writer::new(&mut pl);
             Beacon::write_thread_header(&mut w)?;
-            payload.write(&mut w)?;
+            if let Some(payload) = self.beacon {
+                payload.write(&mut w)?;
+            }
             w.len()
         };
         let mut buf = [0u8; MAX_FRAME_LEN];
@@ -2676,7 +2688,7 @@ impl<
                 match cmd {
                     Some(MacCommand::BeaconRequest) => {
                         self.counters.rx_beacon_request += 1;
-                        if self.beacon.is_some() {
+                        if self.beacon_enabled {
                             self.pending |= P_BEACON;
                         }
                     }
