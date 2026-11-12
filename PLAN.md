@@ -316,7 +316,14 @@ Security-relevant decisions for the review before M4:
 
 ## Phase 12 – Embedded targets
 
-- [ ] nRF52840: radio driver (embassy-nrf / nrf-radio), RTC timer, CryptoCell/ECB, flash settings
+- [ ] nRF52840 (DK, running): `crates/opentrust-nrf` and `examples/nrf52840-leader` (standalone firmware, own target dir; `cargo run --release`, `--bin scan`)
+  - [x] Radio driver over `embassy-nrf` 0.11 `radio::ieee802154` (feature `radio-embassy`, the default). No MAC offload: the MAC does ACK, retries, CSMA and filtering in software; CCA is carrier sense only; energy scan by RSSI sampling; RSSI of received frames estimated from the LQI byte. Differences in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`
+  - [x] `Clock` / `Alarm` over `embassy-time` (RTC1, 32.768 kHz tick), entropy from the RNG peripheral, `RamSettings`
+  - [x] Firmware: Leader with a fixed dataset (channel 15, PAN 0x1234, "OpenTrust"), MLE Advertisements transmitted, no radio errors; energy scan of all channels and active scan with real RF
+  - [x] Flash / RAM measured (`docs/memory-budget.md`): 365 KiB flash, 84 KiB static RAM, about 125 kB stack high-water (to be reduced)
+  - [ ] Second radio backend over sysgrok `nrf-802154` (Nordic C driver + MPSL: hardware ACK, immediate-ACK timing, CSL, BLE coexistence), selected by a cargo feature of `opentrust-nrf` (the seam exists: `radio-embassy` feature, backend-independent clock / RNG glue)
+  - [ ] Flash-backed settings (`KvBlobStore` with wear levelling; settings are RAM only today), CryptoCell / hardware crypto, CSL timing, BLE (Matter commissioning), RAM reduction (stack, in-place `Instance` construction)
+  - [ ] Peer test: only one board so far, no frame was received from a Thread peer (software ACK timing is untested against a real device)
 - [ ] nRF54L15/H20: radio driver, timers, CRACEN crypto
 - [ ] ESP32-C6/H2 (802.15.4 capable; RISC-V): radio via `esp-ieee802154` (esp-hal), reuse esp-rs/openthread platform glue
 - [ ] Example apps per board: MTD (SED) sensor, FTD router, CLI over UART/USB-CDC
