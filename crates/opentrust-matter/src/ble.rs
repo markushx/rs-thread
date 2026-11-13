@@ -46,7 +46,7 @@ use trouble_host::att::{AttClient, AttReq, AttRsp};
 use trouble_host::prelude::*;
 use trouble_host::{self, BleHostError, HostResources};
 
-use crate::fmt::{log_info, log_warn};
+use crate::fmt::{log_debug, log_info, log_warn};
 
 /// A newtype allowing to use a bt_hci `&Controller` as a `Controller`
 /// A workaround for:
@@ -483,47 +483,51 @@ where
                     log_info!("GATT: Disconnect: {:?}", reason);
                     break;
                 }
-                GattConnectionEvent::Gatt { event } => match event.payload().incoming() {
-                    AttClient::Request(AttReq::Write {
-                        handle,
-                        data: bytes,
-                    }) => {
-                        if handle == server.matter_service.c1.handle {
-                            btp.process_incoming(
-                                Some(conn.raw().att_mtu()),
-                                to_bt_addr(&conn.raw().peer_address().addr),
-                                bytes,
-                            )
-                            .map_err(to_matter_err)?;
+                GattConnectionEvent::Gatt { event } => {
+                    log_debug!("GATT: {:?}", event.payload());
+                    match event.payload().incoming() {
+                        AttClient::Request(AttReq::Write {
+                            handle,
+                            data: bytes,
+                        }) => {
+                            log_debug!("GATT: write handle {} len {}", handle, bytes.len());
+                            if handle == server.matter_service.c1.handle {
+                                btp.process_incoming(
+                                    Some(conn.raw().att_mtu()),
+                                    to_bt_addr(&conn.raw().peer_address().addr),
+                                    bytes,
+                                )
+                                .map_err(to_matter_err)?;
 
-                            Self::write_reply(event).await?;
-                        } else if Some(handle) == server.matter_service.c2.cccd_handle {
-                            let subscription_req = bytes[0] != 0;
+                                Self::write_reply(event).await?;
+                            } else if Some(handle) == server.matter_service.c2.cccd_handle {
+                                let subscription_req = bytes[0] != 0;
 
-                            // NOTE: We MUST let the attribute server process the CCCD write
-                            // (via `accept`) rather than replying to it ourselves, so that
-                            // `trouble-host` records the subscription in its own CCCD table.
-                            // `Characteristic::indicate` in `handle_indications` consults that
-                            // table (`should_indicate`) and silently drops the indication if the
-                            // peer is not registered as subscribed there.
-                            Self::accept(event).await?;
+                                // NOTE: We MUST let the attribute server process the CCCD write
+                                // (via `accept`) rather than replying to it ourselves, so that
+                                // `trouble-host` records the subscription in its own CCCD table.
+                                // `Characteristic::indicate` in `handle_indications` consults that
+                                // table (`should_indicate`) and silently drops the indication if the
+                                // peer is not registered as subscribed there.
+                                Self::accept(event).await?;
 
-                            if subscription_req {
-                                if !subscribed {
-                                    log_info!("GATT: Peer subscribed");
-                                    subscribed = true;
-                                    ind_ack.notify();
+                                if subscription_req {
+                                    if !subscribed {
+                                        log_info!("GATT: Peer subscribed");
+                                        subscribed = true;
+                                        ind_ack.notify();
+                                    }
+                                } else if subscribed {
+                                    log_info!("GATT: Peer unsubscribed");
+                                    break;
                                 }
-                            } else if subscribed {
-                                log_info!("GATT: Peer unsubscribed");
-                                break;
+                            } else {
+                                Self::accept(event).await?;
                             }
-                        } else {
-                            Self::accept(event).await?;
                         }
+                        _ => Self::accept(event).await?,
                     }
-                    _ => Self::accept(event).await?,
-                },
+                }
                 _ => (),
             }
         }

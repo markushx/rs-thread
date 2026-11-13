@@ -224,17 +224,35 @@ Wear: one 4 KiB-page bank erase per compaction; a bank fills after about
 100 to 250 key updates (12 to 80 bytes each), and the two banks alternate, so
 10000 erase cycles per page last for millions of updates.
 
-### Headroom for BLE (estimate, not measured)
+### BLE commissioning (measured)
 
-Commissioning needs a BLE peripheral: `nrf-sdc` (SoftDevice Controller, one
-peripheral connection) needs a memory pool of roughly 6 to 10 kB on top of the
-MPSL RAM that is already counted, `trouble-host` with a small GATT table and
-L2CAP buffers roughly 8 to 12 kB, rs-matter's BTP session and the coex runner
-futures a few kB more (and a larger bump), so 20 to 30 kB static, plus some
-more stack for the BLE tasks. That fits in the 52 kB left, with about 20 to
-30 kB to spare, but the margin is thin for a real application (flash-backed
-persistence with its scratch buffer, a level or colour cluster, more
-subscriptions). Levers if needed: `RamSettings` 4096 to 2048 (2 kB), fewer
-MAC / forwarder buffers in `Instance`, fewer rs-matter subscriptions, fabrics
-and responders (`stack-max-*`, `max-fabrics-*`), MTD role, and sharing one
-datagram scratch between the stack's functions (stack depth).
+The light with BLE (`ble` feature, the default of `examples/nrf52840-light`)
+adds the Nordic SoftDevice Controller (`nrf-sdc` 0.4, peripheral library,
+one connection, advertising only, no central, no scanning) and `trouble-host`
+0.8 (peripheral and GATT server) on the MPSL instance that already serves the
+802.15.4 driver, and rs-matter's BTP engine with the coexistence runner
+(`run_thread`). Same build settings as above (release, `opt-level = "s"`,
+fat LTO, one codegen unit), `radio-nrf802154`:
+
+| | Thread only (`--no-default-features`) | With BLE | Difference |
+|---|---|---|---|
+| Flash (`.text` + `.rodata` + `.data` + vectors) | 852392 (832.4 KiB) | 972712 (950.0 KiB) | +120320 (+117.5 KiB) |
+| of which `.text` | 790780 | 895664 | +104884 |
+| of which `.rodata` | 58108 | 69392 | +11284 |
+| of which `.data` | 3248 | 7400 | +4152 (SoftDevice Controller state) |
+| Static RAM (`.data` + `.bss` + `.uninit` 1024) | 186140 | 205912 (201.1 KiB) | +19772 |
+| of which rs-matter bump (`BUMP` 28 kB without BLE; 34012 bytes used with BLE, set to 36 kB) | 28672 | 36864 | +8192 |
+| of which the rest (SoftDevice Controller 3084-byte pool, `trouble-host` resources, BTP and GATT buffers) | | | +11580 |
+| Stack high-water, idle, waiting for BLE commissioning | 31352 (idle, Thread leader) | 17676 | the unprovisioned light runs no Thread yet |
+| Flash headroom (the image must end below 0xFA000 = 1024000) | 171608 | 51288 | |
+| RAM left for stack and application (256 kB - static) | 76004 | 56232 | -19772 |
+
+The 1000 KiB FLASH region of `memory.x` (settings above 0xFA000) holds the
+image with 50 kB to spare; static RAM leaves 56 kB for the stack,
+whose commissioning peak is 35 kB. The SoftDevice Controller is created only
+while BLE advertises (`SdcGatt` in the light), so its pool is a static
+buffer rather than a stack or heap use. Size levers, none needed yet: the
+unused `RamSettings<4096>` is not removable (the `Instance` keeps its own
+settings store; the flash store holds the persistent copy), `opt-level = "z"`
+for the BLE crates, `DEFMT_LOG=warn` (all `info!` strings out of the image),
+fewer rs-matter clusters, `max-fabrics-*` and `stack-max-*` features.

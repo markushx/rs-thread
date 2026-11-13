@@ -1,8 +1,9 @@
 # Thread Border Router for the OpenTrust Matter light
 
-The nRF52840 light (`examples/nrf52840-light`) has no BLE, so it is commissioned
-on-network: chip-tool reaches it over IP. That needs a Thread Border Router (BR)
-that
+The nRF52840 light (`examples/nrf52840-light`) can be commissioned two ways:
+over BLE (the default build, section 5a: chip-tool hands it the Thread dataset)
+or on-network with a build-time dataset (chip-tool reaches it over IP). Both
+need a Thread Border Router (BR) that
 
 - is on the same Thread network as the light (same Active Dataset),
 - runs an SRP server and an advertising proxy, so the light's `_matterc._udp`
@@ -195,6 +196,43 @@ try its dead address first. The light registers its host under another name
 drops all registrations), or pair by address with
 `chip-tool pairing already-discovered 1 20202021 <address from the light log> 5540`.
 
+## 5a. BLE commissioning
+
+The default build of the light (feature `ble`, no `OPENTRUST_DATASET`) is
+unprovisioned: it keeps Thread off, advertises the Matter service over BLE
+(UUID 0xFFF6, discriminator 3840, name `BT`) and waits for a commissioner. The
+Nordic SoftDevice Controller and the 802.15.4 driver share MPSL, so BLE runs
+next to Thread; the controller exists only while rs-matter has a commissioning
+window open on BLE and is dropped, with the advertising, when commissioning
+completes (and the window closes). A light that is already commissioned, or has
+a stored or build-time dataset, does not advertise.
+
+```sh
+cd examples/nrf52840-light
+CARGO_INCREMENTAL=0 cargo build --release        # BLE, unprovisioned
+# --no-default-features: Thread only, as before (OPENTRUST_DATASET still works)
+# Button 1 held at boot: factory reset, back to BLE commissioning
+chip-tool pairing ble-thread 2 hex:<active dataset TLVs> 20202021 3840 \
+    --storage-directory <dir>
+chip-tool onoff toggle 2 1 --storage-directory <dir>
+```
+
+Over BLE chip-tool runs PASE (BTP), reads the attestation, sends the operational
+credentials, then `AddOrUpdateThreadNetwork` and `ConnectNetwork`; the light
+attaches to the BR's network, BLE stops, and chip-tool finishes with CASE over
+Thread through the BR and `CommissioningComplete`.
+
+**macOS.** Apple blocks the Matter BLE characteristic UUIDs for third-party
+apps: a scan sees the light's service data, but connecting and using C1 / C2
+fails with `CBErrorDomain Code=8 "The specified UUID is not allowed for this
+operation."` (chip-tool: `Failed to write characteristic`, then a PASE timeout).
+Install Apple's developer profile first (it needs an Apple developer login):
+`EnableBluetoothCentralMatterClientDeveloperMode.mobileconfig` from
+<https://developer.apple.com/services-account/download?path=/iOS/iOS_Logs/EnableBluetoothCentralMatterClientDeveloperMode.mobileconfig>,
+see the chip-tool Darwin guide (`docs/guides/darwin.md`, "Using chip-tool on macOS").
+The terminal also needs Bluetooth permission (System Settings, Privacy and
+Security, Bluetooth). Linux chip-tool (BlueZ) needs neither.
+
 ## 6. Troubleshooting
 
 - **The light does not attach**: dataset wrong or a different channel (check
@@ -239,8 +277,12 @@ interface to other tools: a light that is not commissioned through their own
 Matter controller app (which needs BLE for the first step, or a QR code the
 ecosystem app drives itself) cannot join them. The Apple and Google credentials
 are shared with Matter devices only during their own commissioning, over BLE.
-OpenTrust's light has no BLE yet, so it can only join with a dataset you know:
-use your own BR (this document), or the standalone network of the light.
+OpenTrust's light can be commissioned over BLE (section 5a), but only by a
+commissioner that has the dataset to give it: use your own BR (this document)
+with `chip-tool pairing ble-thread`, or the standalone network of the
+Thread-only build. Commissioning it through an ecosystem app needs that app's
+own BLE commissioning, which the light offers (it is a Matter BLE peripheral),
+but the ecosystem then hands over its own network.
 
 ## 8. macOS host
 

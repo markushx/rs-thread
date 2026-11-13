@@ -1,9 +1,15 @@
 //! Matter on-off light over OpenTrust Thread on the nRF52840 DK.
 //!
-//! RAM sizing firmware: the node forms a Thread network with a preset
-//! dataset (channel 15, PAN ID 0x1234, network name "OpenTrust", as the
-//! leader firmware) and runs rs-matter's on-off light over it
-//! (`opentrust_matter::driver::ThreadRunner`, Thread only, no BLE). rs-matter
+//! RAM sizing firmware. With the `ble` feature (default) an unprovisioned
+//! light (nothing stored, no `OPENTRUST_DATASET`) keeps Thread off, advertises
+//! the Matter BLE service and is commissioned with `chip-tool pairing
+//! ble-thread` (BTP over the Nordic SoftDevice Controller and trouble-host,
+//! `ble.rs`; `run_thread` with `ThreadCoexRunner`), after which BLE stops.
+//! Without a stored dataset and without BLE (`--no-default-features`) the node
+//! forms a Thread network with a preset dataset (channel 15, PAN ID 0x1234,
+//! network name "OpenTrust", as the leader firmware); with a build-time
+//! dataset it attaches to that network. It runs rs-matter's on-off light over
+//! Thread (`opentrust_matter::driver::ThreadRunner`). rs-matter
 //! uses its test device attestation credentials and the RustCrypto backend
 //! (pure Rust, no hardware crypto). Everything rs-matter persists (fabrics,
 //! ACLs, counters, ...) and the Thread settings blob of `ThreadPersist` live
@@ -69,8 +75,13 @@ static HEAP: embedded_alloc::LlffHeap = embedded_alloc::LlffHeap::empty();
 const HEAP_SIZE: usize = 4096;
 
 /// rs-matter's bump area (transaction and crypto scratch); see
-/// docs/memory-budget.md.
-const BUMP: usize = if cfg!(feature = "ble") { 40 * 1024 } else { 28 * 1024 };
+/// docs/memory-budget.md. With BLE the BTP engine and the BLE commissioning
+/// futures live in it too (34012 bytes used, measured).
+const BUMP: usize = if cfg!(feature = "ble") {
+    36 * 1024
+} else {
+    28 * 1024
+};
 
 type Res = Resources<NoopRawMutex, EmbassyClock, RamSettings<4096>, SoftCrypto, NrfRng<'static>>;
 static RES: StaticCell<Res> = StaticCell::new();

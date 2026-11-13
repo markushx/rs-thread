@@ -12,7 +12,7 @@ use embassy_futures::select::{Either, select};
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_instance::Role;
-use opentrust_matter::driver::ThreadRunner;
+use opentrust_matter::driver::{ThreadCoexRunner, ThreadRunner};
 use opentrust_matter::persist::{THREAD_SETTINGS_KEY, deserialize, serialize};
 use opentrust_platform::{Clock, RamSettings, SettingsStore};
 use rs_matter::dm::clusters::gen_diag::NetifDiag;
@@ -20,9 +20,11 @@ use rs_matter::dm::clusters::net_comm::{NetCtl, WirelessCreds};
 use rs_matter::dm::clusters::thread_diag::ThreadDiag;
 use rs_matter::dm::networks::NetChangeNotif;
 use rs_matter::error::{Error, ErrorCode};
+use rs_matter::stack::ble::GattPeripheral;
 use rs_matter::stack::mdns::Mdns;
 use rs_matter::stack::net::NetStack;
-use rs_matter::stack::wireless::{ThreadDriver, ThreadTask};
+use rs_matter::stack::wireless::{ThreadCoexDriver, ThreadCoexTask, ThreadDriver, ThreadTask};
+use rs_matter::transport::network::btp::{AdvData, Btp};
 use rs_matter::utils::timers::{Duration as TDuration, Timer};
 
 /// Connects to the network of `ds`, records when it was joined, then idles.
@@ -71,6 +73,128 @@ impl ThreadTask for JoinThenReturn<'_> {
             Either::Second(()) => Ok(()),
         }
     }
+}
+
+/// A BLE peripheral that never connects; counts how often it is started.
+struct IdleGatt<'x>(&'x Cell<u32>);
+
+impl GattPeripheral for IdleGatt<'_> {
+    async fn run(&mut self, _btp: &Btp, _name: &str, _adv: &AdvData) -> Result<(), Error> {
+        self.0.set(self.0.get() + 1);
+        pending().await
+    }
+}
+
+/// The BLE commissioning flow as the Network Commissioning cluster drives it:
+/// the node is unprovisioned (Thread disabled) while the task has the BLE
+/// peripheral, then `connect` hands over the dataset and the node attaches.
+struct BleThenConnect<'x> {
+    inner: ConnectTask<'x>,
+    disabled_before: &'x Cell<bool>,
+    ot: Ot<'x, 'x>,
+}
+
+impl ThreadCoexTask for BleThenConnect<'_> {
+    async fn run<S, N, C, M, G>(
+        &mut self,
+        _s: S,
+        _n: N,
+        ctl: C,
+        _m: M,
+        mut gatt: G,
+    ) -> Result<(), Error>
+    where
+        S: NetStack,
+        N: NetifDiag + NetChangeNotif,
+        C: NetCtl + ThreadDiag + NetChangeNotif,
+        M: Mdns,
+        G: GattPeripheral,
+    {
+        // The stack's BLE task: runs the peripheral next to the commissioning.
+        let btp = Btp::new();
+        let adv = AdvData::new(&rs_matter::dm::devices::test::TEST_DEV_DET, 3840);
+        let ble = gatt.run(&btp, "BT", &adv);
+        let commission = async {
+            Timer::after(TDuration::from_secs(5)).await;
+            self.disabled_before.set(self.ot.role() == Role::Disabled);
+            ctl.connect(&WirelessCreds::Thread {
+                dataset_tlv: self.inner.ds,
+            })
+            .await
+            .map_err(|_| Error::new(ErrorCode::Invalid))?;
+            self.inner.joined_at.set(Some((self.inner.now)()));
+            pending().await
+        };
+        match select(ble, commission).await {
+            Either::First(r) => r,
+            Either::Second(r) => r,
+        }
+    }
+}
+
+#[test]
+fn coex_runner_attaches_on_connect_while_ble_runs() {
+    let _serial = serial();
+    let kv = MemKv::new();
+    let clks = [clock(), clock()];
+    let air = Air::new(2);
+    let pend = [Cell::new(None), Cell::new(None)];
+    let res0: Res<'_> = Res::new(instance(1), &clks[0]);
+    let ots0 = Ot::new(&res0);
+    let ds = make_dataset(ots0);
+    let tlvs = ds.as_bytes().to_vec();
+    start_with(ots0, &ds, true);
+    let res1: Res<'_> = Res::new(instance(2), &clks[1]);
+    let ot1 = Ot::new(&res1);
+    let joined = Cell::new(None);
+    let gatt_runs = Cell::new(0);
+    let disabled_before = Cell::new(false);
+    let now = || clks[1].now();
+    let runner = ThreadRunner::new(
+        ot1,
+        AirRadio { air: &air, id: 1 },
+        TestAlarm::new(&clks[1], &pend[1]),
+        &kv,
+    );
+    let mut coex = ThreadCoexRunner::new(runner, IdleGatt(&gatt_runs));
+    let task = BleThenConnect {
+        inner: ConnectTask {
+            ds: &tlvs,
+            joined_at: &joined,
+            now: &now,
+        },
+        disabled_before: &disabled_before,
+        ot: ot1,
+    };
+    let tasks = vec![
+        run_task(ots0, &air, 0, &clks[0], &pend[0]),
+        Box::pin(async {
+            let _ = coex.run(task).await;
+        }),
+    ];
+    drive(
+        &[&clks[0], &clks[1]],
+        &[&pend[0], &pend[1]],
+        tasks,
+        async {
+            wait_role(ots0, Role::Leader).await;
+            while joined.get().is_none() {
+                Timer::after(TDuration::from_millis(100)).await;
+            }
+            Timer::after(TDuration::from_secs(5)).await;
+            assert!(matches!(ot1.role(), Role::Child | Role::Router));
+        },
+        limit(),
+    );
+    assert!(
+        disabled_before.get(),
+        "Thread stays off until ConnectNetwork"
+    );
+    assert_eq!(
+        gatt_runs.get(),
+        1,
+        "the BLE peripheral ran once, next to Thread"
+    );
 }
 
 #[test]
