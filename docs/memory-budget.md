@@ -166,8 +166,8 @@ Firmware: the `opentrust-matter` on-off light (`ThreadRunner` +
 (the node is Leader), `radio-nrf802154`, rs-matter test device attestation,
 RustCrypto backend of rs-matter (`rustcrypto`: pure Rust p256 / aes / sha2, no
 hardware crypto; it needs `alloc`, so there is a 4096-byte `embedded-alloc`
-heap, 0 bytes used while idle), `case-responder-only`, a no-op key-value store
-(nothing is persisted), defmt over RTT, LED1 follows the OnOff attribute.
+heap, 0 bytes used while idle), `case-responder-only`, a flash-backed key-value store
+(`opentrust-flash`, see below), defmt over RTT, LED1 follows the OnOff attribute.
 It builds, boots, becomes Leader and runs rs-matter (PASE window open,
 mDNS, responders); it logs the pairing code `3497-011-2332`, discriminator 3840
 and the QR code. Not commissioned (no controller and no BLE here); the LED
@@ -188,6 +188,31 @@ by rs-matter-stack at start-up; `BUMP` = 28 kB here, the sim test uses 64 kB).
 The 31 kB stack peak is rs-matter's: a 20 kB frame of an `embassy_futures`
 `select3` poll that inlines the stack's futures, plus the Thread path below it.
 A `MatterStack` with `BUMP` of 16 kB panics with "Out of bump memory" at start.
+
+### Persistent settings in flash (`opentrust-flash`)
+
+Both firmwares keep their settings in the last 24 KiB of flash (outside the
+linker's `FLASH` region, so the image cannot overlap it, and untouched when
+probe-rs reflashes the image):
+
+| Region | Address | Size | Used by |
+|---|---|---|---|
+| Thread settings | 0xFA000 | 2 banks of 1 page (8 KiB) | `node` binary: datasets, network info with the frame counters, parent / child info |
+| Key-value store | 0xFC000 | 2 banks of 2 pages (16 KiB) | Matter light: all rs-matter blobs plus the Thread settings blob (`ThreadPersist`) |
+
+Cost, measured on the DK (`radio-nrf802154`):
+
+| | Flash image | Static RAM |
+|---|---|---|
+| `node` binary (RAM image 1536 + 16 dirty keys, entry buffer 512, replaces the 4096-byte `RamSettings`) | 447556 (about 437 KiB; the leader `main` without the store is 431172) | 93628 (`main` with `RamSettings<4096>`: 95072) |
+| Light (RAM image 4096 + 32 dirty keys, entry buffer 2080, next to the unchanged `RamSettings<4096>` of the instance) | 851300 (about 831 KiB, +23968 over 827332 before) | 186140 (+7772 over 178368 before) |
+
+The flash code itself (log, CRC, compaction, the MPSL flash driver and its
+timeslot session memory) is about 16 KiB of the flash growth; the rest in the
+light is the `KvBlobStore` glue and rs-matter paths that now do real work.
+Wear: one 4 KiB-page bank erase per compaction; a bank fills after about
+100 to 250 key updates (12 to 80 bytes each), and the two banks alternate, so
+10000 erase cycles per page last for millions of updates.
 
 ### Headroom for BLE (estimate, not measured)
 
