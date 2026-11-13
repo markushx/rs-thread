@@ -119,6 +119,10 @@ fn data_model<'a, OH: OnOffHooks, LH: LevelControlHooks>(
     )
 }
 
+/// The Active Dataset (TLVs) the light was built with (`OPENTRUST_DATASET`,
+/// see build.rs); empty for a standalone light that forms its own network.
+const BUILD_DATASET: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/dataset.bin"));
+
 const PAINT: u32 = 0xDEAD_BEEF;
 
 unsafe extern "C" {
@@ -213,7 +217,11 @@ async fn main(spawner: Spawner) {
     info!("ext address {:x}", ext.0);
 
     // Thread: built in place in static memory.
+    #[cfg(not(feature = "med"))]
     let config = opentrust_instance::Config::router(ext, caps);
+    // Minimal end device: attaches as a child and never becomes a router.
+    #[cfg(feature = "med")]
+    let config = opentrust_instance::Config::end_device(ext, caps);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
         Instance::init(slot, config, RamSettings::<4096>::new(), SoftCrypto, rng);
     });
@@ -249,6 +257,17 @@ async fn main(spawner: Spawner) {
         "pairing: discriminator {} passcode {} (rs-matter test device, vendor 0xFFF1 product 0x8000)",
         TEST_DEV_COMM.discriminator, 20202021u32
     );
+    info!(
+        "manual pairing code {}",
+        TEST_DEV_COMM.compute_pretty_pairing_code().as_str()
+    );
+    // Logs `SetupQRCode: [MT:...]` (IP discovery only, no BLE).
+    if let Err(e) = stack
+        .matter()
+        .print_standard_qr_text(rs_matter::pairing::DiscoveryCapabilities::IP)
+    {
+        defmt::warn!("QR code text failed: {}", e.code());
+    }
 
     // Load the persisted Thread settings now, so the app below can tell
     // whether the node has a network to restore.
@@ -264,6 +283,11 @@ async fn main(spawner: Spawner) {
                 .is_ok(),
         )
     });
+    info!(
+        "network: build-time dataset {} bytes, stored dataset {}",
+        BUILD_DATASET.len(),
+        have_dataset
+    );
     info!(
         "thread settings: {} values restored (blob key {:#06x}), dataset {} network info {}",
         restored, THREAD_SETTINGS_KEY, have_dataset, have_network
@@ -289,15 +313,25 @@ async fn main(spawner: Spawner) {
 
     let app = async {
         ot.with(|i, now| {
+            // A stored dataset (flash) wins over the build-time one; both win
+            // over forming a standalone network.
             if !have_dataset {
-                let mut ds = i.create_dataset(15).unwrap();
-                ds.set_pan_id(0x1234).unwrap();
-                i.set_active_dataset(&ds, now).unwrap();
+                if BUILD_DATASET.is_empty() {
+                    let mut ds = i.create_dataset(15).unwrap();
+                    ds.set_pan_id(0x1234).unwrap();
+                    i.set_active_dataset(&ds, now).unwrap();
+                } else {
+                    let ds = opentrust_instance::Dataset::from_tlvs(BUILD_DATASET)
+                        .expect("OPENTRUST_DATASET is not a complete Active Dataset");
+                    i.set_active_dataset(&ds, now).unwrap();
+                }
             }
             i.ip6_set_enabled(true);
-            // With stored network info the node restores its role instead of
-            // forming a new network.
-            if have_network {
+            // With stored network info, or an external dataset, the node
+            // restores its role or attaches (and forms a partition itself
+            // only when no router answers, as OpenThread does); a standalone
+            // light forms its network at once.
+            if have_network || !BUILD_DATASET.is_empty() {
                 i.thread_start(now).unwrap();
             } else {
                 i.become_leader(now).unwrap();

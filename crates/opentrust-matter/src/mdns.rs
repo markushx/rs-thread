@@ -7,8 +7,9 @@
 //! queries to that server (`default.service.arpa`). [`SrpMdns::run`]
 //!
 //! - registers the host (name from the MAC / extended address, like the
-//!   builtin responder, addresses chosen by the SRP client: the ML-EID and
-//!   every off-mesh-routable address) and keeps the SRP services in sync with
+//!   builtin responder, addresses chosen by the SRP client as OpenThread does: the
+//!   preferred non-mesh-local, non-link-local addresses (SLAAC addresses of
+//!   on-mesh prefixes), the ML-EID only when there are none) and keeps the SRP services in sync with
 //!   [`Matter::mdns_services`] (`_matterc._udp` with its `_L`, `_S`, `_V`,
 //!   `_T`, `_CM` subtypes while a commissioning window is open, one
 //!   `_matter._tcp` with the `_I` subtype per fabric), re-synced whenever

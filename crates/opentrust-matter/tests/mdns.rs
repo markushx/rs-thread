@@ -11,7 +11,7 @@ use common::*;
 use embassy_futures::join::join;
 use embassy_futures::select::{Either, select};
 use opentrust_core::time::Duration;
-use opentrust_instance::Role;
+use opentrust_instance::{BrFlags, NetPrefix, OnMeshPrefixConfig, Role};
 use opentrust_matter::mdns::SrpMdns;
 use opentrust_matter::net::MatterNetStack;
 use opentrust_matter::netif::{NETIF_NAME, ThreadNetif};
@@ -38,6 +38,7 @@ impl AttrChangeNotifier for NoNotify {
 
 #[test]
 fn registers_with_srp_and_resolves_with_dns_sd() {
+    let _g = serial();
     let clks = [clock(), clock()];
     let air = Air::new(2);
     let pend = [Cell::new(None), Cell::new(None)];
@@ -225,6 +226,115 @@ fn registers_with_srp_and_resolves_with_dns_sd() {
             match select(server, join(node, netif_checks)).await {
                 Either::First(()) => unreachable!(),
                 Either::Second(_) => {}
+            }
+        },
+        Duration::from_secs(1800),
+    );
+}
+
+/// A border router publishes an on-mesh SLAAC prefix and the SRP server: the
+/// node configures a prefix address, and the SRP client registers that
+/// address (not the mesh-local ML-EID, which is only the fallback) together
+/// with the commissionable service, as OpenThread's auto host address mode
+/// does.
+#[test]
+fn registers_the_slaac_address_of_a_border_router_prefix() {
+    let _g = serial();
+    let clks = [clock(), clock()];
+    let air = Air::new(2);
+    let pend = [Cell::new(None), Cell::new(None)];
+    let res0: Res<'_> = Res::new(instance(1), &clks[0]);
+    let res1: Res<'_> = Res::new(instance(2), &clks[1]);
+    let ots = [Ot::new(&res0), Ot::new(&res1)];
+    let ds = make_dataset(ots[0]);
+    let tasks = vec![
+        run_task(ots[0], &air, 0, &clks[0], &pend[0]),
+        run_task(ots[1], &air, 1, &clks[1], &pend[1]),
+    ];
+    let reg = RefCell::new(Registered::default());
+    let mut matter_cell = Box::<Matter<'_>>::new_uninit();
+    let matter = matter_cell.init_with(Matter::init(
+        &TEST_DEV_DET,
+        TEST_DEV_COMM,
+        &TEST_DEV_ATT,
+        MATTER_PORT,
+    ));
+    let crypto = default_crypto(rand::rng(), DAC_PRIVKEY);
+    let prefix = [0xfd, 0x11, 0x00, 0x22, 0, 0, 0, 0];
+
+    drive(
+        &[&clks[0], &clks[1]],
+        &[&pend[0], &pend[1]],
+        tasks,
+        async {
+            ots[0].with(|i, _| {
+                i.add_on_mesh_prefix(OnMeshPrefixConfig {
+                    prefix: NetPrefix::new(&prefix, 64).unwrap(),
+                    flags: BrFlags(BrFlags::PREFERRED | BrFlags::SLAAC | BrFlags::ON_MESH),
+                    stable: true,
+                })
+                .unwrap();
+            });
+            form_network(&ots, &ds).await;
+            let server = async {
+                common::srp::serve(ots[0], &reg).await;
+            };
+            let node = async {
+                matter
+                    .open_basic_comm_window(300, &crypto, &NoNotify)
+                    .unwrap();
+                let netif = ThreadNetif::new(ots[1]);
+                let mut mdns = SrpMdns::new(ots[1]);
+                let stack = MatterNetStack::new(ots[1]);
+                let mac = ots[1].with(|i, _| i.ext_address().0);
+                let addrs = netif.addresses();
+                let run = mdns.run(
+                    matter,
+                    &crypto,
+                    &stack,
+                    &mac,
+                    Ipv4Addr::UNSPECIFIED,
+                    &addrs,
+                    1,
+                );
+                let check = async {
+                    loop {
+                        if reg
+                            .borrow()
+                            .instance("")
+                            .is_some_and(|i| i.port != 0 && !i.subtypes.is_empty())
+                        {
+                            break;
+                        }
+                        ots[1].wait_changed().await;
+                    }
+                    let r = reg.borrow();
+                    assert!(!r.addrs.is_empty());
+                    assert!(
+                        r.addrs.iter().all(|a| a.octets()[..8] == prefix),
+                        "host addresses: {:?}",
+                        r.addrs
+                    );
+                    assert!(!r.addrs.contains(&ots[1].with(|i, _| i.ml_eid())));
+                    let inst = r.instance("").unwrap();
+                    let subs: Vec<String> = inst
+                        .subtypes
+                        .iter()
+                        .map(|s| s.split("._sub.").next().unwrap().to_string())
+                        .collect();
+                    let d = TEST_DEV_COMM.discriminator;
+                    for want in [format!("_L{d}"), format!("_S{}", d >> 8), "_CM".to_string()] {
+                        assert!(subs.contains(&want), "{subs:?}");
+                    }
+                };
+                match select(run, check).await {
+                    Either::First(r) => panic!("mdns run ended: {r:?}"),
+                    Either::Second(()) => {}
+                }
+            };
+            match select(server, node).await {
+                Either::First(()) => unreachable!(),
+                Either::Second(()) => {}
             }
         },
         Duration::from_secs(1800),

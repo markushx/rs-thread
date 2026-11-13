@@ -11,6 +11,8 @@ publish = false
 [features]
 # Test aid: factory reset on every start, as if Button 1 were held.
 test-factory-reset = ["nrf52840-leader/test-factory-reset"]
+# Minimal end device (not router eligible) instead of an FTD router.
+med = []
 
 [dependencies]
 # Board bring-up (clocks, MPSL, radio, RNG, LED) of the leader firmware; the
