@@ -4,7 +4,7 @@
 #![no_std]
 
 use embassy_executor::Spawner;
-use embassy_nrf::gpio::{Level, Output, OutputDrive};
+use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pull};
 use opentrust_nrf::{NrfRadio, NrfRng};
 
 /// Peripherals and radio of the board, ready for the stack.
@@ -17,6 +17,55 @@ pub struct Board {
     /// LED1 of the DK (P0.13, active low), initially off.
     pub led1: Output<'static>,
     pub radio: NrfRadio<'static>,
+    /// The flash driver of the backend (through MPSL with `radio-nrf802154`).
+    /// Only the regions of the [`flash`] module may be written.
+    pub flash: opentrust_nrf::Flash,
+    /// Button 1 of the DK (P0.11, active low): held at boot it requests a
+    /// factory reset, see [`flash::factory_reset_requested`].
+    pub button1: Input<'static>,
+}
+
+/// Where the persistent settings live in flash (see `memory.x`).
+pub mod flash {
+    /// Start of the reserved area (the linker symbol `__nvm_start`).
+    pub const NVM_START: u32 = 0x000F_A000;
+    /// Erase page size of the nRF52840.
+    pub const PAGE: u32 = 4096;
+    /// Thread settings: start offset and pages per bank (two banks).
+    pub const THREAD_START: u32 = NVM_START;
+    pub const THREAD_PAGES: u32 = 1;
+    /// Key-value store of the Matter light: start offset and pages per bank.
+    pub const KV_START: u32 = THREAD_START + 2 * THREAD_PAGES * PAGE;
+    pub const KV_PAGES: u32 = 2;
+    /// End of the reserved area: the end of flash.
+    pub const NVM_END: u32 = KV_START + 2 * KV_PAGES * PAGE;
+
+    unsafe extern "C" {
+        static __nvm_start: u8;
+    }
+
+    /// Whether Button 1 is held (sampled after the pull-up settled). Call it
+    /// at boot, before mounting the stores.
+    pub async fn factory_reset_requested(button1: &embassy_nrf::gpio::Input<'_>) -> bool {
+        embassy_time::Timer::after_millis(20).await;
+        cfg!(feature = "test-factory-reset") || button1.is_low()
+    }
+
+    /// Erase the whole settings area (both stores). The next mount formats
+    /// fresh banks.
+    pub async fn erase_all<F: embedded_storage_async::nor_flash::NorFlash>(
+        flash: &mut F,
+    ) -> Result<(), F::Error> {
+        flash.erase(NVM_START, NVM_END).await
+    }
+
+    /// Check that the constants agree with the linker script and the flash
+    /// size, so the program image cannot overlap the settings.
+    pub fn check() {
+        let linker = core::ptr::addr_of!(__nvm_start) as u32;
+        assert_eq!(linker, NVM_START);
+        assert_eq!(NVM_END, 0x0010_0000);
+    }
 }
 
 /// Initialise clocks, the RNG and the selected radio backend.
@@ -40,6 +89,8 @@ pub fn init(_spawner: &Spawner) -> Board {
         rng: NrfRng::new_blocking(p.RNG),
         led1: Output::new(p.P0_13, Level::High, OutputDrive::Standard),
         radio: NrfRadio::new(HwRadio::new(p.RADIO, Irqs)),
+        flash: opentrust_nrf::take_flash(p.NVMC),
+        button1: Input::new(p.P0_11, Pull::Up),
     }
 }
 
@@ -71,6 +122,8 @@ pub fn init(spawner: &Spawner) -> Board {
         rng: NrfRng::new_blocking(p.RNG),
         led1: Output::new(p.P0_13, Level::High, OutputDrive::Standard),
         radio: NrfRadio::new(p.RADIO, p.EGU0, p.TIMER2, p.RTC2, mpsl),
+        flash: opentrust_nrf::take_flash(mpsl, p.NVMC),
+        button1: Input::new(p.P0_11, Pull::Up),
     }
 }
 

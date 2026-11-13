@@ -182,7 +182,7 @@ impl<const CAP: usize, const KEYS: usize> Image<CAP, KEYS> {
 
     /// The smallest key greater than `after` (or the smallest key for
     /// `None`) that has a value.
-    pub(crate) fn next_key(&self, after: Option<u16>) -> Option<u16> {
+    pub fn next_key(&self, after: Option<u16>) -> Option<u16> {
         self.records()
             .map(|(_, k, _)| k)
             .filter(|&k| after.is_none_or(|a| k > a))

@@ -127,6 +127,8 @@ compile_error!("features `radio-embassy` and `radio-nrf802154` are mutually excl
 
 #[cfg(target_arch = "arm")]
 mod clock;
+#[cfg(target_arch = "arm")]
+mod flash;
 #[cfg(all(target_arch = "arm", feature = "radio-embassy"))]
 mod radio_embassy;
 #[cfg(all(target_arch = "arm", feature = "radio-nrf802154"))]
@@ -134,6 +136,8 @@ mod radio_nrf802154;
 
 #[cfg(target_arch = "arm")]
 pub use clock::{EmbassyAlarm, EmbassyClock};
+#[cfg(target_arch = "arm")]
+pub use flash::{Flash, NvmcAsync, take_flash};
 /// The radio of the selected backend (feature `radio-embassy`).
 #[cfg(all(target_arch = "arm", feature = "radio-embassy"))]
 pub use radio_embassy::NrfRadio;

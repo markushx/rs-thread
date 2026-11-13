@@ -7,6 +7,12 @@
 //! stack; every `PING_PERIOD_SECS` it pings `PEER` (default: the Leader ALOC
 //! of the shared mesh-local prefix, reachable whichever device leads).
 //!
+//! The settings (datasets, network info with the frame counters, parent and
+//! child info) are persisted in flash (`opentrust-flash`, region in
+//! `memory.x`): after a reset the node restores its role, RLOC16 and ML-EID
+//! and reattaches to its parent with a Child Update instead of a full attach.
+//! Button 1 held at boot erases the settings (factory reset).
+//!
 //! Features: `child-only` keeps the node a child (router upgrade disabled),
 //! otherwise it is router eligible; `leader` forms the network as its Leader.
 
@@ -24,16 +30,22 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use nrf52840_leader::Board;
 use opentrust_core::crypto::soft::SoftCrypto;
+use opentrust_core::settings::NetworkInfo;
 use opentrust_embassy::{OpenTrust, Resources};
+use opentrust_flash::{FlashWriter, Settings, Shared};
 use opentrust_instance::{Dataset, ExtAddress, Instance};
 use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::{Radio, RamSettings};
+use opentrust_platform::Radio;
 use panic_probe as _;
 use static_cell::StaticCell;
 
 defmt::timestamp!("{=u64:us}", embassy_time::Instant::now().as_micros());
 
-type Res = Resources<NoopRawMutex, EmbassyClock, RamSettings<4096>, SoftCrypto, NrfRng<'static>>;
+/// RAM image of the settings (bytes) and the number of distinct keys tracked.
+type Store = Shared<1536, 16>;
+static STORE: Store = Store::new();
+type Res =
+    Resources<NoopRawMutex, EmbassyClock, Settings<'static, 1536, 16>, SoftCrypto, NrfRng<'static>>;
 static RES: StaticCell<Res> = StaticCell::new();
 
 /// Address pinged periodically: the Leader ALOC (`<prefix>:0:ff:fe00:fc00`).
@@ -61,7 +73,44 @@ fn ext_address() -> ExtAddress {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let Board { rng, mut radio, .. } = nrf52840_leader::init(&spawner);
+    let Board {
+        rng,
+        mut radio,
+        mut flash,
+        button1,
+        ..
+    } = nrf52840_leader::init(&spawner);
+    nrf52840_leader::flash::check();
+    if nrf52840_leader::flash::factory_reset_requested(&button1).await {
+        info!("factory reset: erasing the settings");
+        nrf52840_leader::flash::erase_all(&mut flash).await.unwrap();
+    }
+    let mut writer = FlashWriter::<_, 512>::mount(
+        flash,
+        nrf52840_leader::flash::THREAD_START,
+        nrf52840_leader::flash::THREAD_PAGES,
+        &STORE,
+    )
+    .await
+    .unwrap();
+    // Key 1 is the Active Dataset, key 3 the network info.
+    let have_dataset = STORE.with(|i| i.get(1, 0, &mut []).is_ok());
+    let have_network = STORE.with(|i| i.get(3, 0, &mut []).is_ok());
+    info!(
+        "settings: {} bytes loaded, dataset {} network info {}",
+        STORE.with(|i| i.used()),
+        have_dataset,
+        have_network
+    );
+    let mut b = [0u8; NetworkInfo::ENCODED_LEN];
+    if STORE.with(|i| i.get(3, 0, &mut b)).is_ok()
+        && let Ok(n) = NetworkInfo::decode(&b)
+    {
+        info!(
+            "stored network info: role {} rloc16 {:#06x} key sequence {} mle frame counter {} mac frame counter {}",
+            n.role, n.rloc16.0, n.key_sequence, n.mle_frame_counter, n.mac_frame_counter
+        );
+    }
     let caps = radio.init().await.unwrap();
     let ext = ext_address();
     info!("ext address {:x}", ext.0);
@@ -69,19 +118,27 @@ async fn main(spawner: Spawner) {
     config.mle.router.eligible = !cfg!(feature = "child-only");
     info!("router eligible: {}", config.mle.router.eligible);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
-        Instance::init(slot, config, RamSettings::<4096>::new(), SoftCrypto, rng);
+        Instance::init(slot, config, STORE.settings(), SoftCrypto, rng);
     });
     let ot = OpenTrust::new(res);
 
     let app = async {
         ot.with(|i, now| {
-            let ds = Dataset::from_tlvs(&nrf52840_leader::DATASET_TLVS).unwrap();
-            i.set_active_dataset(&ds, now).unwrap();
+            if !have_dataset {
+                let ds = Dataset::from_tlvs(&nrf52840_leader::DATASET_TLVS).unwrap();
+                i.set_active_dataset(&ds, now).unwrap();
+            }
             i.ip6_set_enabled(true);
+            // With stored network info the node restores its role and
+            // reattaches; the leader feature only forms a network the first time.
             #[cfg(not(feature = "leader"))]
             i.thread_start(now).unwrap();
             #[cfg(feature = "leader")]
-            i.become_leader(now).unwrap();
+            if have_network {
+                i.thread_start(now).unwrap();
+            } else {
+                i.become_leader(now).unwrap();
+            }
         });
         let started = embassy_time::Instant::now();
         let mut last_role = None;
@@ -208,5 +265,18 @@ async fn main(spawner: Spawner) {
             select(ot.wait_changed(), Timer::after_millis(500)).await;
         }
     };
-    select(ot.run(radio, EmbassyAlarm), app).await;
+    // Writes the settings to flash a moment after the node changed them.
+    let persist = async {
+        loop {
+            select(ot.wait_changed(), Timer::after_millis(1000)).await;
+            if STORE.is_dirty() {
+                Timer::after_millis(50).await;
+                match writer.flush(&STORE).await {
+                    Ok(()) => info!("settings written to flash"),
+                    Err(e) => defmt::warn!("flash write failed: {}", e),
+                }
+            }
+        }
+    };
+    select(ot.run(radio, EmbassyAlarm), select(app, persist)).await;
 }

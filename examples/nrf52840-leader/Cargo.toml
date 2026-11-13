@@ -21,17 +21,22 @@ child-only = []
 # address instead of the Leader ALOC).
 leader = []
 
+# Test aid: behave as if Button 1 were held at boot (factory reset on every start).
+test-factory-reset = []
+
 [dependencies]
 opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }
 opentrust-platform = { path = "../../crates/opentrust-platform", features = ["defmt"] }
 opentrust-instance = { path = "../../crates/opentrust-instance", default-features = false, features = ["ftd", "defmt"] }
 opentrust-embassy = { path = "../../crates/opentrust-embassy", default-features = false, features = ["ftd", "defmt"] }
+opentrust-flash = { path = "../../crates/opentrust-flash", features = ["defmt"] }
 opentrust-nrf = { path = "../../crates/opentrust-nrf", default-features = false, features = ["defmt"] }
 
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { version = "0.5", features = ["defmt"] }
 embassy-nrf = { version = "0.11", features = ["nrf52840", "time-driver-rtc1", "gpiote", "unstable-pac", "defmt"] }
 embassy-sync = "0.8"
+embedded-storage-async = "0.4"
 embassy-futures = "0.1"
 # The critical-section implementation comes with the backend: the single-core one
 # (PRIMASK) for radio-embassy, MPSL-aware one (keeps its IRQs unmasked) for radio-nrf802154.

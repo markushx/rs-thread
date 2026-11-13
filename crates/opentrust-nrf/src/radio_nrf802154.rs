@@ -52,7 +52,8 @@ pub type Mpsl = MultiprotocolServiceLayer<'static>;
 const LFCLK_ACCURACY_PPM: u8 = 20;
 
 /// Initialise MPSL with the 32.768 kHz crystal as the LF clock source (as on
-/// the nRF52840 DK and most modules).
+/// the nRF52840 DK and most modules), with one timeslot session for the flash
+/// driver ([`take_flash`](crate::take_flash)).
 ///
 /// MPSL manages the HF and LF clocks from here on; the application must not
 /// stop them. `embassy_nrf::init` is expected to run before with its default
@@ -74,7 +75,12 @@ pub fn init_mpsl(
         skip_wait_lfclk_started: nrf_mpsl::raw::MPSL_DEFAULT_SKIP_WAIT_LFCLK_STARTED != 0,
     };
     let p = nrf_mpsl::Peripherals::new(rtc0, timer0, temp, ppi_ch19, ppi_ch30, ppi_ch31);
-    MultiprotocolServiceLayer::new(p, Irqs, lfclk)
+    // One timeslot session: `nrf_mpsl::Flash` (the settings store) runs its
+    // erases and writes in MPSL timeslots between radio activity.
+    static SESSIONS: static_cell::StaticCell<nrf_mpsl::SessionMem<1>> =
+        static_cell::StaticCell::new();
+    let sessions = SESSIONS.init(nrf_mpsl::SessionMem::new());
+    MultiprotocolServiceLayer::with_timeslots(p, Irqs, lfclk, sessions)
 }
 
 /// Time to let one RSSI measurement of the energy scan settle (the hardware

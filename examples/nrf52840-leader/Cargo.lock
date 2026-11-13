@@ -1054,8 +1054,10 @@ dependencies = [
  "embassy-nrf",
  "embassy-sync",
  "embassy-time",
+ "embedded-storage-async",
  "opentrust-core",
  "opentrust-embassy",
+ "opentrust-flash",
  "opentrust-instance",
  "opentrust-nrf",
  "opentrust-platform",
@@ -1152,6 +1154,18 @@ dependencies = [
  "opentrust-net",
  "opentrust-platform",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "opentrust-flash"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "defmt",
+ "embedded-storage-async",
+ "heapless",
+ "opentrust-core",
+ "opentrust-platform",
 ]
 
 [[package]]
@@ -1256,11 +1270,14 @@ dependencies = [
  "defmt",
  "embassy-nrf",
  "embassy-time",
+ "embedded-storage",
+ "embedded-storage-async",
  "nrf-802154",
  "nrf-mpsl",
  "opentrust-core",
  "opentrust-platform",
  "rand_core 0.10.1",
+ "static_cell",
 ]
 
 [[package]]
