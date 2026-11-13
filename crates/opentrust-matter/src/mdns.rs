@@ -29,7 +29,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::{String, Vec};
 use opentrust_dns::rdata::{TxtEntry, TxtIter};
 use opentrust_embassy::{DnsClientError, OpenTrust, ResolvedService, ServiceId};
-use opentrust_instance::{InstanceCrypto, ServiceConfig};
+use opentrust_instance::{InstanceCrypto, ServiceConfig, SrpError};
 use opentrust_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::Matter;
@@ -39,7 +39,7 @@ use rs_matter::stack::mdns::Mdns;
 use rs_matter::stack::net::NetStack;
 use rs_matter::transport::network::mdns::{DottedName, MdnsBrowseQuery, MdnsRemoteService};
 use rs_matter::transport::network::{MatterLocalService, MatterRemoteService};
-use rs_matter::utils::futures::{Coalesce, select3};
+use rs_matter::utils::futures::{Coalesce, select, select3};
 use rs_matter::utils::timers::{Duration, Timer};
 
 use crate::error::map_err;
@@ -60,6 +60,8 @@ const MAX_NAME: usize = 128;
 /// Delay before a failed resolve / browse is retried while rs-matter still
 /// waits for it.
 const RETRY_MS: u64 = 1000;
+/// How often the SRP client is checked for a failed update.
+const FAILURE_POLL_MS: u64 = 5000;
 /// TXT key / value pairs of one service.
 const MAX_TXT: usize = 16;
 
@@ -71,6 +73,8 @@ where
 {
     ot: OpenTrust<'a, M, K, S, C, R>,
     registered: Vec<(MatterLocalService, ServiceId), MAX_SERVICES>,
+    /// Host name suffix: 0 for the plain name, `-N` after N name conflicts.
+    host_variant: u8,
 }
 
 impl<M: RawMutex, K, S, C: InstanceCrypto, R> core::fmt::Debug for SrpMdns<'_, M, K, S, C, R> {
@@ -94,6 +98,7 @@ where
         Self {
             ot,
             registered: Vec::new(),
+            host_variant: 0,
         }
     }
 
@@ -102,19 +107,34 @@ where
         self.registered.iter().map(|(s, id)| (s, *id))
     }
 
-    /// Register the host: name from `mac` (hex, like the builtin responder),
-    /// addresses chosen by the SRP client, server from the Network Data.
-    fn start_host(&self, mac: &[u8]) -> Result<(), Error> {
-        let mut host: String<20> = String::new();
+    /// The host name: `mac` as hex (like the builtin responder), with a
+    /// `-N` suffix after N name conflicts.
+    fn host_name(&self, mac: &[u8]) -> Result<String<24>, Error> {
+        let mut host: String<24> = String::new();
         for b in mac.iter().take(8) {
             write!(host, "{b:02X}").map_err(|_| Error::new(ErrorCode::BufferTooSmall))?;
         }
         if host.is_empty() {
             return Err(ErrorCode::InvalidArgument.into());
         }
+        if self.host_variant != 0 {
+            write!(host, "-{}", self.host_variant)
+                .map_err(|_| Error::new(ErrorCode::BufferTooSmall))?;
+        }
+        Ok(host)
+    }
+
+    /// Register the host: addresses chosen by the SRP client, server from
+    /// the Network Data.
+    fn start_host(&self, mac: &[u8]) -> Result<(), Error> {
+        let host = self.host_name(mac)?;
         self.ot
             .with(|i, now| {
-                i.srp_set_host_name(&host, now)?;
+                // A restarted future finds the host name set already (it can
+                // only be changed before registration or after removal).
+                if i.srp_host_name() != host.as_str() {
+                    i.srp_set_host_name(&host, now)?;
+                }
                 i.srp_enable_auto_host_address(now)?;
                 i.srp_enable_auto_start(now);
                 Ok(())
@@ -122,8 +142,32 @@ where
             .map_err(map_err)
     }
 
+    /// React to a failed SRP update: a name conflict (the server holds the
+    /// host name for another key, e.g. from before a factory reset, for the
+    /// key lease of days) moves the host to the next name.
+    fn handle_failure(&mut self, mac: &[u8]) {
+        let failure = self.ot.with(|i, _| i.srp_take_failure());
+        if failure != Some(SrpError::NameConflict) {
+            return;
+        }
+        self.host_variant = self.host_variant.wrapping_add(1);
+        let Ok(host) = self.host_name(mac) else {
+            return;
+        };
+        log_warn!("SRP: host name conflict, trying {}", host.as_str());
+        if let Err(e) = self.ot.with(|i, now| i.srp_set_host_name(&host, now)) {
+            log_warn!("SRP: cannot change the host name: {:?}", e);
+        }
+    }
+
     /// Bring the SRP services in line with the services rs-matter advertises.
-    fn sync_services(&mut self, matter: &Matter<'_>) -> Result<(), Error> {
+    ///
+    /// Returns whether a wanted service could not be registered yet (the SRP
+    /// client still holds the removal of an earlier registration of the same
+    /// name, for instance after the network interface restarted this
+    /// future); the caller retries shortly.
+    fn sync_services(&mut self, matter: &Matter<'_>) -> Result<bool, Error> {
+        let mut pending = false;
         let mut wanted: Vec<MatterLocalService, { MAX_SERVICES + 4 }> = Vec::new();
         matter.mdns_services(|s| {
             if wanted.push(s).is_err() {
@@ -149,6 +193,7 @@ where
                 Ok(id) => id,
                 Err(e) => {
                     log_warn!("SRP: cannot register {:?}: {:?}", svc, e);
+                    pending = true;
                     continue;
                 }
             };
@@ -157,7 +202,7 @@ where
                 log_warn!("SRP: no slot for {:?}", svc);
             }
         }
-        Ok(())
+        Ok(pending)
     }
 
     fn add_service(
@@ -315,8 +360,15 @@ where
 
         let advertise = async {
             loop {
-                guard.0.sync_services(matter)?;
-                matter.transport().wait_mdns().await;
+                guard.0.handle_failure(mac);
+                let pending = guard.0.sync_services(matter)?;
+                // Poll for SRP failures as well, without a wake-up of their own.
+                let wait = if pending { RETRY_MS } else { FAILURE_POLL_MS };
+                select(
+                    matter.transport().wait_mdns(),
+                    Timer::after(Duration::from_millis(wait)),
+                )
+                .await;
             }
         };
 

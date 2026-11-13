@@ -18,8 +18,8 @@ use opentrust_dns::client::{
 };
 use opentrust_dns::srp::discovery::NetDataService;
 use opentrust_dns::srp::{
-    ItemState, MAX_HOST_ADDRS, ServiceConfig, ServiceId, SrpClient, SrpContext, SrpEnv, SrpEvent,
-    filter_auto_addresses,
+    ItemState, MAX_HOST_ADDRS, ServiceConfig, ServiceId, SrpClient, SrpContext, SrpEnv, SrpError,
+    SrpEvent, filter_auto_addresses,
 };
 use opentrust_mesh::netdata::ServiceEntry;
 use opentrust_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
@@ -119,6 +119,8 @@ pub(crate) struct DnsSrp {
     dns_sock: Option<SocketHandle>,
     out: DgramQueue,
     srp_events: Deque<SrpEvent, 4>,
+    /// The last failed update, until the application takes it.
+    srp_failure: Option<SrpError>,
     results: Deque<(QueryId, DnsOutcome), 2>,
     /// Results already announced with an event.
     notified: usize,
@@ -136,6 +138,7 @@ impl DnsSrp {
             dns_sock: None,
             out: DgramQueue::default(),
             srp_events: Deque::new(),
+            srp_failure: None,
             results: Deque::new(),
             notified: 0,
             attached: false,
@@ -407,6 +410,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.dnssrp.srp.disable_auto_start();
     }
 
+    /// The cause of the last failed SRP update, once (the application can
+    /// react to [`SrpError::NameConflict`] by choosing another host name).
+    pub fn srp_take_failure(&mut self) -> Option<SrpError> {
+        self.dnssrp.srp_failure.take()
+    }
+
+    /// The host name of the SRP client (empty until set).
+    pub fn srp_host_name(&self) -> &str {
+        self.dnssrp.srp.host_name()
+    }
+
     /// State of the host registration.
     pub fn srp_host_state(&self) -> ItemState {
         self.dnssrp.srp.host_state()
@@ -584,6 +598,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy = true;
             if let SrpEvent::ServerSelected(s) = ev {
                 self.dnssrp.dns.set_default_server(s);
+            }
+            if let SrpEvent::Failed(e) = ev {
+                self.dnssrp.srp_failure = Some(e);
             }
             self.core.push_event(Event::SrpClient(ev));
         }

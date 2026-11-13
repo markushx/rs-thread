@@ -28,6 +28,11 @@ pub struct Registered {
     pub addrs: Vec<Ipv6Addr>,
     pub instances: Vec<Instance>,
     pub updates: usize,
+    /// Host name (first label) that the server holds for another key: an
+    /// update for it is answered with YXDOMAIN.
+    pub conflict_host: Option<String>,
+    /// Updates answered with YXDOMAIN.
+    pub conflicts: usize,
     pub queries: usize,
 }
 
@@ -51,6 +56,30 @@ fn handle_update(msg: &[u8], reg: &mut Registered) -> Vec<u8> {
     let (mut p, h) = Parser::new(msg).unwrap();
     let _ = p.question().unwrap();
     reg.updates += 1;
+    if let Some(conflict) = reg.conflict_host.clone() {
+        let (mut q, _) = Parser::new(msg).unwrap();
+        let _ = q.question().unwrap();
+        for _ in 0..h.ns {
+            let r = q.record().unwrap();
+            if r.rtype == rtype::AAAA
+                && dotted(&r.name)
+                    .to_ascii_uppercase()
+                    .starts_with(&format!("{}.", conflict.to_ascii_uppercase()))
+            {
+                reg.conflicts += 1;
+                let mut buf = [0u8; 32];
+                let mut w = Writer::new(&mut buf).unwrap();
+                w.set_header(&Header {
+                    id: h.id,
+                    response: true,
+                    opcode: opcode::UPDATE,
+                    rcode: rcode::NAME_EXISTS,
+                    ..Header::default()
+                });
+                return w.as_bytes().to_vec();
+            }
+        }
+    }
     let mut removed: Vec<String> = Vec::new();
     for _ in 0..h.ns {
         let r = p.record().unwrap();

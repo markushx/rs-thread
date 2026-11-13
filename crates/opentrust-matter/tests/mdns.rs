@@ -340,3 +340,196 @@ fn registers_the_slaac_address_of_a_border_router_prefix() {
         Duration::from_secs(1800),
     );
 }
+
+/// The network interface restarting the mDNS future (here: a second `run`
+/// right after the first was dropped, as when the mesh-local prefix changes
+/// after attaching with a partial dataset) must not leave the service
+/// unregistered while the SRP client still holds the removal of the old one.
+#[test]
+fn registers_again_after_the_mdns_future_restarted() {
+    let _g = serial();
+    let clks = [clock(), clock()];
+    let air = Air::new(2);
+    let pend = [Cell::new(None), Cell::new(None)];
+    let res0: Res<'_> = Res::new(instance(1), &clks[0]);
+    let res1: Res<'_> = Res::new(instance(2), &clks[1]);
+    let ots = [Ot::new(&res0), Ot::new(&res1)];
+    let ds = make_dataset(ots[0]);
+    let tasks = vec![
+        run_task(ots[0], &air, 0, &clks[0], &pend[0]),
+        run_task(ots[1], &air, 1, &clks[1], &pend[1]),
+    ];
+    let reg = RefCell::new(Registered::default());
+    let mut matter_cell = Box::<Matter<'_>>::new_uninit();
+    let matter = matter_cell.init_with(Matter::init(
+        &TEST_DEV_DET,
+        TEST_DEV_COMM,
+        &TEST_DEV_ATT,
+        MATTER_PORT,
+    ));
+    let crypto = default_crypto(rand::rng(), DAC_PRIVKEY);
+
+    drive(
+        &[&clks[0], &clks[1]],
+        &[&pend[0], &pend[1]],
+        tasks,
+        async {
+            form_network(&ots, &ds).await;
+            let server = async {
+                common::srp::serve(ots[0], &reg).await;
+            };
+            let node = async {
+                matter
+                    .open_basic_comm_window(300, &crypto, &NoNotify)
+                    .unwrap();
+                let netif = ThreadNetif::new(ots[1]);
+                let stack = MatterNetStack::new(ots[1]);
+                let mac = ots[1].with(|i, _| i.ext_address().0);
+                let addrs = netif.addresses();
+                let registered = || {
+                    reg.borrow()
+                        .instance("")
+                        .is_some_and(|i| i.port != 0 && !i.subtypes.is_empty())
+                };
+                // First future: register, then drop it.
+                {
+                    let mut mdns = SrpMdns::new(ots[1]);
+                    let run = mdns.run(
+                        matter,
+                        &crypto,
+                        &stack,
+                        &mac,
+                        Ipv4Addr::UNSPECIFIED,
+                        &addrs,
+                        1,
+                    );
+                    let check = async {
+                        while !registered() {
+                            ots[1].wait_changed().await;
+                        }
+                    };
+                    match select(run, check).await {
+                        Either::First(r) => panic!("mdns run ended: {r:?}"),
+                        Either::Second(()) => {}
+                    }
+                }
+                // Second future at once: the removal is still pending.
+                let updates = reg.borrow().updates;
+                let mut mdns = SrpMdns::new(ots[1]);
+                let run = mdns.run(
+                    matter,
+                    &crypto,
+                    &stack,
+                    &mac,
+                    Ipv4Addr::UNSPECIFIED,
+                    &addrs,
+                    1,
+                );
+                let check = async {
+                    // The removal and the new registration both reach the server.
+                    while !(reg.borrow().updates > updates + 1 && registered()) {
+                        ots[1].wait_changed().await;
+                    }
+                };
+                match select(run, check).await {
+                    Either::First(r) => panic!("mdns run ended: {r:?}"),
+                    Either::Second(()) => {}
+                }
+            };
+            match select(server, node).await {
+                Either::First(()) => unreachable!(),
+                Either::Second(()) => {}
+            }
+        },
+        Duration::from_secs(1800),
+    );
+}
+
+/// The SRP server holds the host name for another key (as after a factory
+/// reset of the node, for the key lease): the update is answered with
+/// YXDOMAIN and the node registers under `<name>-1` instead.
+#[test]
+fn moves_to_another_host_name_on_a_name_conflict() {
+    let _g = serial();
+    let clks = [clock(), clock()];
+    let air = Air::new(2);
+    let pend = [Cell::new(None), Cell::new(None)];
+    let res0: Res<'_> = Res::new(instance(1), &clks[0]);
+    let res1: Res<'_> = Res::new(instance(2), &clks[1]);
+    let ots = [Ot::new(&res0), Ot::new(&res1)];
+    let ds = make_dataset(ots[0]);
+    let tasks = vec![
+        run_task(ots[0], &air, 0, &clks[0], &pend[0]),
+        run_task(ots[1], &air, 1, &clks[1], &pend[1]),
+    ];
+    let mac = ots[1].with(|i, _| i.ext_address().0);
+    let plain: String = mac.iter().map(|b| format!("{b:02X}")).collect();
+    let reg = RefCell::new(Registered {
+        conflict_host: Some(plain.clone()),
+        ..Registered::default()
+    });
+    let mut matter_cell = Box::<Matter<'_>>::new_uninit();
+    let matter = matter_cell.init_with(Matter::init(
+        &TEST_DEV_DET,
+        TEST_DEV_COMM,
+        &TEST_DEV_ATT,
+        MATTER_PORT,
+    ));
+    let crypto = default_crypto(rand::rng(), DAC_PRIVKEY);
+
+    drive(
+        &[&clks[0], &clks[1]],
+        &[&pend[0], &pend[1]],
+        tasks,
+        async {
+            form_network(&ots, &ds).await;
+            let server = async {
+                common::srp::serve(ots[0], &reg).await;
+            };
+            let node = async {
+                matter
+                    .open_basic_comm_window(300, &crypto, &NoNotify)
+                    .unwrap();
+                let netif = ThreadNetif::new(ots[1]);
+                let mut mdns = SrpMdns::new(ots[1]);
+                let stack = MatterNetStack::new(ots[1]);
+                let addrs = netif.addresses();
+                let run = mdns.run(
+                    matter,
+                    &crypto,
+                    &stack,
+                    &mac,
+                    Ipv4Addr::UNSPECIFIED,
+                    &addrs,
+                    1,
+                );
+                let check = async {
+                    loop {
+                        if reg.borrow().instance("").is_some() {
+                            break;
+                        }
+                        ots[1].wait_changed().await;
+                    }
+                    let r = reg.borrow();
+                    assert!(r.conflicts >= 1);
+                    assert!(
+                        r.host
+                            .to_ascii_uppercase()
+                            .starts_with(&format!("{plain}-1.")),
+                        "host {}",
+                        r.host
+                    );
+                };
+                match select(run, check).await {
+                    Either::First(r) => panic!("mdns run ended: {r:?}"),
+                    Either::Second(()) => {}
+                }
+            };
+            match select(server, node).await {
+                Either::First(()) => unreachable!(),
+                Either::Second(()) => {}
+            }
+        },
+        Duration::from_secs(1800),
+    );
+}

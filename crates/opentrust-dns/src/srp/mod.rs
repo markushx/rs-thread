@@ -566,6 +566,11 @@ impl<const S: usize> SrpClient<S> {
         self.server
     }
 
+    /// The host name (empty until one is set, OT `otSrpClientGetHostInfo`).
+    pub fn host_name(&self) -> &str {
+        &self.host.name
+    }
+
     /// Host state.
     pub const fn host_state(&self) -> ItemState {
         self.host.state
