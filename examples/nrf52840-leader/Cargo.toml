@@ -17,6 +17,9 @@ radio-embassy = ["opentrust-nrf/radio-embassy", "cortex-m/critical-section-singl
 radio-nrf802154 = ["opentrust-nrf/radio-nrf802154"]
 # `node` binary: attach as a child and never upgrade to a router (default: router eligible).
 child-only = []
+# `node` binary: form the network as its Leader (it pings the realm-local all-routers
+# address instead of the Leader ALOC).
+leader = []
 
 [dependencies]
 opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }

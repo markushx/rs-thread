@@ -8,7 +8,7 @@
 //! of the shared mesh-local prefix, reachable whichever device leads).
 //!
 //! Features: `child-only` keeps the node a child (router upgrade disabled),
-//! otherwise it is router eligible.
+//! otherwise it is router eligible; `leader` forms the network as its Leader.
 
 #![no_std]
 #![no_main]
@@ -37,8 +37,13 @@ type Res = Resources<NoopRawMutex, EmbassyClock, RamSettings<4096>, SoftCrypto, 
 static RES: StaticCell<Res> = StaticCell::new();
 
 /// Address pinged periodically: the Leader ALOC (`<prefix>:0:ff:fe00:fc00`).
-/// Edit to a peer ML-EID or RLOC address for other scenarios.
+/// Edit to a peer ML-EID or RLOC address for other scenarios. With the `leader`
+/// feature the node leads itself and pings the realm-local all-routers
+/// multicast address (`ff03::2`); every router answers.
+#[cfg(not(feature = "leader"))]
 const PEER: Ipv6Addr = Ipv6Addr::new(0xfdde, 0xad00, 0xbeef, 0, 0, 0xff, 0xfe00, 0xfc00);
+#[cfg(feature = "leader")]
+const PEER: Ipv6Addr = Ipv6Addr::new(0xff03, 0, 0, 0, 0, 0, 0, 2);
 const PING_PERIOD_SECS: u64 = 5;
 const STATUS_PERIOD_SECS: u64 = 10;
 const PING_PAYLOAD: usize = 32;
@@ -73,7 +78,10 @@ async fn main(spawner: Spawner) {
             let ds = Dataset::from_tlvs(&nrf52840_leader::DATASET_TLVS).unwrap();
             i.set_active_dataset(&ds, now).unwrap();
             i.ip6_set_enabled(true);
+            #[cfg(not(feature = "leader"))]
             i.thread_start(now).unwrap();
+            #[cfg(feature = "leader")]
+            i.become_leader(now).unwrap();
         });
         let started = embassy_time::Instant::now();
         let mut last_role = None;
