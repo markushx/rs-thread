@@ -583,6 +583,21 @@ impl<'a> FrameMut<'a> {
         }
     }
 
+    /// Set the key index of a frame with key ID mode 1 (an implicit-key or
+    /// source-addressed key identifier is left alone).
+    /// [`Error::InvalidState`] if the frame has no mode 1 key identifier.
+    pub fn set_key_index(&mut self, index: u8) -> Result<()> {
+        let f = Frame::parse(self.psdu)?;
+        match f.security {
+            Some(s) if matches!(s.key, KeyIdentifier::Index(_)) => {
+                let at = f.fcf.addressing_len() + 1 + 4 * s.frame_counter.is_some() as usize;
+                self.psdu[at] = index;
+                Ok(())
+            }
+            _ => Err(Error::InvalidState),
+        }
+    }
+
     /// Update phase and period of an existing CSL IE in place (keeps the
     /// rendezvous time, if any). [`Error::NotFound`] if there is no CSL IE.
     pub fn set_csl_ie(&mut self, phase: u16, period: u16) -> Result<()> {

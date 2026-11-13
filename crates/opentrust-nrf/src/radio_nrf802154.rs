@@ -100,21 +100,65 @@ pub struct TxErrorStats {
     pub schedule: u32,
     /// The frame went out but no ACK came back.
     pub no_ack: u32,
+    /// The driver had no receive buffer for the ACK.
+    pub no_mem: u32,
+    /// The procedure was aborted by another operation.
+    pub aborted: u32,
+    /// The ACK was not the expected one.
+    pub invalid_ack: u32,
     /// Anything else.
     pub other: u32,
 }
 
-static TX_ERR: [core::sync::atomic::AtomicU32; 6] =
-    [const { core::sync::atomic::AtomicU32::new(0) }; 6];
+const TX_ERR_KINDS: usize = 9;
+static TX_ERR: [core::sync::atomic::AtomicU32; TX_ERR_KINDS] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; TX_ERR_KINDS];
+
+/// The cause of the last failure counted as "other": the driver's code for an
+/// unknown transmit error, `0x100 + n` for a non-transmit error variant.
+static LAST_OTHER: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// See [`TxErrorStats::other`]: the cause of the last such failure.
+pub fn last_other_tx_error() -> u32 {
+    LAST_OTHER.load(core::sync::atomic::Ordering::Relaxed)
+}
 
 fn count_tx_error(e: &Error) {
+    if let Error::Transmit(TxError::Unknown(c)) = e {
+        LAST_OTHER.store(*c as u32, core::sync::atomic::Ordering::Relaxed);
+    } else if !matches!(
+        e,
+        Error::ScheduleTransmit
+            | Error::Transmit(
+                TxError::BusyChannel
+                    | TxError::TimeslotEnded
+                    | TxError::TimeslotDenied
+                    | TxError::NoAck
+                    | TxError::NoMem
+                    | TxError::Aborted
+                    | TxError::InvalidAck
+            )
+    ) {
+        let n = match e {
+            Error::TransmitDataTooLarge => 1,
+            Error::ReceiveBufTooSmall => 2,
+            Error::EnterReceive => 3,
+            Error::EnterSleep => 4,
+            Error::Receive => 5,
+            _ => 6,
+        };
+        LAST_OTHER.store(0x100 + n, core::sync::atomic::Ordering::Relaxed);
+    }
     let i = match e {
         Error::Transmit(TxError::BusyChannel) => 0,
         Error::Transmit(TxError::TimeslotEnded) => 1,
         Error::Transmit(TxError::TimeslotDenied) => 2,
         Error::ScheduleTransmit => 3,
         Error::Transmit(TxError::NoAck) => 4,
-        _ => 5,
+        Error::Transmit(TxError::NoMem) => 5,
+        Error::Transmit(TxError::Aborted) => 6,
+        Error::Transmit(TxError::InvalidAck) => 7,
+        _ => 8,
     };
     TX_ERR[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
@@ -128,7 +172,10 @@ pub fn tx_error_stats() -> TxErrorStats {
         timeslot_denied: g(2),
         schedule: g(3),
         no_ack: g(4),
-        other: g(5),
+        no_mem: g(5),
+        aborted: g(6),
+        invalid_ack: g(7),
+        other: g(8),
     }
 }
 

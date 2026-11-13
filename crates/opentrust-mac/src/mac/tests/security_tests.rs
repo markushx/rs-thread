@@ -258,3 +258,64 @@ fn software_secured_frames_raise_radio_counter_for_hw_acks() {
     m.on_tx_done(TxOutcome::Sent, t(2));
     assert!(key_actions(&mut m, 3).is_empty());
 }
+
+#[test]
+fn hw_security_frame_key_index_follows_a_key_sequence_switch() {
+    // A frame queued before a key sequence switch carries the old key index;
+    // the radio finds its key by the index in the frame, so the MAC brings it
+    // up to date for the attempt (otherwise the radio rejects the frame).
+    let mut m = sec_mac(hw_caps(), OWN_EXT);
+    key_actions(&mut m, 0);
+    let f = secured_2015(0, PEER_EXT, OWN_EXT, false, b"abc");
+    assert_eq!(
+        Frame::parse(&f).unwrap().security_header().unwrap().key,
+        KeyIdentifier::Index(1)
+    );
+    m.transmit(TxHandle(1), &f).unwrap();
+    m.security_mut()
+        .set_key_sequence(4, KeySeqUpdate::FORCE, Instant::ZERO)
+        .unwrap();
+    let acts = actions(&mut m, t(1));
+    let expected = m.security().mac_keys();
+    assert!(acts.contains(&RadioAction::SetMacKeys(Some(expected))));
+    let tx = tx_of(&acts).unwrap();
+    let n = tx.psdu.len() - 2;
+    let sent = Frame::parse(&tx.psdu[..n]).unwrap();
+    assert_eq!(
+        sent.security_header().unwrap().key,
+        KeyIdentifier::Index(expected.key_id)
+    );
+    assert_eq!(expected.key_id, 5);
+}
+
+#[test]
+fn hw_security_radio_gets_mode2_frames_secured_in_software() {
+    // The radio knows the key ID mode 1 keys only (it rejects other key
+    // identifiers): a key ID mode 2 frame (MLE Announce) is secured by the MAC.
+    let mut m = sec_mac(hw_caps(), OWN_EXT);
+    key_actions(&mut m, 0);
+    let mut buf = [0u8; 127];
+    let n = FrameBuilder::new(&mut buf)
+        .frame_type(FrameType::Data)
+        .version(FrameVersion::V2015)
+        .sequence(0)
+        .pan_id(PAN)
+        .dst(Address::Extended(PEER_EXT))
+        .src(Address::Extended(OWN_EXT))
+        .security(SecurityHeader::new(
+            SecurityLevel::EncMic32,
+            0,
+            KeyIdentifier::Source4 {
+                source: [0xff; 4],
+                index: 0xff,
+            },
+        ))
+        .payload(b"announce")
+        .build()
+        .unwrap();
+    m.transmit(TxHandle(1), &buf[..n]).unwrap();
+    let tx = tx_of(&actions(&mut m, t(1))).unwrap();
+    assert!(tx.info.security_processed);
+    // Encrypted in place: the payload is no longer in clear.
+    assert!(!tx.psdu.windows(8).any(|w| w == b"announce"));
+}

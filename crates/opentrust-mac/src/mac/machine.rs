@@ -28,8 +28,8 @@ use super::sub_mac::{
 use super::types::*;
 use crate::frame::{
     Address, Beacon, CslIe, FCS_LEN, Frame, FrameBuilder, FrameMut, FrameType, FrameVersion,
-    KeyIdentifier, MacCommand, SecurityHeader, THREAD_IE_ENH_ACK_PROBING, ThreadBeaconPayload,
-    VendorIe,
+    KeyIdMode, KeyIdentifier, MacCommand, SecurityHeader, THREAD_IE_ENH_ACK_PROBING,
+    ThreadBeaconPayload, VendorIe,
 };
 use crate::frame_security::{FrameSecurity, RxSecurityInfo};
 
@@ -1611,10 +1611,20 @@ impl<
         let soft_csma = self.needs.contains(SoftMacNeeds::CSMA);
         let hw_tx_ack = self.caps.hw_tx_ack();
         let abortable = hw_tx_ack && !self.caps.hw_ack_timeout() && !self.caps.hw_retransmit();
+        // A radio that secures the frame itself finds the key by the index in
+        // the frame: queued frames were built before a key sequence switch,
+        // so the index is brought up to date for every attempt (OpenThread
+        // `SubMac::ProcessTransmitSecurity` does the same).
+        let radio_key_index = self.hw_sec.keys.map(|k| k.key_id);
         let tx = self.tx.as_mut()?;
         tx.state = TxState::InFlight;
         self.in_flight = Some(InFlight::Frame);
         self.counters.tx_attempts += 1;
+        if let Some(index) = radio_key_index {
+            if !tx.security_processed {
+                let _ = FrameMut::new(&mut tx.frame).and_then(|mut m| m.set_key_index(index));
+            }
+        }
         let csma = tx.max_csma_backoffs > 0 || tx.tx_at_us.is_some();
         let psdu = Self::with_fcs(&tx.frame);
         let wait_ack = tx.ack_request && hw_tx_ack;
@@ -1944,9 +1954,14 @@ impl<
         frame: &mut FrameBuf,
         assign_seq: bool,
     ) -> core::result::Result<bool, TxError> {
-        let (has_seq, secured) = {
+        let (has_seq, secured, key_mode1) = {
             let f = Frame::parse(frame).map_err(|_| TxError::Abort)?;
-            (f.sequence().is_some(), f.security_enabled())
+            (
+                f.sequence().is_some(),
+                f.security_enabled(),
+                f.security_header()
+                    .is_some_and(|s| s.key_id_mode() == KeyIdMode::Index),
+            )
         };
         if has_seq && assign_seq {
             let seq = self.next_dsn();
@@ -1957,7 +1972,10 @@ impl<
         if !secured {
             return Ok(true);
         }
-        if self.caps.hw_tx_security() {
+        // A radio that secures frames itself knows the key ID mode 1 keys
+        // only; frames with another key ID mode (mode 2: MLE messages before
+        // a link exists) are secured here, as OpenThread's `Mac` does.
+        if self.caps.hw_tx_security() && key_mode1 {
             return Ok(false);
         }
         if self.csl.enabled() && Self::has_csl_ie(frame) {

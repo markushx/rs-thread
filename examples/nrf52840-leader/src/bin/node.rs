@@ -162,8 +162,17 @@ async fn main(spawner: Spawner) {
                     {
                         let e = opentrust_nrf::tx_error_stats();
                         info!(
-                            "  tx errors: busy {} slot_ended {} slot_denied {} schedule {} no_ack {} other {}",
-                            e.busy_channel, e.timeslot_ended, e.timeslot_denied, e.schedule, e.no_ack, e.other
+                            "  tx errors: busy {} slot_ended {} slot_denied {} schedule {} no_ack {} no_mem {} aborted {} invalid_ack {} other {} (last {:#x})",
+                            e.busy_channel,
+                            e.timeslot_ended,
+                            e.timeslot_denied,
+                            e.schedule,
+                            e.no_ack,
+                            e.no_mem,
+                            e.aborted,
+                            e.invalid_ack,
+                            e.other,
+                            opentrust_nrf::last_other_tx_error()
                         );
                     }
                     let c = i.mac_counters();
