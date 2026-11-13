@@ -18,6 +18,9 @@
 #![no_std]
 #![no_main]
 
+#[cfg(feature = "ble")]
+mod ble;
+
 use core::mem::size_of_val;
 
 use defmt::info;
@@ -33,6 +36,10 @@ use opentrust_core::settings::SettingsKey;
 use opentrust_embassy::{OpenTrust, Resources};
 use opentrust_flash::{FlashWriter, Shared};
 use opentrust_instance::{ExtAddress, Instance};
+#[cfg(feature = "ble")]
+use opentrust_matter::ble::TroubleBtpGattContext;
+#[cfg(feature = "ble")]
+use opentrust_matter::driver::ThreadCoexRunner;
 use opentrust_matter::driver::ThreadRunner;
 use opentrust_matter::flash_kv::FlashKv;
 use opentrust_matter::persist::{THREAD_SETTINGS_KEY, ThreadPersist};
@@ -63,7 +70,7 @@ const HEAP_SIZE: usize = 4096;
 
 /// rs-matter's bump area (transaction and crypto scratch); see
 /// docs/memory-budget.md.
-const BUMP: usize = 28 * 1024;
+const BUMP: usize = if cfg!(feature = "ble") { 40 * 1024 } else { 28 * 1024 };
 
 type Res = Resources<NoopRawMutex, EmbassyClock, RamSettings<4096>, SoftCrypto, NrfRng<'static>>;
 static RES: StaticCell<Res> = StaticCell::new();
@@ -82,6 +89,13 @@ const FLASH_ENTRY_BUF: usize = 2048 + 32;
 type Kv = SharedKvBlobStore<'static, FlashKv<'static, 4096, 32>, 2048>;
 static KV_BUF: StaticCell<Mutex<RefCell<[u8; 2048]>>> = StaticCell::new();
 static KV: StaticCell<Kv> = StaticCell::new();
+
+/// BLE host resources of the BTP GATT peripheral.
+#[cfg(feature = "ble")]
+static BTP_CTX: StaticCell<TroubleBtpGattContext> = StaticCell::new();
+/// Memory of the SoftDevice Controller.
+#[cfg(feature = "ble")]
+static SDC_MEM: StaticCell<nrf_sdc::Mem<{ ble::SDC_MEM }>> = StaticCell::new();
 
 static LOGIC_CELL: StaticCell<TestOnOffDeviceLogic> = StaticCell::new();
 
@@ -188,6 +202,8 @@ async fn main(spawner: Spawner) {
         mut radio,
         mut flash,
         button1,
+        #[cfg(feature = "ble")]
+        ble,
     } = nrf52840_leader::init(&spawner);
     nrf52840_leader::flash::check();
     if nrf52840_leader::flash::factory_reset_requested(&button1).await {
@@ -261,11 +277,13 @@ async fn main(spawner: Spawner) {
         "manual pairing code {}",
         TEST_DEV_COMM.compute_pretty_pairing_code().as_str()
     );
-    // Logs `SetupQRCode: [MT:...]` (IP discovery only, no BLE).
-    if let Err(e) = stack
-        .matter()
-        .print_standard_qr_text(rs_matter::pairing::DiscoveryCapabilities::IP)
-    {
+    // Logs `SetupQRCode: [MT:...]`.
+    #[cfg(feature = "ble")]
+    let discovery = rs_matter::pairing::DiscoveryCapabilities::BLE
+        | rs_matter::pairing::DiscoveryCapabilities::IP;
+    #[cfg(not(feature = "ble"))]
+    let discovery = rs_matter::pairing::DiscoveryCapabilities::IP;
+    if let Err(e) = stack.matter().print_standard_qr_text(discovery) {
         defmt::warn!("QR code text failed: {}", e.code());
     }
 
@@ -292,7 +310,29 @@ async fn main(spawner: Spawner) {
         "thread settings: {} values restored (blob key {:#06x}), dataset {} network info {}",
         restored, THREAD_SETTINGS_KEY, have_dataset, have_network
     );
+    // An unprovisioned light (no stored network, no build-time dataset) waits
+    // for its Thread network over BLE; the commissioner hands it the dataset
+    // (`ThreadNetCtl`).
+    let ble_commissioning = cfg!(feature = "ble") && !have_dataset && BUILD_DATASET.is_empty();
     let runner = ThreadRunner::new(ot, radio, EmbassyAlarm, kv).with_persist(persist);
+    #[cfg(feature = "ble")]
+    let fut = {
+        let gatt = ble::SdcGatt::new(
+            ble.mpsl,
+            ble.sdc,
+            SDC_MEM.init(nrf_sdc::Mem::new()),
+            BTP_CTX.uninit().init_with(TroubleBtpGattContext::init()),
+            rand,
+        );
+        stack.run_thread(
+            ThreadCoexRunner::new(runner, gatt),
+            &crypto,
+            data_model(stack.matter(), rand, &on_off_handler),
+            kv,
+            (),
+        )
+    };
+    #[cfg(not(feature = "ble"))]
     let fut = stack.run_thread_oper(
         runner,
         &crypto,
@@ -312,31 +352,35 @@ async fn main(spawner: Spawner) {
     paint_stack();
 
     let app = async {
-        ot.with(|i, now| {
-            // A stored dataset (flash) wins over the build-time one; both win
-            // over forming a standalone network.
-            if !have_dataset {
-                if BUILD_DATASET.is_empty() {
-                    let mut ds = i.create_dataset(15).unwrap();
-                    ds.set_pan_id(0x1234).unwrap();
-                    i.set_active_dataset(&ds, now).unwrap();
-                } else {
-                    let ds = opentrust_instance::Dataset::from_tlvs(BUILD_DATASET)
-                        .expect("OPENTRUST_DATASET is not a complete Active Dataset");
-                    i.set_active_dataset(&ds, now).unwrap();
+        if ble_commissioning {
+            info!("no Thread network: waiting for BLE commissioning");
+        } else {
+            ot.with(|i, now| {
+                // A stored dataset (flash) wins over the build-time one; both win
+                // over forming a standalone network.
+                if !have_dataset {
+                    if BUILD_DATASET.is_empty() {
+                        let mut ds = i.create_dataset(15).unwrap();
+                        ds.set_pan_id(0x1234).unwrap();
+                        i.set_active_dataset(&ds, now).unwrap();
+                    } else {
+                        let ds = opentrust_instance::Dataset::from_tlvs(BUILD_DATASET)
+                            .expect("OPENTRUST_DATASET is not a complete Active Dataset");
+                        i.set_active_dataset(&ds, now).unwrap();
+                    }
                 }
-            }
-            i.ip6_set_enabled(true);
-            // With stored network info, or an external dataset, the node
-            // restores its role or attaches (and forms a partition itself
-            // only when no router answers, as OpenThread does); a standalone
-            // light forms its network at once.
-            if have_network || !BUILD_DATASET.is_empty() {
-                i.thread_start(now).unwrap();
-            } else {
-                i.become_leader(now).unwrap();
-            }
-        });
+                i.ip6_set_enabled(true);
+                // With stored network info, or an external dataset, the node
+                // restores its role or attaches (and forms a partition itself
+                // only when no router answers, as OpenThread does); a standalone
+                // light forms its network at once.
+                if have_network || !BUILD_DATASET.is_empty() {
+                    i.thread_start(now).unwrap();
+                } else {
+                    i.become_leader(now).unwrap();
+                }
+            });
+        }
         let mut last_role = None;
         let mut last_on = None;
         loop {

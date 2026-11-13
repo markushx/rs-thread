@@ -274,6 +274,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "bt-hci"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
+dependencies = [
+ "bt-hci-transport",
+ "btuuid",
+ "defmt 1.2.0",
+ "embassy-sync",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "futures-intrusive",
+ "heapless",
+]
+
+[[package]]
+name = "bt-hci-transport"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ffb9819c69cf88877f5eebc8c5ade0ab50f2bf9475bbb3eb714d66c55b0cb64"
+dependencies = [
+ "defmt 1.2.0",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+]
+
+[[package]]
+name = "btuuid"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f48f1e9b0aad0a4f05d17bdeae0fa20ff798e272a03a6940ca27ad9c5a6ae7"
+dependencies = [
+ "defmt 0.3.101",
+ "uuid",
+]
+
+[[package]]
 name = "build-time"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -504,6 +541,15 @@ name = "convert_case"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "convert_case"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baaaa0ecca5b51987b9423ccdc971514dd8b0bb7b4060b983d3664dad3f1f89f"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -755,6 +801,15 @@ dependencies = [
 
 [[package]]
 name = "defmt"
+version = "0.3.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4deef977660e373c458df605a913d4ab121db0ccd18d1ad6976dff7d37cddb53"
+dependencies = [
+ "defmt 1.2.0",
+]
+
+[[package]]
+name = "defmt"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4a0795ac740cb54d7b3775c9c17345f6aaecf884c01733b39d6017738e0e3e1"
@@ -791,7 +846,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "214e79c85b13a733762150567c988c580cbf1ecdc07805a0478fe8ca2c8380c7"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
 ]
 
 [[package]]
@@ -934,7 +989,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0641612053b2f34fc250bb63f6630ae75de46e02ade7f457268447081d709ce"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "embassy-futures",
  "embassy-hal-internal 0.4.0",
  "embassy-sync",
@@ -956,7 +1011,7 @@ dependencies = [
  "cordyceps",
  "cortex-m",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "document-features",
  "embassy-executor-macros",
  "embassy-executor-timer-queue",
@@ -1003,7 +1058,7 @@ checksum = "568659fc53866d3d85c60fa33723fb751aa69e71507634fc2c19e7649432fb75"
 dependencies = [
  "cortex-m",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "num-traits",
 ]
 
@@ -1018,7 +1073,7 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "document-features",
  "embassy-embedded-hal",
  "embassy-futures",
@@ -1050,7 +1105,7 @@ checksum = "7bbd85cf5a5ae56bdf26f618364af642d1d0a4e245cdd75cd9aabda382f65a81"
 dependencies = [
  "cfg-if",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "embedded-io-async 0.7.0",
  "futures-core",
  "futures-sink",
@@ -1065,7 +1120,7 @@ checksum = "592b0c143ec626e821d4d90da51a2bd91d559d6c442b7c74a47d368c9e23d97a"
 dependencies = [
  "cfg-if",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "document-features",
  "embassy-time-driver",
  "embedded-hal 0.2.7",
@@ -1099,7 +1154,7 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa675c5f4349b6aa0fcffc4bf9b241f18cd11b97c1f8323273fb9a5449937fbd"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "embedded-io-async 0.6.1",
  "embedded-io-async 0.7.0",
 ]
@@ -1111,7 +1166,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6efd0c0e0b21bcf91b475b8fa47347c1df32c9a99728ae1e1b0e6625862dfd1a"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "embassy-sync",
  "embassy-time",
  "embassy-usb-driver",
@@ -1166,6 +1221,9 @@ name = "embedded-io"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9eb1aa714776b75c7e67e1da744b81a129b3ff919c8712b5e1b32252c1f07cc7"
+dependencies = [
+ "defmt 1.2.0",
+]
 
 [[package]]
 name = "embedded-io-async"
@@ -1182,6 +1240,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2564b9f813c544241430e147d8bc454815ef9ac998878d30cc3055449f7fd4c0"
 dependencies = [
+ "defmt 1.2.0",
  "embedded-io 0.7.1",
 ]
 
@@ -1413,10 +1472,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
+name = "futures"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a31d2a3fbaaeb2af2368bbdd904aa8e812d3c04a1ee10d3171f52d556e5d0a3"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-channel"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
+
+[[package]]
+name = "futures-intrusive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d930c203dd0b6ff06e0201a4a2fe9149b43c684fd4420555b26d21b1a02956f"
+dependencies = [
+ "futures-core",
+ "lock_api",
+]
+
+[[package]]
+name = "futures-io"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed"
 
 [[package]]
 name = "futures-sink"
@@ -1437,6 +1536,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
  "futures-core",
+ "futures-sink",
  "futures-task",
  "pin-project-lite",
  "slab",
@@ -1546,7 +1646,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25ba4bd83f9415b58b4ed8dc5714c76e626a105be4646c02630ad730ad3b5aa4"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "hash32",
  "stable_deref_trait",
 ]
@@ -1907,6 +2007,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
+name = "lock_api"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+dependencies = [
+ "scopeguard",
+]
+
+[[package]]
 name = "log"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1945,7 +2054,7 @@ dependencies = [
  "cc",
  "cmake",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "embuild",
  "enumset",
  "env_logger",
@@ -2114,7 +2223,7 @@ source = "git+https://github.com/sysgrok/nrf-802154?rev=012c01c563093169c36871b8
 dependencies = [
  "cortex-m",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "embassy-nrf",
  "embassy-sync",
  "nrf-802154-sys",
@@ -2141,7 +2250,7 @@ dependencies = [
  "cfg-if",
  "cortex-m",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "embassy-nrf",
  "embassy-sync",
  "embedded-io 0.7.1",
@@ -2171,12 +2280,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "nrf-sdc"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5916d1521376d6876d0b0e3353e9affa03ce55daa9346188a5815db1c2eb84d"
+dependencies = [
+ "bt-hci",
+ "bt-hci-transport",
+ "critical-section",
+ "defmt 1.2.0",
+ "embassy-nrf",
+ "embassy-sync",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "nrf-mpsl",
+ "nrf-sdc-sys",
+ "rand_core 0.9.5",
+]
+
+[[package]]
+name = "nrf-sdc-sys"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "974a5010cc3a61b43e82ee6f9a2bfd80d894c8720dad08b87376f8a3048c1ecf"
+dependencies = [
+ "bindgen",
+ "doxygen-rs",
+ "nrf-mpsl-sys",
+ "winnow 0.7.15",
+]
+
+[[package]]
 name = "nrf52840-leader"
 version = "0.1.0"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
- "defmt",
+ "defmt 1.2.0",
  "defmt-rtt",
  "embassy-executor",
  "embassy-futures",
@@ -2184,6 +2324,8 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embedded-storage-async",
+ "nrf-mpsl",
+ "nrf-sdc",
  "opentrust-core",
  "opentrust-embassy",
  "opentrust-flash",
@@ -2200,7 +2342,7 @@ version = "0.1.0"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
- "defmt",
+ "defmt 1.2.0",
  "defmt-rtt",
  "embassy-executor",
  "embassy-futures",
@@ -2208,6 +2350,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embedded-alloc",
+ "nrf-sdc",
  "nrf52840-leader",
  "opentrust-core",
  "opentrust-embassy",
@@ -2218,6 +2361,7 @@ dependencies = [
  "opentrust-platform",
  "panic-probe",
  "rand_core 0.10.1",
+ "rand_core 0.9.5",
  "rs-matter",
  "static_cell",
 ]
@@ -2363,7 +2507,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "opentrust-coap"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "opentrust-core",
  "opentrust-net",
  "rand_core 0.10.1",
@@ -2375,7 +2519,7 @@ version = "0.1.0"
 dependencies = [
  "aes",
  "cmac",
- "defmt",
+ "defmt 1.2.0",
  "hmac",
  "p256",
  "rand_core 0.10.1",
@@ -2388,7 +2532,7 @@ dependencies = [
 name = "opentrust-dns"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "heapless",
  "opentrust-core",
  "rand_core 0.10.1",
@@ -2399,7 +2543,7 @@ dependencies = [
 name = "opentrust-dtls"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "opentrust-coap",
  "opentrust-core",
  "rand_core 0.10.1",
@@ -2411,7 +2555,7 @@ dependencies = [
 name = "opentrust-embassy"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "embassy-futures",
  "embassy-sync",
  "heapless",
@@ -2431,7 +2575,7 @@ name = "opentrust-flash"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "embedded-storage-async",
  "heapless",
  "opentrust-core",
@@ -2442,7 +2586,7 @@ dependencies = [
 name = "opentrust-instance"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "heapless",
  "opentrust-coap",
  "opentrust-core",
@@ -2461,7 +2605,7 @@ dependencies = [
 name = "opentrust-lowpan"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "opentrust-core",
  "opentrust-mac",
 ]
@@ -2470,7 +2614,7 @@ dependencies = [
 name = "opentrust-mac"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "embassy-futures",
  "heapless",
  "opentrust-core",
@@ -2482,9 +2626,11 @@ dependencies = [
 name = "opentrust-matter"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "bt-hci",
+ "defmt 1.2.0",
  "embassy-futures",
  "embassy-sync",
+ "embedded-io 0.7.1",
  "heapless",
  "opentrust-core",
  "opentrust-dns",
@@ -2495,13 +2641,15 @@ dependencies = [
  "opentrust-platform",
  "rand_core 0.10.1",
  "rs-matter",
+ "static_cell",
+ "trouble-host",
 ]
 
 [[package]]
 name = "opentrust-mesh"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "heapless",
  "opentrust-coap",
  "opentrust-core",
@@ -2516,7 +2664,7 @@ dependencies = [
 name = "opentrust-meshcop"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "heapless",
  "opentrust-coap",
  "opentrust-core",
@@ -2533,7 +2681,7 @@ dependencies = [
 name = "opentrust-mle"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "heapless",
  "opentrust-coap",
  "opentrust-core",
@@ -2546,7 +2694,7 @@ dependencies = [
 name = "opentrust-net"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "opentrust-core",
  "opentrust-lowpan",
  "rand_core 0.10.1",
@@ -2556,7 +2704,7 @@ dependencies = [
 name = "opentrust-nrf"
 version = "0.1.0"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "embassy-nrf",
  "embassy-time",
  "embedded-storage",
@@ -2574,7 +2722,7 @@ name = "opentrust-platform"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.13.2",
- "defmt",
+ "defmt 1.2.0",
  "heapless",
  "opentrust-core",
  "rand_core 0.10.1",
@@ -2606,7 +2754,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd402d00b0fb94c5aee000029204a46884b1262e0c443f166d86d2c0747e1a1a"
 dependencies = [
  "cortex-m",
- "defmt",
+ "defmt 1.2.0",
 ]
 
 [[package]]
@@ -2905,7 +3053,7 @@ version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
  "bitflags 2.13.2",
- "defmt",
+ "defmt 1.2.0",
  "rs-matter-bdx",
  "rs-matter-cert",
  "rs-matter-crypto",
@@ -2932,7 +3080,7 @@ name = "rs-matter-bdx"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "num",
  "num-derive",
  "num-traits",
@@ -2945,7 +3093,7 @@ name = "rs-matter-cert"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "der",
  "num",
  "num-derive",
@@ -2961,7 +3109,7 @@ name = "rs-matter-codegen"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "convert_case",
+ "convert_case 0.6.0",
  "miette",
  "nom",
  "nom-greedyerror",
@@ -2984,7 +3132,7 @@ dependencies = [
  "ccm",
  "cipher",
  "crypto-bigint",
- "defmt",
+ "defmt 1.2.0",
  "der",
  "digest",
  "ecdsa",
@@ -3012,7 +3160,7 @@ source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f
 dependencies = [
  "async-channel",
  "bitflags 2.13.2",
- "defmt",
+ "defmt 1.2.0",
  "either",
  "heapless",
  "nix 0.31.3",
@@ -3039,7 +3187,7 @@ version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
  "bitflags 2.13.2",
- "defmt",
+ "defmt 1.2.0",
  "rs-matter-codegen",
  "rs-matter-dm-core",
  "rs-matter-im-core",
@@ -3054,7 +3202,7 @@ version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
  "cfg-if",
- "defmt",
+ "defmt 1.2.0",
  "either",
  "rand_core 0.10.1",
  "rs-matter-crypto",
@@ -3069,7 +3217,7 @@ name = "rs-matter-im"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "rs-matter-crypto",
  "rs-matter-dm-core",
  "rs-matter-im-core",
@@ -3085,7 +3233,7 @@ name = "rs-matter-im-core"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "num",
  "num-derive",
  "num-traits",
@@ -3110,7 +3258,7 @@ name = "rs-matter-node"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "rand_core 0.10.1",
  "rs-matter-cert",
  "rs-matter-crypto",
@@ -3131,7 +3279,7 @@ source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
- "defmt",
+ "defmt 1.2.0",
  "num",
  "num-derive",
  "num-traits",
@@ -3149,7 +3297,7 @@ name = "rs-matter-onboard"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "rs-matter-cert",
  "rs-matter-crypto",
  "rs-matter-dm-clusters",
@@ -3166,7 +3314,7 @@ name = "rs-matter-pairing"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "qrcodegen-no-heap",
  "rs-matter-crypto",
  "rs-matter-tlv",
@@ -3179,7 +3327,7 @@ name = "rs-matter-respond"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "rs-matter-bdx",
  "rs-matter-crypto",
  "rs-matter-dm-core",
@@ -3194,7 +3342,7 @@ name = "rs-matter-sc"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "num",
  "rand_core 0.10.1",
  "rs-matter-cert",
@@ -3214,7 +3362,7 @@ version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
  "cfg-if",
- "defmt",
+ "defmt 1.2.0",
  "rs-matter-crypto",
  "rs-matter-dm",
  "rs-matter-dm-core",
@@ -3234,7 +3382,7 @@ name = "rs-matter-tlv"
 version = "0.4.1"
 source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
- "defmt",
+ "defmt 1.2.0",
  "num",
  "num-derive",
  "num-traits",
@@ -3251,7 +3399,7 @@ dependencies = [
  "async-channel",
  "bitflags 2.13.2",
  "cfg-if",
- "defmt",
+ "defmt 1.2.0",
  "domain",
  "either",
  "nix 0.31.3",
@@ -3275,7 +3423,7 @@ source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f
 dependencies = [
  "bitflags 2.13.2",
  "critical-section",
- "defmt",
+ "defmt 1.2.0",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
@@ -3919,6 +4067,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "trouble-host"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19a566cc37ceaff5cc2a6ff8cc02debd1ee6b95d59ced8830d005da8b080cbe9"
+dependencies = [
+ "bt-hci",
+ "defmt 1.2.0",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-io 0.7.1",
+ "futures",
+ "heapless",
+ "static_cell",
+ "trouble-host-macros",
+ "zerocopy",
+]
+
+[[package]]
+name = "trouble-host-macros"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbabd47f6c65856f670fd2a1857fb9d40f978bfc81aed431f8689b8a4506b2fe"
+dependencies = [
+ "convert_case 0.8.0",
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "uuid",
+]
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3974,6 +4155,16 @@ name = "utf_types"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
+
+[[package]]
+name = "uuid"
+version = "1.29.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "valuable"

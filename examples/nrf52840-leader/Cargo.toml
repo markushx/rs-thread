@@ -21,6 +21,10 @@ child-only = []
 # address instead of the Leader ALOC).
 leader = []
 
+# BLE: the Board also carries the SoftDevice Controller peripherals and the
+# MPSL handle (see `Board::ble`). Needs `radio-nrf802154`.
+ble = ["radio-nrf802154", "dep:nrf-sdc", "dep:nrf-mpsl"]
+
 # Test aid: behave as if Button 1 were held at boot (factory reset on every start).
 test-factory-reset = []
 
@@ -46,6 +50,8 @@ defmt = "1"
 defmt-rtt = "1"
 panic-probe = { version = "1", features = ["print-defmt"] }
 static_cell = "2"
+nrf-sdc = { version = "0.4", default-features = false, features = ["nrf52840", "peripheral"], optional = true }
+nrf-mpsl = { version = "0.4", default-features = false, features = ["nrf52840"], optional = true }
 
 [profile.release]
 opt-level = "s"

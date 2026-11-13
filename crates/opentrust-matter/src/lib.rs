@@ -61,6 +61,9 @@
 
 mod fmt;
 
+#[cfg(feature = "ble-trouble")]
+pub mod ble;
+
 pub mod driver;
 pub mod error;
 pub mod flash_kv;

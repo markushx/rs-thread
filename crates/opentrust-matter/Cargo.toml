@@ -18,8 +18,10 @@ default = ["ftd"]
 # Router-capable node (REED role, route table); without it the node is an
 # end device.
 ftd = ["opentrust-embassy/ftd"]
-defmt = ["dep:defmt", "opentrust-flash/defmt", "opentrust-core/defmt", "opentrust-embassy/defmt", "rs-matter/defmt"]
-log = ["dep:log", "opentrust-core/log", "opentrust-embassy/log", "rs-matter/log"]
+# BTP GATT peripheral (Matter commissioning over BLE) on `trouble-host`.
+ble-trouble = ["dep:trouble-host", "dep:bt-hci", "dep:embedded-io", "dep:static_cell"]
+defmt = ["dep:defmt", "trouble-host?/defmt", "bt-hci?/defmt", "opentrust-flash/defmt", "opentrust-core/defmt", "opentrust-embassy/defmt", "rs-matter/defmt"]
+log = ["dep:log", "trouble-host?/log", "bt-hci?/log", "opentrust-core/log", "opentrust-embassy/log", "rs-matter/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
@@ -34,6 +36,12 @@ embassy-sync = { workspace = true }
 embassy-futures = { workspace = true }
 heapless = { workspace = true }
 rand_core = { workspace = true }
+# `central` is off: Matter commissioning is peripheral-only, and the central
+# role would pull the larger SoftDevice Controller variant.
+trouble-host = { version = "0.8", optional = true, default-features = false, features = ["peripheral", "gatt", "derive", "default-packet-pool"] }
+bt-hci = { version = "0.10", optional = true, default-features = false }
+embedded-io = { version = "0.7", optional = true }
+static_cell = { version = "2", optional = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 

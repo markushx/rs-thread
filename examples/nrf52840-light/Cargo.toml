@@ -9,6 +9,18 @@ publish = false
 [workspace]
 
 [features]
+# BLE commissioning (Matter over BTP, `chip-tool pairing ble-thread`) with the
+# Nordic SoftDevice Controller (peripheral-only library) and trouble-host,
+# next to the 802.15.4 driver on MPSL. An unprovisioned light (nothing stored,
+# no build-time dataset) advertises and waits for its Thread network over BLE.
+# `--no-default-features` builds the Thread-only light (as before).
+default = ["ble"]
+ble = [
+    "nrf52840-leader/ble",
+    "opentrust-matter/ble-trouble",
+    "dep:nrf-sdc",
+    "dep:rand_core09",
+]
 # Test aid: factory reset on every start, as if Button 1 were held.
 test-factory-reset = ["nrf52840-leader/test-factory-reset"]
 # Minimal end device (not router eligible) instead of an FTD router.
@@ -42,6 +54,9 @@ defmt-rtt = "1"
 panic-probe = { version = "1", features = ["print-defmt"] }
 static_cell = "2"
 rand_core = { version = "0.10", default-features = false }
+# nrf-sdc takes its RNG as a rand_core 0.9 CryptoRng.
+rand_core09 = { package = "rand_core", version = "0.9", default-features = false, optional = true }
+nrf-sdc = { version = "0.4", default-features = false, features = ["nrf52840", "peripheral", "defmt"], optional = true }
 
 [profile.release]
 opt-level = "s"

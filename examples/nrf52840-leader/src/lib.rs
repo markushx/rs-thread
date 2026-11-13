@@ -23,6 +23,18 @@ pub struct Board {
     /// Button 1 of the DK (P0.11, active low): held at boot it requests a
     /// factory reset, see [`flash::factory_reset_requested`].
     pub button1: Input<'static>,
+    /// What the BLE stack needs next to the 802.15.4 radio: the MPSL handle
+    /// and the PPI channels of the SoftDevice Controller.
+    #[cfg(feature = "ble")]
+    pub ble: Ble,
+}
+
+/// The MPSL instance (already running on the executor) and the peripherals
+/// the SoftDevice Controller takes (PPI channels 17, 18 and 20..=29).
+#[cfg(feature = "ble")]
+pub struct Ble {
+    pub mpsl: &'static opentrust_nrf::Mpsl,
+    pub sdc: nrf_sdc::Peripherals<'static>,
 }
 
 /// Where the persistent settings live in flash (see `memory.x`).
@@ -124,6 +136,14 @@ pub fn init(spawner: &Spawner) -> Board {
         radio: NrfRadio::new(p.RADIO, p.EGU0, p.TIMER2, p.RTC2, mpsl),
         flash: opentrust_nrf::take_flash(mpsl, p.NVMC),
         button1: Input::new(p.P0_11, Pull::Up),
+        #[cfg(feature = "ble")]
+        ble: Ble {
+            mpsl,
+            sdc: nrf_sdc::Peripherals::new(
+                p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23,
+                p.PPI_CH24, p.PPI_CH25, p.PPI_CH26, p.PPI_CH27, p.PPI_CH28, p.PPI_CH29,
+            ),
+        },
     }
 }
 
