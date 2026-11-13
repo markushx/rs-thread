@@ -158,6 +158,14 @@ async fn main(spawner: Spawner) {
                             n.rx_on_when_idle
                         );
                     }
+                    #[cfg(feature = "radio-nrf802154")]
+                    {
+                        let e = opentrust_nrf::tx_error_stats();
+                        info!(
+                            "  tx errors: busy {} slot_ended {} slot_denied {} schedule {} no_ack {} other {}",
+                            e.busy_channel, e.timeslot_ended, e.timeslot_denied, e.schedule, e.no_ack, e.other
+                        );
+                    }
                     let c = i.mac_counters();
                     info!(
                         "  mac tx {} ack_req {} acked {} data {} retry {} cca {} abort {} maxretry {} rx {} data {} sec_err {} unk_nbr {} dest_filt {} no_frame {} ack_unmatched {} soft_ack {}",

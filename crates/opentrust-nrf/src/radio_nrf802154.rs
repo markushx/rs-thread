@@ -86,6 +86,52 @@ fn radio_now_us() -> u64 {
     unsafe { raw::nrf_802154_time_get() }
 }
 
+/// Failed transmissions by cause, since boot. The MAC folds busy channel,
+/// ended and denied timeslots into one failure kind; this tells them apart.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TxErrorStats {
+    /// The channel stayed busy through all CSMA-CA backoffs (or CCA failed).
+    pub busy_channel: u32,
+    /// The radio timeslot ended during the transmission.
+    pub timeslot_ended: u32,
+    /// The timeslot request for the transmission was denied.
+    pub timeslot_denied: u32,
+    /// The frame could not be handed to the driver.
+    pub schedule: u32,
+    /// The frame went out but no ACK came back.
+    pub no_ack: u32,
+    /// Anything else.
+    pub other: u32,
+}
+
+static TX_ERR: [core::sync::atomic::AtomicU32; 6] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 6];
+
+fn count_tx_error(e: &Error) {
+    let i = match e {
+        Error::Transmit(TxError::BusyChannel) => 0,
+        Error::Transmit(TxError::TimeslotEnded) => 1,
+        Error::Transmit(TxError::TimeslotDenied) => 2,
+        Error::ScheduleTransmit => 3,
+        Error::Transmit(TxError::NoAck) => 4,
+        _ => 5,
+    };
+    TX_ERR[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// The transmit failure counts by cause.
+pub fn tx_error_stats() -> TxErrorStats {
+    let g = |i: usize| TX_ERR[i].load(core::sync::atomic::Ordering::Relaxed);
+    TxErrorStats {
+        busy_channel: g(0),
+        timeslot_ended: g(1),
+        timeslot_denied: g(2),
+        schedule: g(3),
+        no_ack: g(4),
+        other: g(5),
+    }
+}
+
 fn error_kind(e: &Error) -> RadioErrorKind {
     match e {
         Error::TransmitDataTooLarge => RadioErrorKind::TxInvalid,
@@ -533,7 +579,10 @@ impl Radio for NrfRadio<'_> {
             psdu_tx.security_processed |= done.is_secured;
         }
 
-        let meta = result.map_err(|e| error_kind(&e))?;
+        let meta = result.map_err(|e| {
+            count_tx_error(&e);
+            error_kind(&e)
+        })?;
         Ok(meta.map(|meta| {
             if let Some(buf) = ack_psdu_buf {
                 write_crc(&meta, buf);

@@ -140,7 +140,7 @@ pub use radio_embassy::NrfRadio;
 /// The radio of the selected backend (feature `radio-nrf802154`), with the
 /// MPSL setup it needs.
 #[cfg(all(target_arch = "arm", feature = "radio-nrf802154"))]
-pub use radio_nrf802154::{Irqs, Mpsl, NrfRadio, init_mpsl};
+pub use radio_nrf802154::{Irqs, Mpsl, NrfRadio, TxErrorStats, init_mpsl, tx_error_stats};
 
 /// The nRF52840 RNG peripheral, usable as the stack's entropy source
 /// (`opentrust_platform::Entropy`).
