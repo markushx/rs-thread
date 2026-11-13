@@ -18,7 +18,7 @@ default = ["ftd"]
 # Router-capable node (REED role, route table); without it the node is an
 # end device.
 ftd = ["opentrust-embassy/ftd"]
-defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-embassy/defmt", "rs-matter/defmt"]
+defmt = ["dep:defmt", "opentrust-flash/defmt", "opentrust-core/defmt", "opentrust-embassy/defmt", "rs-matter/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-embassy/log", "rs-matter/log"]
 
 [dependencies]
@@ -27,6 +27,7 @@ opentrust-platform = { workspace = true }
 opentrust-instance = { workspace = true }
 opentrust-meshcop = { workspace = true }
 opentrust-dns = { workspace = true }
+opentrust-flash = { workspace = true }
 opentrust-embassy = { path = "../opentrust-embassy", version = "0.1.0", default-features = false }
 rs-matter = { workspace = true }
 embassy-sync = { workspace = true }

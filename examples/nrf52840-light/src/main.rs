@@ -5,9 +5,13 @@
 //! leader firmware) and runs rs-matter's on-off light over it
 //! (`opentrust_matter::driver::ThreadRunner`, Thread only, no BLE). rs-matter
 //! uses its test device attestation credentials and the RustCrypto backend
-//! (pure Rust, no hardware crypto). Persistence is a no-op store, so nothing
-//! survives a reset. LED1 follows the On/Off attribute. The pairing code and
-//! discriminator are logged at start-up.
+//! (pure Rust, no hardware crypto). Everything rs-matter persists (fabrics,
+//! ACLs, counters, ...) and the Thread settings blob of `ThreadPersist` live
+//! in one key-value store in flash (`opentrust-flash`, region in `memory.x`),
+//! so the light keeps its fabrics, its Thread network and its role over a
+//! reset. Button 1 held at boot erases the store (factory reset). LED1
+//! follows the On/Off attribute. The pairing code and discriminator are
+//! logged at start-up.
 //!
 //! Static RAM, stack high-water and heap use are logged over RTT.
 
@@ -25,11 +29,15 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use nrf52840_leader::Board;
 use opentrust_core::crypto::soft::SoftCrypto;
+use opentrust_core::settings::SettingsKey;
 use opentrust_embassy::{OpenTrust, Resources};
+use opentrust_flash::{FlashWriter, Shared};
 use opentrust_instance::{ExtAddress, Instance};
 use opentrust_matter::driver::ThreadRunner;
+use opentrust_matter::flash_kv::FlashKv;
+use opentrust_matter::persist::{THREAD_SETTINGS_KEY, ThreadPersist};
 use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::{Radio, RamSettings};
+use opentrust_platform::{Radio, RamSettings, SettingsStore};
 use panic_probe as _;
 use rs_matter::crypto::{Crypto, default_crypto};
 use rs_matter::dm::clusters::app::level_control::LevelControlHooks;
@@ -39,7 +47,7 @@ use rs_matter::dm::devices::DEV_TYPE_ON_OFF_LIGHT;
 use rs_matter::dm::devices::test::{DAC_PRIVKEY, TEST_DEV_ATT, TEST_DEV_COMM, TEST_DEV_DET};
 use rs_matter::dm::networks::wireless::ThreadNetworks;
 use rs_matter::dm::{Async, DataModel, Dataver, EmptyHandler, Endpoint, Node, ROOT_ENDPOINT_ID};
-use rs_matter::persist::{DummyKvBlobStore, SharedKvBlobStore};
+use rs_matter::persist::SharedKvBlobStore;
 use rs_matter::stack::MatterStack;
 use rs_matter::utils::cell::RefCell;
 use rs_matter::utils::init::InitMaybeUninit;
@@ -63,7 +71,15 @@ static RES: StaticCell<Res> = StaticCell::new();
 type LightStack = MatterStack<'static, BUMP, ThreadNetworks>;
 static STACK: StaticCell<LightStack> = StaticCell::new();
 
-type Kv = SharedKvBlobStore<'static, DummyKvBlobStore, 2048>;
+/// RAM image of the key-value store (all rs-matter blobs plus the Thread
+/// settings blob) and the number of dirty keys tracked between flushes.
+type KvImage = Shared<4096, 32>;
+static KV_IMAGE: KvImage = KvImage::new();
+/// Largest blob the flash entry buffer takes (rs-matter's 2048 byte blob
+/// buffer plus entry framing).
+const FLASH_ENTRY_BUF: usize = 2048 + 32;
+
+type Kv = SharedKvBlobStore<'static, FlashKv<'static, 4096, 32>, 2048>;
 static KV_BUF: StaticCell<Mutex<RefCell<[u8; 2048]>>> = StaticCell::new();
 static KV: StaticCell<Kv> = StaticCell::new();
 
@@ -166,7 +182,32 @@ async fn main(spawner: Spawner) {
         rng2,
         mut led1,
         mut radio,
+        mut flash,
+        button1,
     } = nrf52840_leader::init(&spawner);
+    nrf52840_leader::flash::check();
+    if nrf52840_leader::flash::factory_reset_requested(&button1).await {
+        info!("factory reset: erasing the key-value store");
+        nrf52840_leader::flash::erase_all(&mut flash).await.unwrap();
+    }
+    let mut writer = FlashWriter::<_, FLASH_ENTRY_BUF>::mount(
+        flash,
+        nrf52840_leader::flash::KV_START,
+        nrf52840_leader::flash::KV_PAGES,
+        &KV_IMAGE,
+    )
+    .await
+    .unwrap();
+    KV_IMAGE.with(|i| {
+        info!("kv store: {} bytes loaded", i.used());
+        let mut key = None;
+        let mut buf = [0u8; 1];
+        while let Some(k) = i.next_key(key) {
+            let len = i.get(k, 0, &mut buf).unwrap_or(0);
+            info!("  key {:#06x}: {} bytes", k, len);
+            key = Some(k);
+        }
+    });
     let caps = radio.init().await.unwrap();
     let ext = ext_address();
     info!("ext address {:x}", ext.0);
@@ -186,7 +227,7 @@ async fn main(spawner: Spawner) {
         &TEST_DEV_ATT,
     ));
     let kv: &'static Kv = KV.init(SharedKvBlobStore::new(
-        DummyKvBlobStore,
+        FlashKv::new(&KV_IMAGE),
         KV_BUF.init(Mutex::new(RefCell::new([0u8; 2048]))),
     ));
     let crypto = default_crypto(rng2, DAC_PRIVKEY);
@@ -209,7 +250,25 @@ async fn main(spawner: Spawner) {
         TEST_DEV_COMM.discriminator, 20202021u32
     );
 
-    let runner = ThreadRunner::new(ot, radio, EmbassyAlarm, kv);
+    // Load the persisted Thread settings now, so the app below can tell
+    // whether the node has a network to restore.
+    let mut persist = ThreadPersist::new(ot, kv);
+    let restored = persist.load().unwrap();
+    let (have_dataset, have_network) = ot.with(|i, _| {
+        (
+            i.settings()
+                .get(SettingsKey::ActiveDataset, 0, &mut [])
+                .is_ok(),
+            i.settings()
+                .get(SettingsKey::NetworkInfo, 0, &mut [])
+                .is_ok(),
+        )
+    });
+    info!(
+        "thread settings: {} values restored (blob key {:#06x}), dataset {} network info {}",
+        restored, THREAD_SETTINGS_KEY, have_dataset, have_network
+    );
+    let runner = ThreadRunner::new(ot, radio, EmbassyAlarm, kv).with_persist(persist);
     let fut = stack.run_thread_oper(
         runner,
         &crypto,
@@ -230,11 +289,19 @@ async fn main(spawner: Spawner) {
 
     let app = async {
         ot.with(|i, now| {
-            let mut ds = i.create_dataset(15).unwrap();
-            ds.set_pan_id(0x1234).unwrap();
-            i.set_active_dataset(&ds, now).unwrap();
+            if !have_dataset {
+                let mut ds = i.create_dataset(15).unwrap();
+                ds.set_pan_id(0x1234).unwrap();
+                i.set_active_dataset(&ds, now).unwrap();
+            }
             i.ip6_set_enabled(true);
-            i.become_leader(now).unwrap();
+            // With stored network info the node restores its role instead of
+            // forming a new network.
+            if have_network {
+                i.thread_start(now).unwrap();
+            } else {
+                i.become_leader(now).unwrap();
+            }
         });
         let mut last_role = None;
         let mut last_on = None;
@@ -259,7 +326,20 @@ async fn main(spawner: Spawner) {
             select(ot.wait_changed(), Timer::after_secs(2)).await;
         }
     };
-    let r = select(fut, app).await;
+    // Writes the key-value store to flash a moment after rs-matter or the
+    // Thread persistence changed it.
+    let persist_task = async {
+        loop {
+            Timer::after_millis(250).await;
+            if KV_IMAGE.is_dirty() {
+                match writer.flush(&KV_IMAGE).await {
+                    Ok(()) => info!("kv store written to flash"),
+                    Err(e) => defmt::warn!("flash write failed: {}", e),
+                }
+            }
+        }
+    };
+    let r = select(fut, select(app, persist_task)).await;
     let _ = r;
     panic!("the light stopped");
 }

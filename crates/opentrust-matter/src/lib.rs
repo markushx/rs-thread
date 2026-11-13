@@ -63,6 +63,7 @@ mod fmt;
 
 pub mod driver;
 pub mod error;
+pub mod flash_kv;
 pub mod icd;
 pub mod mdns;
 pub mod net;

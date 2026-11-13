@@ -8,6 +8,10 @@ publish = false
 # Standalone: the firmware has its own target, linker script and profile.
 [workspace]
 
+[features]
+# Test aid: factory reset on every start, as if Button 1 were held.
+test-factory-reset = ["nrf52840-leader/test-factory-reset"]
+
 [dependencies]
 # Board bring-up (clocks, MPSL, radio, RNG, LED) of the leader firmware; the
 # radio backend is nrf802154 (the default of that crate).
@@ -16,6 +20,7 @@ opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }
 opentrust-platform = { path = "../../crates/opentrust-platform", features = ["defmt"] }
 opentrust-instance = { path = "../../crates/opentrust-instance", default-features = false, features = ["ftd", "defmt"] }
 opentrust-embassy = { path = "../../crates/opentrust-embassy", default-features = false, features = ["ftd", "defmt"] }
+opentrust-flash = { path = "../../crates/opentrust-flash", features = ["defmt"] }
 opentrust-nrf = { path = "../../crates/opentrust-nrf", default-features = false, features = ["defmt"] }
 opentrust-matter = { path = "../../crates/opentrust-matter", default-features = false, features = ["ftd", "defmt"] }
 # The pure-Rust RustCrypto backend (p256, aes, sha2, ...); it needs `alloc`
