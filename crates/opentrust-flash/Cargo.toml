@@ -1,0 +1,31 @@
+[package]
+name = "opentrust-flash"
+description = "Power-fail-safe settings storage in NOR flash for OpenTrust (RAM image plus an async log-structured writer)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-platform/defmt"]
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-platform = { workspace = true }
+embedded-storage-async = "0.4"
+critical-section = { workspace = true }
+heapless = { workspace = true }
+defmt = { workspace = true, optional = true }
+
+[dev-dependencies]
+embassy-futures = { workspace = true }
+critical-section = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
