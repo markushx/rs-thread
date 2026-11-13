@@ -170,6 +170,31 @@ role: "Child"          (Router after about a minute)
 then rs-matter lines for PASE, "Commissioning complete", CASE and the On/Off
 command; LED1 follows the attribute.
 
+### Verified setup
+
+Run on a Mac with ot-br-posix (`otbr-agent`, OpenThread thread-reference-20230710,
+RCP = nRF52840 Dongle, mDNSResponder advertising proxy), channel 24, on-mesh
+prefix `fd11:69::/64`, the light (this repository, `OPENTRUST_DATASET` = the
+BR's dataset): the light attached (Child after about 3 to 12 s, Router after
+about a minute), got `fd11:69::<iid>` by SLAAC, registered `_matterc._udp` with
+subtypes `_L3840`, `_S15`, `_V65521`, `_CM` and TXT `D=3840 CM=1 VP=65521+32769
+DN=MyTest PH=0`; `dns-sd -B _matterc._udp`, `dns-sd -L` and `dns-sd -G v6` showed
+it, `ping6` worked, and `chip-tool pairing already-discovered 1 20202021
+<light address> 5540 --bypass-attestation-verifier true` finished with
+"Device commissioning completed with success" (PASE, attestation, CSR, AddNOC,
+CASE, CommissioningComplete); `chip-tool onoff toggle 1 1` and `onoff read on-off 1 1`
+then worked over the mesh with the `_matter._tcp` instance resolved from the
+light's SRP registration.
+
+Caveat when you reflash or factory reset the light repeatedly: the BR's SRP server
+keeps the old host and `_matterc._udp` instance until their lease ends (2 hours),
+so `dns-sd` and chip-tool `onnetwork-long` can still list the old instance and
+try its dead address first. The light registers its host under another name
+(`<EUI-64>-1`) when the server refuses the name because its key changed. Remedy:
+`sudo ot-ctl srp server disable; sudo ot-ctl srp server enable` on the BR (this
+drops all registrations), or pair by address with
+`chip-tool pairing already-discovered 1 20202021 <address from the light log> 5540`.
+
 ## 6. Troubleshooting
 
 - **The light does not attach**: dataset wrong or a different channel (check

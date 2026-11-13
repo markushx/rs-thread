@@ -189,6 +189,16 @@ The 31 kB stack peak is rs-matter's: a 20 kB frame of an `embassy_futures`
 `select3` poll that inlines the stack's futures, plus the Thread path below it.
 A `MatterStack` with `BUMP` of 16 kB panics with "Out of bump memory" at start.
 
+The bump area is filled once at start (futures of the transport, responders and
+the operational task), not per transaction: PASE and CASE run on the stack and in
+fixed buffers inside those futures, so 28 kB stays enough. The only heap user of the
+RustCrypto backend is the PKCS#10 request of commissioning (`x509-cert`): 531 bytes
+at peak (`crates/opentrust-matter/tests/heap.rs`, counting allocator, host build),
+so the 4096-byte heap has about 3.5 kB of headroom and was not raised.
+Measured on the DK against a real border router and chip-tool (PASE, attestation, CSR,
+AddNOC, CASE, CommissioningComplete, On/Off toggle): stack high-water 35192 bytes
+(31352 idle), heap 0 bytes used when sampled every 2 s, no bump or allocation failure.
+
 ### Persistent settings in flash (`opentrust-flash`)
 
 Both firmwares keep their settings in the last 24 KiB of flash (outside the
