@@ -235,6 +235,20 @@ Security, Bluetooth). Linux chip-tool (BlueZ) needs neither.
 
 ## 6. Troubleshooting
 
+- **BLE commissioning: ConnectNetwork times out (networkingStatus 9)**: the
+  light's `radio:` log line (frames received / sent, send failures by cause)
+  shows whether the 802.15.4 driver is alive while the BLE connection is up. On
+  the nRF52840 DK the light attached as a Child within about 1.3 s of
+  `AddOrUpdateThreadNetwork` with an open BLE connection (both a held bleak
+  connection and a full `chip-tool pairing ble-thread`), with no timeslot
+  ended / denied or busy-channel failures, so BLE and 802.15.4 do coexist. An
+  intermittent failure to attach right after wiping and re-flashing the same
+  light is probably the BR still holding the previous child entry (frame
+  counters restart at zero): wait for the child timeout or restart the BR's
+  child table before retrying. An aborted attempt leaves the fail-safe armed
+  until it expires (133 s): the next PASE session then gets
+  `InvalidAuthentication` on `ArmFailSafe`; this is rs-matter's handling of a
+  closed commissioning session, not this layer's.
 - **The light does not attach**: dataset wrong or a different channel (check
   `ot-ctl dataset active`), or the stored network wins (factory reset).
   `role: "Detached"` forever means no parent answered; a leader of its own network

@@ -169,6 +169,18 @@ fn count_tx_error(e: &Error) {
     TX_ERR[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
+static RX_FRAMES: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static TX_FRAMES: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// Frames received and frames handed to the driver for transmission, since
+/// boot (diagnostics).
+pub fn frame_counts() -> (u32, u32) {
+    (
+        RX_FRAMES.load(core::sync::atomic::Ordering::Relaxed),
+        TX_FRAMES.load(core::sync::atomic::Ordering::Relaxed),
+    )
+}
+
 /// The transmit failure counts by cause.
 pub fn tx_error_stats() -> TxErrorStats {
     let g = |i: usize| TX_ERR[i].load(core::sync::atomic::Ordering::Relaxed);
@@ -574,6 +586,7 @@ impl Radio for NrfRadio<'_> {
             self.hw.set_tx_power(power);
         }
 
+        TX_FRAMES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let len = psdu.len();
         let data = &mut psdu[..len - 2];
         let ack = ack_psdu_buf.as_mut().map(|buf| {
@@ -657,6 +670,7 @@ impl Radio for NrfRadio<'_> {
             HwRadio::wait_frame(&mut self.hw, &mut psdu_buf[..len - 2]).await
         };
         write_crc(&meta, psdu_buf);
+        RX_FRAMES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         let channel = if window {
             self.window_channel
         } else {

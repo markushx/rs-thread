@@ -145,7 +145,8 @@ pub use radio_embassy::NrfRadio;
 /// MPSL setup it needs.
 #[cfg(all(target_arch = "arm", feature = "radio-nrf802154"))]
 pub use radio_nrf802154::{
-    Irqs, Mpsl, NrfRadio, TxErrorStats, init_mpsl, last_other_tx_error, tx_error_stats,
+    Irqs, Mpsl, NrfRadio, TxErrorStats, frame_counts, init_mpsl, last_other_tx_error,
+    tx_error_stats,
 };
 
 /// The nRF52840 RNG peripheral, usable as the stack's entropy source

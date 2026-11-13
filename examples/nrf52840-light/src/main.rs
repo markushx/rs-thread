@@ -406,6 +406,22 @@ async fn main(spawner: Spawner) {
                 led1.set_level(if on { Level::Low } else { Level::High });
                 last_on = Some(on);
             }
+            {
+                let (rx, tx) = opentrust_nrf::frame_counts();
+                let e = opentrust_nrf::tx_error_stats();
+                info!(
+                    "radio: rx {} tx {} busy {} ended {} denied {} sched {} noack {} abort {} other {}",
+                    rx,
+                    tx,
+                    e.busy_channel,
+                    e.timeslot_ended,
+                    e.timeslot_denied,
+                    e.schedule,
+                    e.no_ack,
+                    e.aborted,
+                    e.other
+                );
+            }
             info!(
                 "stack high-water {} bytes, heap used {} free {}",
                 stack_high_water(),
