@@ -180,3 +180,41 @@ fn connect_to_a_missing_network_times_out() {
         limit(),
     );
 }
+
+/// `connect` with the dataset the node already runs (started at boot, still
+/// attaching) waits for the attach instead of restarting Thread.
+#[test]
+fn connect_to_the_running_dataset_does_not_restart_thread() {
+    let clks = [clock(), clock()];
+    let air = Air::new(2);
+    let pend = [Cell::new(None), Cell::new(None)];
+    let res0: Res<'_> = Res::new(instance(1), &clks[0]);
+    let res1: Res<'_> = Res::new(instance(2), &clks[1]);
+    let ots = [Ot::new(&res0), Ot::new(&res1)];
+    let ds = make_dataset(ots[0]);
+    let tasks = vec![
+        run_task(ots[0], &air, 0, &clks[0], &pend[0]),
+        run_task(ots[1], &air, 1, &clks[1], &pend[1]),
+    ];
+    drive(
+        &[&clks[0], &clks[1]],
+        &[&pend[0], &pend[1]],
+        tasks,
+        async {
+            start_with(ots[0], &ds, true);
+            wait_role(ots[0], Role::Leader).await;
+            // The node starts first (as the light does at boot), then the
+            // network manager connects with the same dataset.
+            start_with(ots[1], &ds, false);
+            assert_ne!(ots[1].role(), Role::Disabled);
+            let ctl = ThreadNetCtl::new(ots[1]);
+            ctl.connect(&WirelessCreds::Thread {
+                dataset_tlv: ds.as_bytes(),
+            })
+            .await
+            .unwrap();
+            assert!(matches!(ots[1].role(), Role::Child | Role::Router));
+        },
+        limit(),
+    );
+}

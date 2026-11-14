@@ -221,25 +221,28 @@ where
             .0;
         self.network_id.set(Some(epid));
 
-        // Already attached to this network: nothing to do.
-        let current = self
+        // The node already runs this network's dataset (restored at boot,
+        // attached or still re-attaching): do not restart it, a restart
+        // would throw away the restore of the stored role and parent and
+        // fall back to a fresh attach.
+        let same = self
             .ot
             .with(|i, now| i.active_dataset(now))
-            .and_then(|d| d.tlvs().ext_pan_id().ok())
-            .map(|x| x.0);
-        if is_attached(self.ot.role()) && current == Some(epid) {
+            .is_some_and(|d| d.is_subset_of(&ds) && ds.is_subset_of(&d));
+        if same && is_attached(self.ot.role()) {
             self.done(NetworkCommissioningStatusEnum::Success);
             return Ok(());
         }
-
-        self.ot.thread_stop();
-        if let Err(e) = self
-            .ot
-            .set_active_dataset(&ds)
-            .and_then(|()| self.ot.thread_start())
-        {
-            self.done(NetworkCommissioningStatusEnum::UnknownError);
-            return Err(NetCtlError::Other(map_err(e)));
+        if !(same && self.ot.role() != Role::Disabled) {
+            self.ot.thread_stop();
+            if let Err(e) = self
+                .ot
+                .set_active_dataset(&ds)
+                .and_then(|()| self.ot.thread_start())
+            {
+                self.done(NetworkCommissioningStatusEnum::UnknownError);
+                return Err(NetCtlError::Other(map_err(e)));
+            }
         }
         let timeout = Timer::after(Duration::from_secs(u64::from(self.connect_timeout_secs)));
         match select(self.wait_joined(), timeout).await {
