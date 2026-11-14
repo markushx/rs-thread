@@ -13,12 +13,41 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-embassy/defmt"]
-log = ["dep:log", "opentrust-core/log", "opentrust-embassy/log"]
+default = ["ftd", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "commissioning"]
+# Router-capable build (router table, router thresholds, leader weight).
+ftd = ["opentrust-instance/ftd", "opentrust-mle/ftd"]
+# The `dataset` command group.
+dataset = []
+# `scan`, `scan energy`, `discover`.
+scan = []
+# `ping`.
+ping = []
+# `child`, `router`, `neighbor`, `counters`.
+tables = []
+# `netdata`, `prefix`, `route`.
+netdata = []
+# `srp client`.
+srp = []
+# `dns`.
+dns = []
+# `udp`.
+udp = []
+# `commissioner`, `joiner`.
+commissioning = ["ftd", "opentrust-instance/commissioner"]
+defmt = ["dep:defmt", "opentrust-core/defmt"]
+log = ["dep:log", "opentrust-core/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
-opentrust-embassy = { workspace = true }
+opentrust-instance = { workspace = true }
+opentrust-platform = { workspace = true }
+opentrust-meshcop = { workspace = true }
+opentrust-mle = { workspace = true }
+opentrust-mesh = { workspace = true }
+opentrust-dns = { workspace = true }
+opentrust-net = { workspace = true }
+rand_core = { workspace = true }
+heapless = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 

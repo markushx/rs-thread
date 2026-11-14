@@ -215,6 +215,12 @@ impl<const C: usize> Mle<C> {
         &self.cfg
     }
 
+    /// The router configuration (eligibility, thresholds, jitter, leader
+    /// weight) for changes by the application.
+    pub fn router_config_mut(&mut self) -> &mut crate::router_config::RouterConfig {
+        &mut self.cfg.router
+    }
+
     /// Outgoing MLE frame counter (for persistence, see
     /// [`MleFrameCounter::needs_store`]).
     pub fn mle_frame_counter(&self) -> &MleFrameCounter {

@@ -1,0 +1,237 @@
+//! `netdata`, `prefix` and `route`.
+
+use core::fmt::Write;
+
+use opentrust_instance::InstanceCrypto;
+use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig};
+use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
+use opentrust_platform::SettingsStore;
+use rand_core::{CryptoRng, Rng};
+
+use crate::Ctx;
+use crate::util::{Args, E, R, hex, ln, out, parse_prefix};
+
+/// A prefix as OT prints it: the words covered by the prefix length, then
+/// `::` (`fd00:dead:beef:cafe::/64`).
+fn print_prefix<W: Write>(o: &mut W, p: &NetPrefix) {
+    let b = p.octets();
+    let words = usize::from(p.len()).div_ceil(16);
+    for w in 0..words {
+        if w > 0 {
+            let _ = o.write_char(':');
+        }
+        let _ = write!(o, "{:x}", u16::from_be_bytes([b[2 * w], b[2 * w + 1]]));
+    }
+    if words < 8 {
+        let _ = o.write_str("::");
+    }
+    let _ = write!(o, "/{}", p.len());
+}
+
+fn preference_name(bits: u8) -> &'static str {
+    match bits {
+        1 => "high",
+        3 => "low",
+        _ => "med",
+    }
+}
+
+fn parse_preference(s: &str) -> Option<i8> {
+    match s {
+        "high" => Some(1),
+        "med" => Some(0),
+        "low" => Some(-1),
+        _ => None,
+    }
+}
+
+impl<S, C, Rn, W> Ctx<'_, S, C, Rn, W>
+where
+    S: SettingsStore,
+    C: InstanceCrypto,
+    Rn: Rng + CryptoRng,
+    W: Write,
+{
+    pub(crate) fn netdata(&mut self, a: &Args<'_>) -> R {
+        match a.get(1) {
+            "show" => {
+                let nd = self.i.network_data();
+                match a.get(2) {
+                    "-x" => {
+                        hex(self.o, nd.as_bytes());
+                        ln!(self.o);
+                        return Ok(());
+                    }
+                    "" => {}
+                    _ => return Err(E::INVALID_ARGS),
+                }
+                ln!(self.o, "Prefixes:");
+                for e in nd.on_mesh_prefixes() {
+                    print_prefix(self.o, &e.prefix);
+                    let _ = self.o.write_char(' ');
+                    let mut any = false;
+                    for (f, c) in [
+                        (BrFlags::PREFERRED, 'p'),
+                        (BrFlags::SLAAC, 'a'),
+                        (BrFlags::DHCP, 'd'),
+                        (BrFlags::CONFIGURE, 'c'),
+                        (BrFlags::DEFAULT_ROUTE, 'r'),
+                        (BrFlags::ON_MESH, 'o'),
+                    ] {
+                        if e.flags.has(f) {
+                            let _ = self.o.write_char(c);
+                            any = true;
+                        }
+                    }
+                    if e.stable {
+                        let _ = self.o.write_char('s');
+                        any = true;
+                    }
+                    for (f, c) in [(BrFlags::ND_DNS, 'n'), (BrFlags::DP, 'D')] {
+                        if e.flags.has(f) {
+                            let _ = self.o.write_char(c);
+                            any = true;
+                        }
+                    }
+                    if !any {
+                        let _ = self.o.write_char('-');
+                    }
+                    ln!(
+                        self.o,
+                        " {} {:04x}",
+                        preference_name((e.flags.0 >> 14) as u8 & 3),
+                        e.rloc16
+                    );
+                }
+                ln!(self.o, "Routes:");
+                for e in nd.external_routes() {
+                    print_prefix(self.o, &e.prefix);
+                    let _ = self.o.write_char(' ');
+                    let mut any = false;
+                    for (on, c) in [(e.adv_pio, 'p'), (e.nat64, 'n'), (e.stable, 's')] {
+                        if on {
+                            let _ = self.o.write_char(c);
+                            any = true;
+                        }
+                    }
+                    if !any {
+                        let _ = self.o.write_char('-');
+                    }
+                    let pref = match e.preference {
+                        1 => "high",
+                        -1 => "low",
+                        _ => "med",
+                    };
+                    ln!(self.o, " {} {:04x}", pref, e.rloc16);
+                }
+                ln!(self.o, "Services:");
+                for s in nd.services() {
+                    out!(self.o, "{} ", s.enterprise_number);
+                    hex(self.o, s.service_data);
+                    let _ = self.o.write_char(' ');
+                    hex(self.o, s.server_data);
+                    ln!(
+                        self.o,
+                        " {} {:04x}",
+                        if s.stable { 's' } else { '-' },
+                        s.rloc16
+                    );
+                }
+                ln!(self.o, "Contexts:");
+                for c in nd.contexts() {
+                    print_prefix(self.o, &c.prefix);
+                    ln!(self.o, " {} {}", c.id, if c.compress { 'c' } else { '-' });
+                }
+                Ok(())
+            }
+            // Local changes are registered with the leader by the instance.
+            "register" => Ok(()),
+            _ => Err(E::INVALID_COMMAND),
+        }
+    }
+
+    pub(crate) fn prefix(&mut self, a: &Args<'_>) -> R {
+        match a.get(1) {
+            "add" => {
+                let (addr, len) = parse_prefix(a.get(2))?;
+                let prefix = NetPrefix::from_addr(&addr, len)?;
+                let mut flags = BrFlags::default();
+                let mut stable = false;
+                let mut pref = 0i8;
+                for arg in a.rest(3) {
+                    if let Some(p) = parse_preference(arg) {
+                        pref = p;
+                        continue;
+                    }
+                    for c in arg.chars() {
+                        match c {
+                            'p' => flags = flags.with(BrFlags::PREFERRED, true),
+                            'a' => flags = flags.with(BrFlags::SLAAC, true),
+                            'd' => flags = flags.with(BrFlags::DHCP, true),
+                            'c' => flags = flags.with(BrFlags::CONFIGURE, true),
+                            'r' => flags = flags.with(BrFlags::DEFAULT_ROUTE, true),
+                            'o' => flags = flags.with(BrFlags::ON_MESH, true),
+                            's' => stable = true,
+                            'n' => flags = flags.with(BrFlags::ND_DNS, true),
+                            'D' => flags = flags.with(BrFlags::DP, true),
+                            '-' => {}
+                            _ => return Err(E::INVALID_ARGS),
+                        }
+                    }
+                }
+                flags.0 |= ((pref as u16) & 3) << 14;
+                self.i
+                    .add_on_mesh_prefix(OnMeshPrefixConfig {
+                        prefix,
+                        flags,
+                        stable,
+                    })
+                    .map_err(E::from)
+            }
+            "remove" => {
+                let (addr, len) = parse_prefix(a.get(2))?;
+                let prefix = NetPrefix::from_addr(&addr, len)?;
+                self.i.remove_on_mesh_prefix(&prefix).map_err(E::from)
+            }
+            _ => Err(E::INVALID_COMMAND),
+        }
+    }
+
+    pub(crate) fn route(&mut self, a: &Args<'_>) -> R {
+        match a.get(1) {
+            "add" => {
+                let (addr, len) = parse_prefix(a.get(2))?;
+                let prefix = NetPrefix::from_addr(&addr, len)?;
+                let mut cfg = ExternalRouteConfig {
+                    prefix,
+                    preference: 0,
+                    nat64: false,
+                    adv_pio: false,
+                    stable: false,
+                };
+                for arg in a.rest(3) {
+                    if let Some(p) = parse_preference(arg) {
+                        cfg.preference = p;
+                        continue;
+                    }
+                    for c in arg.chars() {
+                        match c {
+                            's' => cfg.stable = true,
+                            'n' => cfg.nat64 = true,
+                            'p' => cfg.adv_pio = true,
+                            '-' => {}
+                            _ => return Err(E::INVALID_ARGS),
+                        }
+                    }
+                }
+                self.i.add_external_route(cfg).map_err(E::from)
+            }
+            "remove" => {
+                let (addr, len) = parse_prefix(a.get(2))?;
+                let prefix = NetPrefix::from_addr(&addr, len)?;
+                self.i.remove_external_route(&prefix).map_err(E::from)
+            }
+            _ => Err(E::INVALID_COMMAND),
+        }
+    }
+}

@@ -254,6 +254,35 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.ip6.netif.unicast_addresses()
     }
 
+    /// The subscribed multicast addresses (fixed ones first).
+    pub fn multicast_addresses(&self) -> impl Iterator<Item = Ipv6Addr> + '_ {
+        self.core.ip6.netif.multicast_addresses()
+    }
+
+    /// Add a manually configured unicast address (OT `otIp6AddUnicastAddress`).
+    pub fn add_unicast_address(&mut self, addr: Ipv6Addr, prefix_len: u8) -> Result<()> {
+        self.core.ip6.netif.add_unicast(UnicastAddress {
+            addr,
+            prefix_len,
+            origin: opentrust_net::netif::AddressOrigin::Manual,
+            preferred: true,
+            valid: true,
+            scope_override: None,
+            rloc: false,
+            mesh_local: false,
+        })
+    }
+
+    /// Remove a unicast address (OT `otIp6RemoveUnicastAddress`).
+    pub fn remove_unicast_address(&mut self, addr: &Ipv6Addr) -> Result<()> {
+        self.core.ip6.netif.remove_unicast(addr)
+    }
+
+    /// The factory-assigned EUI-64.
+    pub fn eui64(&self) -> ExtAddress {
+        self.cm.eui64
+    }
+
     /// The Network Data as this device has it.
     pub fn network_data(&self) -> opentrust_mesh::netdata::NetworkDataView<'_> {
         self.core.netdata.view()
@@ -372,6 +401,37 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.notifier
             .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
         Ok(())
+    }
+
+    /// Remove an on-mesh prefix from the local Network Data (OT
+    /// `otBorderRouterRemoveOnMeshPrefix`).
+    pub fn remove_on_mesh_prefix(
+        &mut self,
+        prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
+    ) -> Result<()> {
+        self.local.remove_on_mesh_prefix(prefix)?;
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        Ok(())
+    }
+
+    /// Remove an external route from the local Network Data (OT
+    /// `otBorderRouterRemoveRoute`).
+    pub fn remove_external_route(
+        &mut self,
+        prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
+    ) -> Result<()> {
+        self.local.remove_external_route(prefix)?;
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        Ok(())
+    }
+
+    /// The router configuration (eligibility, upgrade and downgrade
+    /// thresholds, selection jitter, leader weight) for changes by the
+    /// application, such as the CLI.
+    pub fn router_config_mut(&mut self) -> &mut opentrust_mle::router_config::RouterConfig {
+        self.mle.router_config_mut()
     }
 
     /// Publish this device as the DNS/SRP server in the Network Data (OT

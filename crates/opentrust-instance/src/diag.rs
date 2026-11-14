@@ -132,6 +132,14 @@ pub struct RouteInfo {
     pub cost: u8,
     /// A direct neighbor of this device.
     pub is_neighbor: bool,
+    /// Extended address (all zero if unknown).
+    pub ext: ExtAddress,
+    /// Link quality of the incoming link (0..=3).
+    pub link_quality_in: u8,
+    /// Link quality of the outgoing link (0..=3).
+    pub link_quality_out: u8,
+    /// Seconds since the router was last heard.
+    pub age_secs: u32,
 }
 
 fn state_counters_sum(c: &MacCounters) -> [u32; 9] {
@@ -463,6 +471,14 @@ where
                 next_hop: r.next_hop,
                 cost: r.cost,
                 is_neighbor: r.neighbor.is_valid(),
+                ext: r.neighbor.ext_address,
+                link_quality_in: r.neighbor.link_info.link_quality_in() as u8,
+                link_quality_out: r.neighbor.link_info.link_quality_out() as u8,
+                age_secs: self
+                    .core
+                    .now
+                    .saturating_duration_since(r.neighbor.last_heard)
+                    .as_secs() as u32,
             });
         }
         v
