@@ -235,6 +235,33 @@ Security, Bluetooth). Linux chip-tool (BlueZ) needs neither.
 
 ## 6. Troubleshooting
 
+- **After a reset the light needs about 13 s before it is a Child again**:
+  a restored router asks its former neighbours with Link Requests (three
+  attempts, the last one waits 2 s) and attaches normally when nobody answers,
+  as OpenThread does. The border router answers only while it still holds the
+  light's router entry; it drops the entry about 100 s after the last
+  Advertisement, so an outage that long (or a flash download of the light,
+  which takes 97 s) ends in a fresh attach: `Detached` at 0.5 s, `Child` at
+  12.9 to 13.7 s (hardware logs `t2a-dev.log`, `t2b-dev.log`, `t1-f2r1.log`).
+  A reset within the window restores the Router role in 0.7 to 1.3 s and a
+  stored Child role in 0.4 s; a Child whose parent has forgotten it re-attaches
+  in 1.7 s (the parent answers the Child Update Request with an error status).
+- **The first commands after a reset fail**: wait for `role: Child` or `Router`
+  and for the SRP registration. The light registers its host under `<EUI-64>`
+  and, when the server answers with a name conflict (the key lease of an older
+  key, e.g. from before a factory reset, is 14 days), under `<EUI-64>-1`, `-2`,
+  ... in turn; the variant is not stored, so every start walks the conflicting
+  names again (one SRP round trip each, polled every 500 ms). While that
+  happens chip-tool resolves the stale entry of the border router, which
+  usually still works; a toggle sent during the 13 s re-attach fails with
+  `CHIP Error 0x32` (CASE timeout). Clearing the BR's SRP server
+  (`ot-ctl srp server disable; ot-ctl srp server enable`) removes the stale
+  names.
+- **BLE commissioning right after wiping flash with a debugger fails**: a
+  running light writes its key-value store a moment after a change, so a wipe
+  by `probe-rs download` of 0xFA000.. while it runs can be followed by a write
+  of old state. Use the `test-factory-reset` feature or hold Button 1 at boot,
+  or reset the light before and after the wipe.
 - **BLE commissioning: ConnectNetwork times out (networkingStatus 9)**: the
   light's `radio:` log line (frames received / sent, send failures by cause)
   shows whether the 802.15.4 driver is alive while the BLE connection is up. On

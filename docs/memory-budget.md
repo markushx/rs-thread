@@ -256,3 +256,17 @@ unused `RamSettings<4096>` is not removable (the `Instance` keeps its own
 settings store; the flash store holds the persistent copy), `opt-level = "z"`
 for the BLE crates, `DEFMT_LOG=warn` (all `info!` strings out of the image),
 fewer rs-matter clusters, `max-fabrics-*` and `stack-max-*` features.
+
+## SRP service slots
+
+The SRP client keeps `SRP_SERVICES` service slots (`opentrust_instance::SRP_SERVICES`,
+default 6, features `srp-services-8` and `srp-services-12`): Matter registers one
+operational service per fabric plus the commissionable service, and requires at
+least five fabrics. With four slots only three fabrics fitted next to the
+commissionable service. Measured on the nRF52840 light (BLE build, nrf802154):
+`.bss` 197496 -> 199288 bytes (+1792) and `Resources` 82264 -> 83800 bytes
+(+1536) for two more slots, so about 770 bytes per slot; flash is unchanged
+(-84 bytes). Eight slots cost about 1.5 kB more than six, twelve about 4.6 kB.
+The size of one SRP update message is not bounded by the slot count: with all
+slots filled and five subtypes on the commissionable service it can approach the
+1232 byte UDP payload of the client.

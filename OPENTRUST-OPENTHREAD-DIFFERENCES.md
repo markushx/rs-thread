@@ -773,3 +773,11 @@ OpenThread has no BLE; its Matter story is `rs-matter-embassy` over the esp-rs `
 - **Unprovisioned light.** With the `ble` feature a light with no stored Active Dataset and no `OPENTRUST_DATASET` leaves Thread disabled and waits for `AddOrUpdateThreadNetwork` / `ConnectNetwork` over BLE (`ThreadNetCtl::connect`); it no longer forms a network of its own. `--no-default-features` builds the Thread-only light as before; a build-time dataset still attaches at once (and BLE is also offered while the light has no fabric).
 - **macOS commissioners need Apple's Matter BLE developer profile.** CoreBluetooth refuses the BTP characteristic UUIDs (`18EE2EF5-...-9D11` / `9D12`) to ordinary clients with `CBErrorUUIDNotAllowed`, for discovery of descriptors, subscribing and writing alike; advertising and the GATT service itself are visible. Not specific to OpenTrust or to this peripheral.
 - **rs-matter bump 36 kB with BLE** (28 kB without): the BTP engine and the coexistence futures are allocated in it (34012 bytes used).
+
+## Hardening (`examples/nrf52840-light`, `opentrust-matter`, `opentrust-instance`)
+
+- **SRP client slots.** OpenThread's SRP client has no fixed service count (the application provides the `otSrpClientService` items). `Instance` has `SRP_SERVICES` slots (6 by default, `srp-services-8` / `srp-services-12` features) instead of 4, so that Matter's five fabrics plus the commissionable service fit.
+- **`ThreadNetCtl::connect` does not restart a running node.** rs-matter's network manager connects at boot with the stored credentials; `rs-matter-embassy`'s `OtNetCtl` restarts Thread on every connect. Here a node that already runs the same Active Dataset (restoring or attaching) is left alone and `connect` waits for the attached role, so the restore of the stored role and parent is not thrown away.
+- **SRP failure polling.** `SrpMdns` checks for a name conflict every 500 ms until the host is registered (5 s afterwards); OpenThread reports the failure through a callback.
+- **Router restore after a long outage.** Behaviour matches OpenThread (three Link Requests, then a normal attach); it was measured on hardware at 12.9 to 13.7 s from `Detached` to `Child` when the border router had already dropped the router entry (outage of about 100 s or more). No shortcut was added.
+
