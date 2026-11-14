@@ -235,6 +235,17 @@ Security, Bluetooth). Linux chip-tool (BlueZ) needs neither.
 
 ## 6. Troubleshooting
 
+- **Verified on the DK (BLE build, 2026-11-14)**: `test-factory-reset` erased
+  the store and the light advertised the Matter BLE service unprovisioned
+  (discriminator 3840), then `chip-tool pairing ble-thread` commissioned it again
+  in 23 s (Button 1 itself was not pressed; it runs the same erase). Ten resets at
+  random moments while toggles were in flight (1 to 8 s after the command): every
+  boot restored its fabric and Router role (0.4 to 1.3 s) and `onoff read` worked
+  (`p5a-summary.txt`). A 62 minute run with one toggle every 30 s: 123 of 123
+  toggles succeeded (3 to 4 s each), one role change (Child, then Router at
+  55 s), no flash write failure, stack high-water 39328 bytes, heap used 0 of
+  4096 bytes, radio tx 2608 / rx 5280 with 73 no-ack and 13 busy-channel
+  (`soak-dev.log`, `soak-summary.txt`).
 - **After a reset the light needs about 13 s before it is a Child again**:
   a restored router asks its former neighbours with Link Requests (three
   attempts, the last one waits 2 s) and attaches normally when nobody answers,
