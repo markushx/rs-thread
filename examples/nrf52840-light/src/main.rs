@@ -385,8 +385,15 @@ async fn main(spawner: Spawner) {
                 // restores its role or attaches (and forms a partition itself
                 // only when no router answers, as OpenThread does); a standalone
                 // light forms its network at once.
+                //
+                // With a Thread network stored by Matter commissioning, the
+                // Matter network manager (`ThreadNetCtl` connect) may start
+                // Thread first; both mean the same network, so start only if
+                // it is still off.
                 if have_network || !BUILD_DATASET.is_empty() {
-                    i.thread_start(now).unwrap();
+                    if i.role() == opentrust_instance::Role::Disabled {
+                        i.thread_start(now).unwrap();
+                    }
                 } else {
                     i.become_leader(now).unwrap();
                 }
