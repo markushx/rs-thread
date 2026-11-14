@@ -18,6 +18,8 @@ ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
 commissioner = ["ftd", "opentrust-meshcop/commissioner"]
 border-agent = ["commissioner", "opentrust-meshcop/border-agent"]
 tcat = ["opentrust-meshcop/tcat"]
+srp-services-8 = []
+srp-services-12 = []
 trel = ["opentrust-mesh/trel"]
 defmt = [
     "dep:defmt",

@@ -29,7 +29,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::{String, Vec};
 use opentrust_dns::rdata::{TxtEntry, TxtIter};
 use opentrust_embassy::{DnsClientError, OpenTrust, ResolvedService, ServiceId};
-use opentrust_instance::{InstanceCrypto, ServiceConfig, SrpError};
+use opentrust_instance::{InstanceCrypto, SRP_SERVICES, ServiceConfig, SrpError};
 use opentrust_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::Matter;
@@ -45,10 +45,10 @@ use rs_matter::utils::timers::{Duration, Timer};
 use crate::error::map_err;
 use crate::fmt::{log_debug, log_warn};
 
-/// Services registered at once (the SRP client of the `Instance` has four
-/// slots): the commissionable service plus one operational service per
-/// fabric.
-pub const MAX_SERVICES: usize = 4;
+/// Services registered at once (the SRP client slots of the `Instance`, see
+/// [`SRP_SERVICES`]): the commissionable service plus one operational service
+/// per fabric. Matter requires at least five fabrics.
+pub const MAX_SERVICES: usize = SRP_SERVICES;
 
 /// The DNS-SD domain of SRP registrations (Thread 1.3 `default.service.arpa`).
 pub const DOMAIN: &str = "default.service.arpa";

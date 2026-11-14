@@ -111,7 +111,7 @@ pub use commissioning::InstanceCrypto;
 #[cfg(feature = "ftd")]
 pub use diag::RouteInfo;
 pub use diag::{ChildInfo, NeighborInfo, tlv as diag_tlv};
-pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES};
+pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES, SRP_SERVICES};
 pub use opentrust_coap::message::Code as CoapCode;
 pub use opentrust_coap::uri::Uri as TmfUri;
 pub use opentrust_core::types::{ExtAddress, Rloc16};

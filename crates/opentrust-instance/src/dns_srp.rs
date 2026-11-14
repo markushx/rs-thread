@@ -110,10 +110,24 @@ impl DgramQueue {
     }
 }
 
+/// Services the SRP client registers at once. Matter needs the commissionable
+/// service plus one operational service per fabric (at least five fabrics), so
+/// the default is six; the features `srp-services-8` and `srp-services-12`
+/// raise it. Each slot costs about the size of a `ServiceConfig` plus its
+/// update state (see `docs/memory-budget.md`).
+#[cfg(feature = "srp-services-12")]
+pub const SRP_SERVICES: usize = 12;
+/// See above.
+#[cfg(all(feature = "srp-services-8", not(feature = "srp-services-12")))]
+pub const SRP_SERVICES: usize = 8;
+/// See above.
+#[cfg(not(any(feature = "srp-services-8", feature = "srp-services-12")))]
+pub const SRP_SERVICES: usize = 6;
+
 /// State of the SRP and DNS clients.
 #[derive(Debug)]
 pub(crate) struct DnsSrp {
-    pub(crate) srp: SrpClient<4>,
+    pub(crate) srp: SrpClient<SRP_SERVICES>,
     pub(crate) dns: DnsClient<4>,
     srp_sock: Option<SocketHandle>,
     dns_sock: Option<SocketHandle>,
@@ -310,7 +324,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     fn with_srp<T>(
         &mut self,
         now: Instant,
-        f: impl FnOnce(&mut SrpClient<4>, &mut SrpEnv<'_, R, C, SrpCtx<'_, S>>) -> T,
+        f: impl FnOnce(&mut SrpClient<SRP_SERVICES>, &mut SrpEnv<'_, R, C, SrpCtx<'_, S>>) -> T,
     ) -> T {
         let addrs = self.auto_addrs();
         let ml_eid = self.core.ml_eid_addr();

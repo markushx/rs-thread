@@ -282,3 +282,21 @@ fn srp_registration_and_dns_resolution_over_the_mesh() {
     assert_eq!(s.addrs[0].addr, net.node(1).ml_eid());
     let _: Instant = net.now;
 }
+
+/// A Matter node needs one operational service per fabric (at least five)
+/// plus the commissionable service.
+#[test]
+fn srp_client_has_slots_for_five_fabrics_and_the_commissionable_service() {
+    let mut net = Network::new(&[Kind::Router], 5);
+    net.with(0, |n, now| {
+        assert!(opentrust_instance::SRP_SERVICES >= 6);
+        for i in 0..opentrust_instance::SRP_SERVICES {
+            let name = format!("{:016X}-{:016X}", 0x1111_u64 + i as u64, 2u64);
+            let cfg = ServiceConfig::new("_matter._tcp", &name, 5540).unwrap();
+            n.srp_add_service(cfg, now).unwrap();
+        }
+        let cfg =
+            ServiceConfig::new("_matter._tcp", "FFFFFFFFFFFFFFFF-0000000000000002", 5540).unwrap();
+        assert!(n.srp_add_service(cfg, now).is_err());
+    });
+}
