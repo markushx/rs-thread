@@ -34,6 +34,8 @@ dns = []
 udp = []
 # `commissioner`, `joiner`.
 commissioning = ["ftd", "opentrust-instance/commissioner"]
+# Host binary `opentrust-cli-sim`: simulated nodes behind OT-style prompts.
+sim = ["dep:opentrust-sim", "ftd", "commissioning"]
 defmt = ["dep:defmt", "opentrust-core/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 
@@ -48,11 +50,17 @@ opentrust-dns = { workspace = true }
 opentrust-net = { workspace = true }
 rand_core = { workspace = true }
 heapless = { workspace = true }
+opentrust-sim = { workspace = true, optional = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [dev-dependencies]
 opentrust-sim = { workspace = true }
+
+[[bin]]
+name = "opentrust-cli-sim"
+path = "src/bin/sim.rs"
+required-features = ["sim"]
 
 [lints]
 workspace = true
