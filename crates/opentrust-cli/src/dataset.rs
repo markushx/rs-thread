@@ -176,6 +176,16 @@ where
                 let d = self.i.pending_dataset(self.now).ok_or(E::NOT_FOUND)?;
                 self.show(a.get(2), &d)
             }
+            "set" => {
+                let mut b = [0u8; 254];
+                let n = parse_hex(a.get(3), &mut b)?;
+                let d = Dataset::from_tlvs(&b[..n])?;
+                match a.get(2) {
+                    "active" => self.i.set_active_dataset(&d, self.now).map_err(E::from),
+                    "pending" => self.i.set_pending_dataset(&d, self.now).map_err(E::from),
+                    _ => Err(E::INVALID_ARGS),
+                }
+            }
             "clear" => {
                 self.st.dataset.clear();
                 Ok(())

@@ -781,3 +781,17 @@ OpenThread has no BLE; its Matter story is `rs-matter-embassy` over the esp-rs `
 - **SRP failure polling.** `SrpMdns` checks for a name conflict every 500 ms until the host is registered (5 s afterwards); OpenThread reports the failure through a callback.
 - **Router restore after a long outage.** Behaviour matches OpenThread (three Link Requests, then a normal attach); it was measured on hardware at 12.9 to 13.7 s from `Detached` to `Child` when the border router had already dropped the router entry (outage of about 100 s or more). No shortcut was added.
 
+
+## CLI (`opentrust-cli`)
+
+The interpreter prints OpenThread's output (`Done`, `Error <n>: <Name>` with OT error numbers, `\r\n` line ends, table layouts of `cli.cpp`). Differences:
+
+- **No owned instance, no line editor.** `Cli::process_line(inst, now, line, out)` borrows the instance per call; async output (ping replies, scan rows, joiner and commissioner state, UDP receive, DNS responses) comes from `Cli::handle_event`, timers (ping interval and timeout) from `Cli::poll`. The prompt `> ` and echo belong to the host or firmware.
+- **Command groups are cargo features** (`dataset`, `scan`, `ping`, `tables`, `netdata`, `srp`, `dns`, `udp`, `commissioning`, `ftd`); a disabled or unimplemented command answers `Error 35: InvalidCommand`. Not implemented: `coap`, `mgmtsetcommand`/`mgmtgetcommand`, `child <id>`, `router <id>`, `counters mle`, `state router|child|detached` (`Error 12: NotImplemented`), `ipaddr -v` flags, `prefix` / `route` listing of the local data, `dns browse|service`, `srp client service` listing, lease interval commands.
+- **Legacy parameter commands** (`channel`, `panid`, `extpanid`, `networkname`, `networkkey`) are accepted while Thread is disabled (as in OT, otherwise `Error 13: InvalidState`) and held by the CLI; `thread start` / `state leader` fold them into the Active Dataset (a new one with random credentials if there is none) before starting. OT writes them to the MAC and key manager directly. The getters read them back, or the Active Dataset.
+- **`thread start` on a running node answers `Done`** (the joiner starts Thread itself after `Join success`).
+- **`dataset init new` uses channel 11**; OT picks a random channel. `dataset set active|pending <hex>` takes the dataset TLVs.
+- **Ping.** The hop limit argument is accepted and ignored (`Instance::ping` uses its default hop limit); the payload is limited to 512 bytes; the printed size is payload plus the 8 byte ICMPv6 header as OT prints it. `ping stop` ends the run without statistics.
+- **Table columns without a data source** print 0: child `Age`, `LQ In`, `C_VN`, `CSL`, `QMsgCnt`, `Suprvsn`; neighbor `Age` and `Last RSSI` (the average is shown), `N` follows the FTD flag; counters that `MacCounters` does not keep (`TxUnicast`, `TxBroadcast`, `RxUnicast`, ...) print 0. The router table lists the device itself like OT (next hop 63, link 0).
+- **`reset` and `factoryreset`** stop Thread (and wipe the settings) and set a flag (`Cli::take_reset_request`) for the host to restart; they print nothing, as OT does before it reboots.
+- **A UDP datagram sent while the address query for its destination runs is dropped** (a following one arrives); ping is not affected. OT holds the message back until the query completes.

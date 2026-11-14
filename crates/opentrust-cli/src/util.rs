@@ -254,3 +254,43 @@ pub fn table_separator<W: Write>(out: &mut W, widths: &[usize]) {
     }
     let _ = out.write_str("+\r\n");
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+    use std::string::String;
+
+    use super::*;
+
+    #[test]
+    fn error_names_follow_openthread() {
+        assert_eq!(error_name(7), "InvalidArgs");
+        assert_eq!(error_name(13), "InvalidState");
+        assert_eq!(error_name(35), "InvalidCommand");
+        assert_eq!(error_name(37), "Rejected");
+        assert_eq!(E::from(Error::InvalidState), E(13));
+        assert_eq!(E::from(Error::NotFound), E(23));
+    }
+
+    #[test]
+    fn table_header_matches_ot() {
+        let mut s = String::new();
+        table_header(&mut s, &["Ch", "RSSI"], &[4, 6]);
+        assert_eq!(s, "| Ch | RSSI |\r\n+----+------+\r\n");
+        let mut s = String::new();
+        table_header(&mut s, &["ID", "R"], &[5, 1]);
+        assert_eq!(s, "| ID  |R|\r\n+-----+-+\r\n");
+    }
+
+    #[test]
+    fn numbers_and_hex() {
+        assert_eq!(parse_u32("0x10"), Ok(16));
+        assert_eq!(parse_u32("16"), Ok(16));
+        assert_eq!(parse_u8("256"), Err(E::INVALID_ARGS));
+        assert_eq!(parse_hex_exact::<2>("0aFF"), Ok([0x0a, 0xff]));
+        assert_eq!(parse_hex_exact::<2>("0xff"), Err(E::INVALID_ARGS));
+        assert_eq!(parse_hex_exact::<2>("0a"), Err(E::INVALID_ARGS));
+        assert_eq!(parse_prefix("fd00::/64").map(|p| p.1), Ok(64));
+        assert!(Args::parse("a b c").is_some());
+    }
+}

@@ -259,3 +259,18 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_interval;
+
+    #[test]
+    fn interval_like_ot() {
+        assert_eq!(parse_interval("1"), Ok(1000));
+        assert_eq!(parse_interval("12"), Ok(12000));
+        assert_eq!(parse_interval("0.5"), Ok(500));
+        assert_eq!(parse_interval("1.25"), Ok(1250));
+        assert!(parse_interval("1.2.3").is_err());
+        assert!(parse_interval("x").is_err());
+    }
+}

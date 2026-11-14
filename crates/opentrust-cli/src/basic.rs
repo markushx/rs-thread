@@ -172,6 +172,11 @@ where
     pub(crate) fn thread(&mut self, a: &Args<'_>) -> R {
         match a.get(1) {
             "start" => {
+                // Starting a running Thread (the joiner already started it)
+                // is not an error, as in OT.
+                if self.i.role() != Role::Disabled {
+                    return Ok(());
+                }
                 self.start_pending()?;
                 self.i.thread_start(self.now).map_err(E::from)
             }

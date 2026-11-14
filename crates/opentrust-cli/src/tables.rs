@@ -3,6 +3,10 @@
 use core::fmt::Write;
 
 use opentrust_instance::InstanceCrypto;
+#[cfg(feature = "ftd")]
+use opentrust_instance::RouteInfo;
+#[cfg(feature = "ftd")]
+use opentrust_mle::Role;
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
@@ -101,7 +105,26 @@ where
                 &[4, 8, 10, 11, 7, 8, 5, 18, 6],
             );
         }
-        for r in self.i.route_table() {
+        let mut rows = self.i.route_table();
+        let me = self.i.rloc16();
+        if matches!(self.i.role(), Role::Router | Role::Leader)
+            && !rows.iter().any(|r| r.rloc16 == me)
+        {
+            // OT lists the device itself too.
+            let _ = rows.push(RouteInfo {
+                router_id: (me.0 >> 10) as u8,
+                rloc16: me,
+                next_hop: None,
+                cost: 0,
+                is_neighbor: false,
+                ext: self.i.ext_address(),
+                link_quality_in: 0,
+                link_quality_out: 0,
+                age_secs: 0,
+            });
+            rows.sort_unstable_by_key(|r| r.router_id);
+        }
+        for r in rows {
             if table {
                 out!(self.o, "| {:2} ", r.router_id);
                 out!(self.o, "| 0x{:04x} ", r.rloc16.0);
