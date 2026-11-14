@@ -60,8 +60,14 @@ const MAX_NAME: usize = 128;
 /// Delay before a failed resolve / browse is retried while rs-matter still
 /// waits for it.
 const RETRY_MS: u64 = 1000;
-/// How often the SRP client is checked for a failed update.
+/// How often the SRP client is checked for a failed update once the host is
+/// registered.
 const FAILURE_POLL_MS: u64 = 5000;
+/// The same while the host is not registered yet: a name conflict (the
+/// server still holds the name for an earlier key, for example after a
+/// factory reset) is answered within a round trip, so each name variant
+/// costs about this long.
+const REGISTERING_POLL_MS: u64 = 500;
 /// TXT key / value pairs of one service.
 const MAX_TXT: usize = 16;
 
@@ -363,7 +369,15 @@ where
                 guard.0.handle_failure(mac);
                 let pending = guard.0.sync_services(matter)?;
                 // Poll for SRP failures as well, without a wake-up of their own.
-                let wait = if pending { RETRY_MS } else { FAILURE_POLL_MS };
+                let registered =
+                    ot.with(|i, _| i.srp_host_state() == opentrust_instance::ItemState::Registered);
+                let wait = if pending {
+                    RETRY_MS
+                } else if registered {
+                    FAILURE_POLL_MS
+                } else {
+                    REGISTERING_POLL_MS
+                };
                 select(
                     matter.transport().wait_mdns(),
                     Timer::after(Duration::from_millis(wait)),
