@@ -241,11 +241,11 @@ Security, Bluetooth). Linux chip-tool (BlueZ) needs neither.
   the nRF52840 DK the light attached as a Child within about 1.3 s of
   `AddOrUpdateThreadNetwork` with an open BLE connection (both a held bleak
   connection and a full `chip-tool pairing ble-thread`), with no timeslot
-  ended / denied or busy-channel failures, so BLE and 802.15.4 do coexist. An
-  intermittent failure to attach right after wiping and re-flashing the same
-  light is probably the BR still holding the previous child entry (frame
-  counters restart at zero): wait for the child timeout or restart the BR's
-  child table before retrying. An aborted attempt leaves the fail-safe armed
+  ended / denied or busy-channel failures, so BLE and 802.15.4 do coexist. If
+  the light sends Parent Requests (tx rises) but receives nothing and ends up
+  Leader of its own partition, first check that the BR is running and
+  reachable (`otbr-agent` process, RCP dongle on USB, REST API on port 8081)
+  and that its active dataset matches the one handed over. An aborted attempt leaves the fail-safe armed
   until it expires (133 s): the next PASE session then gets
   `InvalidAuthentication` on `ArmFailSafe`; this is rs-matter's handling of a
   closed commissioning session, not this layer's.
