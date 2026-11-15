@@ -351,6 +351,11 @@ int diff_lowpan_decompress(const DiffMacAddr *src,
     error = Inst().Get<Lowpan::Lowpan>().Decompress(*message, addrs, data, datagram_len);
     if (error == kErrorNone)
     {
+        // Like the mesh forwarder: the payload follows the decompressed headers.
+        error = message->AppendBytes(data.GetBytes(), data.GetLength());
+    }
+    if (error == kErrorNone)
+    {
         uint16_t l = message->GetLength();
         if (l > out_cap)
         {
