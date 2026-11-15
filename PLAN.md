@@ -126,7 +126,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] MeshCoP and Network Data handlers (`/a/sd`, `/c/*`, `/n/*`; Phases 7-8)
 - [x] Phase 5b: DTLS 1.2 + EC-JPAKE (CoAPS for commissioning, ADR 0001): `opentrust_core::crypto::ecjpake` (feature `ecjpake`, RustCrypto `p256`, all mbedTLS self-test vectors), crate `opentrust-dtls` (sans-IO DTLS 1.2, `TLS_ECJPAKE_WITH_AES_128_CCM_8` only, client + server, cookies, retransmission, fragmentation, KEK) and `opentrust_dtls::coaps::Coaps` behind `opentrust_coap::endpoint::SecureTransport`; manually interop-tested against mbedTLS 3.6.0 `ssl_server2`/`ssl_client2`
   - [ ] Automated differential/interop handshakes against `openthread-sys` / mbedTLS (Joiner and Commissioner, both roles, lossy links) (Phase 11)
-  - [ ] Hardware P-256 backends for the `ecjpake::P256` trait (CryptoCell, CRACEN, ESP ECC) and an rs-matter `EcPoint`/`EcScalar` adapter (Phase 12)
+  - [ ] Hardware P-256 backends for the `ecjpake::P256` trait (CryptoCell, CRACEN) and an rs-matter `EcPoint`/`EcScalar` adapter (Phase 12; ESP ECC in Phase 14)
   - [ ] Fuzz the record/handshake parsers and the EC-JPAKE readers (Phase 11)
   - [ ] Security review of the EC-JPAKE/DTLS code before M4 (ADR 0001); include the commissioning decisions listed under Phase 8b
   - [x] Wire into MeshCoP Joiner / Commissioner / Border Agent (relay, connection-attempt limits, guard times) (Phase 8b; the roles own `opentrust_dtls::Session` directly via `opentrust_meshcop::secure`)
@@ -298,7 +298,7 @@ Security-relevant decisions for the review before M4:
   - [ ] Persistence, open: the rs-matter `Networks` store itself is rs-matter's; no wear levelling or write coalescing beyond the 5 s debounce in the persistence itself (the nRF52840 flash log of `opentrust-flash` levels wear and merges writes per key); the settings are loaded once per `ThreadRunner`, not re-read on a restart with live resources
   - [x] rs-matter on-off light over Thread in sim (`crates/opentrust-matter/tests/light.rs`, virtual time): a leader hosts the fake SRP / DNS-SD server and runs rs-matter's `Commissioner` over the mesh; the light is a child with a full `MatterStack` through `ThreadRunner` (`run_thread_oper`, dataset preset); asserts attach, `_matterc._udp` and `_matter._tcp` registration, PASE, commissioning, CASE, OnOff read / Toggle / read. RAM numbers in `docs/memory-budget.md`
   - [x] Light on real hardware, nRF52840 DK (`examples/nrf52840-light`): `radio-nrf802154`, embassy-time `Alarm` / `Clock`, flash-backed Thread settings and rs-matter KV (`opentrust-flash`, wear levelling), RNG entropy, RustCrypto `Crypto`, BLE commissioning (`opentrust_matter::ble`, `ThreadCoexRunner`), commissioned with chip-tool over BLE (`pairing ble-thread`) and on-network through `ot-br-posix`; 62 min soak with 123/123 toggles, random resets, factory reset back to BLE advertising (`docs/thread-border-router.md`, `docs/memory-budget.md`)
-  - [ ] Light on ESP32-C6: radio over `esp-ieee802154`, timer, flash KV, BLE
+  - Light on ESP32-C6: see Phase 14
 - [x] OT-compatible CLI (`ot-cli` command subset) — required to drive OT test scripts: `crates/opentrust-cli` (`no_std`, no alloc, feature-gated command groups, sim tests driving 1 to 3 nodes by CLI strings only; see OPENTRUST-OPENTHREAD-DIFFERENCES.md for what is missing)
 - [ ] Spinel/NCP (RCP host side & NCP device side) — optional, enables `ot-br-posix` interop
 
@@ -336,7 +336,7 @@ Security-relevant decisions for the review before M4:
   - [ ] Interop with the `radio-embassy` backend: OpenTrust does not attach to the OpenThread Leader (no Parent Response seen, peer counts 8 security errors and no unicast TX) and an OpenTrust Leader is not joined by the peer; the Nordic-driver backend works, so the cause is in the software MAC path or the embassy-nrf radio layer (a packet capture is needed; not diagnosed yet)
   - [ ] Interop still open: CSL, SED polling, runs over several hours (62 min with the light done), packet capture (no sniffer)
 - [ ] nRF54L15/H20: radio driver, timers, CRACEN crypto
-- [ ] ESP32-C6/H2 (802.15.4 capable; RISC-V): radio via `esp-ieee802154` (esp-hal), reuse esp-rs/openthread platform glue
+- ESP32-C6/H2: see Phase 14
 - [ ] Example apps per board: MTD (SED) sensor open; FTD router / leader (`examples/nrf52840-leader`, `--bin node`) and CLI over UART done on the nRF52840 DK
   - [x] CLI over UART on the nRF52840 DK (`examples/nrf52840-leader --bin cli --features cli-all`, UARTE0 on the J-Link VCOM, prompt `> `, echo and CR/LF as OT's UART CLI, settings in RAM): interop against `ot-cli-ftd` on a second DK on channel 25 with CLI commands only (OT forms / OpenTrust joins by `dataset set active`, OpenTrust forms / OT joins; `state`, `ping` and `udp` both ways to ML-EID and RLOC, `router table`, `child table`, `neighbor table`, `netdata show`, `ipaddr`, `dataset active` identical in format). Flash 447 KB with no command group, 501 KB with all, RAM 98 / 106 KB (per group: dataset +8 KB, scan +3, ping +4, tables +10, netdata +5, srp +5, dns +2, udp +3, commissioning +16 KB flash and +7 KB RAM)
   - [ ] CLI firmware: persistent settings in a flash region of its own, commissioner / joiner against OpenThread on hardware (needs an `ot-cli-ftd` built with `OT_COMMISSIONER` and `OT_JOINER`), `child <id>`, `counters mle`, `dataset mgmtsetcommand` / `mgmtgetcommand`
@@ -356,7 +356,15 @@ Security-relevant decisions for the review before M4:
 - [ ] API docs, architecture doc, porting guide for new platforms
 - [ ] Release crates to crates.io
 
-## Phase 14 – Cleanup
+## Phase 14 – ESP32 targets
+
+- [ ] ESP32-C6/H2 (802.15.4 capable; RISC-V): radio via `esp-ieee802154` (esp-hal), reuse esp-rs/openthread platform glue; `Clock` / `Alarm` on the target timer, entropy, flash-backed settings
+- [ ] Light on ESP32-C6: radio over `esp-ieee802154`, timer, flash KV, BLE (Matter commissioning through the ESP BLE controller next to 802.15.4)
+- [ ] Hardware crypto: ESP AES and ESP ECC backends for `CryptoBackend` / the `ecjpake::P256` trait and rs-matter
+- [ ] Example apps (FTD router / leader, CLI over UART / USB-CDC) and interop against OpenThread / an OTBR as on the nRF52840
+- [ ] ESP32-C6 part of milestone M5
+
+## Phase 15 – Cleanup
 
 - [ ] Full code review
 - [x] Remove mention of PLAN phases from code and comments (keep it that way for new code)
