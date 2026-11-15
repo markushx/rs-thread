@@ -372,12 +372,25 @@ Security-relevant decisions for the review before M4:
 
 ## Milestones
 
-1. **M1 – Codecs**: MAC + 6LoWPAN + MLE TLVs + crypto, verified by OT vectors and differential tests
-2. **M2 – MTD in sim**: Rust MED/SED attaches to OT leader in simulation; ping works
-3. **M3 – FTD in sim**: Rust router/leader; mixed Rust/OT network passes core `thread-cert` 5.x cases
-4. **M4 – Commissioning & Matter**: Joiner + Commissioner interop with OT; SRP client; rs-matter device reachable over a Rust Thread node in sim
-5. **M5 – Hardware**: nRF52840 + ESP32-C6 nodes join an OT/OTBR network (nRF52840 reached; ESP32-C6 open)
-6. **M6 – Thread 1.2–1.4 features** and certification test-plan coverage
+- [ ] **M1 – Codecs**: MAC + 6LoWPAN + MLE TLVs + crypto, verified by OT vectors and differential tests
+  - [x] Codecs for MAC, 6LoWPAN, MLE TLVs, crypto, MeshCoP TLVs, network data, CoAP
+  - [ ] OT unit-test vectors ported (`tests/unit/*.cpp`, Phase 11; in part already)
+  - [ ] Differential tests against `openthread-sys` (Phase 11)
+- [ ] **M2 – MTD in sim**: Rust MED/SED attaches to OT leader in simulation; ping works
+  - [x] MED: OpenTrust MEDs attach to an OT leader and answer pings in the OT virtual-time simulation (Cert_5_3_04 nodes 4-7)
+  - [ ] SED: OpenTrust SED in the mixed simulation (Cert_5_3_04 node 3, Cert_5_3_02 node 4 fail); also Cert_5_1_02 node 3 (MED)
+- [ ] **M3 – FTD in sim**: Rust router/leader; mixed Rust/OT network passes core `thread-cert` 5.x cases
+  - [x] Mixed OT/OpenTrust network in OT's virtual-time simulation (`opentrust-sim/tests/mixed.rs`), OpenTrust as leader and as router
+  - [x] `thread-cert` harness (`opentrust-sim/tests/thread_cert.rs`)
+  - [ ] Core 5.1 / 5.2 / 5.3 cases pass with OpenTrust in every role (178 of 243 runs, `docs/test-status.md`)
+- [ ] **M4 – Commissioning & Matter**: Joiner + Commissioner interop with OT; SRP client; rs-matter device reachable over a Rust Thread node in sim
+  - [x] SRP client (against the OTBR SRP server on hardware)
+  - [x] rs-matter device reachable over a Rust Thread node in sim (`opentrust-matter/tests/light.rs`) and on the nRF52840 through an OTBR
+  - [ ] Joiner + Commissioner interop with OT nodes (in sim or on hardware)
+- [ ] **M5 – Hardware**: nRF52840 + ESP32-C6 nodes join an OT/OTBR network
+  - [x] nRF52840: joins OT nodes and an OTBR network (router, child, leader; Matter light commissioned through the OTBR)
+  - [ ] ESP32-C6 (Phase 14)
+- [ ] **M6 – Thread 1.2–1.4 features** and certification test-plan coverage
 
 ## Open questions
 
