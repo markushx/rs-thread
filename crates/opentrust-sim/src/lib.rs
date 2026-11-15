@@ -28,6 +28,8 @@
 mod network;
 mod radio;
 mod rng;
+pub mod vt;
+pub mod vtsim;
 
 pub use network::{Kind, Network, SimInstance, SimNode, SimSettings, TxRecord};
 pub use radio::{Medium, SimRadio};

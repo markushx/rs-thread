@@ -304,8 +304,8 @@ Security-relevant decisions for the review before M4:
 
 ## Phase 11 – Simulation & testing (reuse OpenThread test framework)
 
-- [ ] `opentrust-sim`: POSIX simulation platform compatible with OT's simulation protocol (UDP-based radio sim, `OT_SIMULATION`/`otns` event format) so Rust nodes and OT nodes share one virtual network
-- [ ] Build `ot-cli-ftd`/`ot-cli-mtd`-compatible binaries from Rust (same CLI prompt/output) so OT `tests/scripts/thread-cert` Python tests can run against them
+- [x] `opentrust-sim`: OT's virtual-time simulation protocol (`opentrust_sim::vt`: UDP event socket, radio with ACK, energy scan, settings file) so Rust nodes and OT nodes share one virtual network; `opentrust_sim::vtsim`: Rust port of thread-cert's `VirtualTime` simulator driving `ot-cli-ftd` / Rust node processes (mixed-network test `crates/opentrust-sim/tests/mixed.rs`: OT leader + OpenTrust router and the reverse, router tables, pings both ways; skipped without `ot-cli-ftd`)
+- [x] `opentrust-cli-vt` (`opentrust-cli --features sim`): `ot-cli-ftd`-compatible node (argv: node id; stdin/stdout CLI with echo and prompt; `PORT_OFFSET`/`PORT_BASE`; settings in `tmp/<offset>_<id>.flash`); the MTD variant (`ot-cli-mtd`) is not built
 - [ ] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
   - [x] builds OT reference nodes from `openthread-sys/vendor/openthread` (simulation platform): `cargo build -p openthread-sys` (build script, about 25 s, 11 MB build tree)
   - [ ] runs selected `thread-cert` cases (Cert_5_1_*, 5_2_*, 5_3_*, …, v1_2_*) with Rust nodes as DUT and OT nodes as peers

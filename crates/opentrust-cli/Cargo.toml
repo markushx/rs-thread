@@ -62,5 +62,10 @@ name = "opentrust-cli-sim"
 path = "src/bin/sim.rs"
 required-features = ["sim"]
 
+[[bin]]
+name = "opentrust-cli-vt"
+path = "src/bin/vt.rs"
+required-features = ["sim"]
+
 [lints]
 workspace = true
