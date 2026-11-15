@@ -598,6 +598,34 @@ int diff_mac_build(const DiffMacBuild *p, uint8_t *out, uint16_t cap, uint16_t *
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// MeshCoP datasets
+// ---------------------------------------------------------------------------
+
+// `otDatasetParseTlvs` (framing, per-TLV validity, duplicates) followed by
+// `otDatasetConvertToTlvs`: the TLVs OpenThread's operational dataset keeps.
+// Returns the OT error; on success `out` holds the converted TLVs.
+int diff_dataset_roundtrip(const uint8_t *tlvs, uint8_t len, uint8_t *out, uint8_t *out_len)
+{
+    otOperationalDatasetTlvs in, conv;
+    otOperationalDataset     info;
+    otError                  err;
+
+    memset(&in, 0, sizeof(in));
+    memcpy(in.mTlvs, tlvs, len);
+    in.mLength = len;
+    err        = otDatasetParseTlvs(&in, &info);
+    if (err != OT_ERROR_NONE)
+    {
+        return static_cast<int>(err);
+    }
+    memset(&conv, 0, sizeof(conv));
+    otDatasetConvertToTlvs(&info, &conv);
+    memcpy(out, conv.mTlvs, conv.mLength);
+    *out_len = conv.mLength;
+    return 0;
+}
+
 // Secures a built frame in place with `TxFrame::ProcessTransmitAesCcm`.
 // `psdu` is `len` bytes without FCS, MIC area included (zero). `ext` is the
 // source extended address in canonical order. Returns 1 if OpenThread

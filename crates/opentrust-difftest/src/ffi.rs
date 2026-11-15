@@ -74,6 +74,7 @@ unsafe extern "C" {
     ) -> i32;
     fn diff_mac_build(p: *const MacBuild, out: *mut u8, cap: u16, len: *mut u16) -> i32;
     fn diff_mac_secure(key: *const u8, ext: *const u8, psdu: *mut u8, len: u16) -> i32;
+    fn diff_dataset_roundtrip(tlvs: *const u8, len: u8, out: *mut u8, out_len: *mut u8) -> i32;
     fn diff_mac_parse(psdu: *const u8, len: u16, info: *mut MacInfo);
 }
 
@@ -393,6 +394,21 @@ impl Ot {
                 psdu.len() as u16,
             ) == 1
         }
+    }
+
+    /// `otDatasetParseTlvs` + `otDatasetConvertToTlvs`: `Err(ot_error)` for
+    /// invalid TLVs, else the dataset TLVs OpenThread keeps.
+    pub fn dataset_roundtrip(&self, tlvs: &[u8]) -> Result<Vec<u8>, i32> {
+        let mut out = vec![0u8; 256];
+        let mut n = 0u8;
+        let e = unsafe {
+            diff_dataset_roundtrip(tlvs.as_ptr(), tlvs.len() as u8, out.as_mut_ptr(), &mut n)
+        };
+        if e != 0 {
+            return Err(e);
+        }
+        out.truncate(n as usize);
+        Ok(out)
     }
 
     pub fn mac_parse(&self, psdu: &[u8]) -> MacInfo {

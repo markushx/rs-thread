@@ -18,6 +18,9 @@ ot = ["dep:openthread-sys"]
 opentrust-core = { workspace = true }
 opentrust-mac = { workspace = true }
 opentrust-lowpan = { workspace = true }
+opentrust-mle = { workspace = true }
+opentrust-mesh = { workspace = true }
+opentrust-meshcop = { workspace = true }
 openthread-sys = { path = "../../tools/openthread-sys", default-features = false, features = ["ftd", "diff-shim"], optional = true }
 
 [lints.rust]
