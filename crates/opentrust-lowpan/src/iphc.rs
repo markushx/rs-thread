@@ -95,6 +95,27 @@ impl Context {
         }
     }
 
+    /// `true` if decompressing `addr` against this context restores it: the
+    /// bits between a prefix shorter than 64 bits and the interface
+    /// identifier are not transmitted and decode as zero.
+    fn restores(&self, addr: &[u8; 16]) -> bool {
+        let n = usize::from(self.prefix_len);
+        if n >= 64 {
+            return true;
+        }
+        let mut gap = [0u8; 8];
+        gap.copy_from_slice(&addr[..8]);
+        let full = n / 8;
+        for (i, b) in gap.iter_mut().enumerate() {
+            if i < full {
+                *b = 0;
+            } else if i == full && n % 8 != 0 {
+                *b &= !(0xffu8 << (8 - n % 8));
+            }
+        }
+        gap == [0; 8]
+    }
+
     fn matches(&self, addr: &[u8; 16]) -> bool {
         let n = usize::from(self.prefix_len).min(128);
         let full = n / 8;
@@ -320,8 +341,9 @@ fn compress_at<C: ContextProvider + ?Sized>(
     depth: &mut u8,
 ) -> Result<usize> {
     let hdr = Ipv6Header::parse(data.get(start..).ok_or(Error::Parse)?)?;
-    let src_ctx = ctxs.for_address(&hdr.src).filter(|c| c.compress);
-    let dst_ctx = ctxs.for_address(&hdr.dst).filter(|c| c.compress);
+    let usable = |c: &Context, a: &Ipv6Addr| c.compress && c.restores(&a.octets());
+    let src_ctx = ctxs.for_address(&hdr.src).filter(|c| usable(c, &hdr.src));
+    let dst_ctx = ctxs.for_address(&hdr.dst).filter(|c| usable(c, &hdr.dst));
 
     let hc_pos = enc.len;
     enc.put(&[0, 0])?;

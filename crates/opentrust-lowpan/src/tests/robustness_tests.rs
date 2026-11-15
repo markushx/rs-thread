@@ -458,3 +458,50 @@ fn random_bytes_do_not_panic_any_parser() {
         let _ = UdpHeader::parse(&b);
     }
 }
+
+/// A context prefix shorter than 64 bits leaves the bits up to the IID out of
+/// the compressed form; the context may only be used if those bits are zero
+/// (found by differential tests: OpenThread drops them silently).
+#[test]
+fn short_context_prefix_only_used_when_gap_bits_are_zero() {
+    use crate::iphc::{Context, ContextTable};
+
+    let mut ctxs = ContextTable::new();
+    let mut prefix = [0u8; 16];
+    prefix[..6].copy_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0x00, 0x01]);
+    ctxs.set(Context {
+        id: 3,
+        prefix,
+        prefix_len: 48,
+        compress: true,
+    })
+    .unwrap();
+
+    let roundtrip = |dst: [u8; 16]| -> bool {
+        let mut dgram = Vec::new();
+        dgram.extend_from_slice(&[0x60, 0, 0, 0, 0, 0, 59, 64]);
+        dgram.extend_from_slice(&[
+            0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0, 0x12, 0x34,
+        ]);
+        dgram.extend_from_slice(&dst);
+        let mut out = [0u8; 127];
+        let c = compress(&ctxs, &SHORT_SRC, &SHORT_DST, &dgram, &mut out).unwrap();
+        let mut frame = out[..c.header_len].to_vec();
+        frame.extend_from_slice(&dgram[c.consumed..]);
+        let mut back = [0u8; 128];
+        let n =
+            decompress_datagram(&ctxs, &SHORT_SRC, &SHORT_DST, &frame, None, &mut back).unwrap();
+        assert_eq!(&back[..n], &dgram[..]);
+        // CID bit: a context was used.
+        out[1] & 0x80 != 0
+    };
+
+    // Gap bits (48..64) zero: the context is used.
+    let mut dst = [0u8; 16];
+    dst[..6].copy_from_slice(&prefix[..6]);
+    dst[11..].copy_from_slice(&[0xff, 0xfe, 0, 0x56, 0x78]);
+    assert!(roundtrip(dst));
+    // A non-zero gap: sent without the context, so nothing is lost.
+    dst[6..8].copy_from_slice(&[0xca, 0xfe]);
+    assert!(!roundtrip(dst));
+}
