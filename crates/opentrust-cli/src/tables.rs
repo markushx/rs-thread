@@ -11,7 +11,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, hex, ln, out, table_header};
+use crate::util::{Args, E, R, hex, ln, out, parse_u16, table_header};
 
 /// Thread version reported for neighbors (Thread 1.4).
 const NEIGHBOR_VERSION: u8 = 5;
@@ -86,7 +86,8 @@ where
         let table = match a.get(1) {
             "table" => true,
             "list" => false,
-            _ => return Err(E::INVALID_COMMAND),
+            "" => return Err(E::INVALID_COMMAND),
+            id => return self.router_info(id),
         };
         if table {
             table_header(
@@ -197,6 +198,62 @@ where
         }
         if !table {
             ln!(self.o);
+        }
+        Ok(())
+    }
+
+    /// `router <id>`: the entry of a router (a Router ID or an RLOC16).
+    #[cfg(feature = "ftd")]
+    fn router_info(&mut self, id: &str) -> R {
+        let id = parse_u16(id)?;
+        let id = if id > 62 { id >> 10 } else { id };
+        let me = self.i.rloc16();
+        let mut found = self
+            .i
+            .route_table()
+            .into_iter()
+            .find(|r| u16::from(r.router_id) == id);
+        if found.is_none()
+            && matches!(self.i.role(), Role::Router | Role::Leader)
+            && me.0 >> 10 == id
+        {
+            found = Some(RouteInfo {
+                router_id: id as u8,
+                rloc16: me,
+                next_hop: None,
+                cost: 0,
+                is_neighbor: false,
+                ext: self.i.ext_address(),
+                link_quality_in: 0,
+                link_quality_out: 0,
+                age_secs: 0,
+            });
+        }
+        let Some(r) = found else {
+            ln!(self.o, "Alloc: 0");
+            return Ok(());
+        };
+        ln!(self.o, "Alloc: 1");
+        ln!(self.o, "Router ID: {}", r.router_id);
+        ln!(self.o, "Rloc: {:04x}", r.rloc16.0);
+        ln!(
+            self.o,
+            "Next Hop: {:04x}",
+            u16::from(r.next_hop.unwrap_or(63)) << 10
+        );
+        ln!(self.o, "Link: {}", u8::from(r.is_neighbor));
+        if r.is_neighbor {
+            out!(self.o, "Ext Addr: ");
+            hex(self.o, &r.ext.0);
+            ln!(self.o);
+            ln!(
+                self.o,
+                "Cost: {}",
+                if r.next_hop.is_some() { r.cost } else { 0 }
+            );
+            ln!(self.o, "Link Quality In: {}", r.link_quality_in);
+            ln!(self.o, "Link Quality Out: {}", r.link_quality_out);
+            ln!(self.o, "Age: {}", r.age_secs);
         }
         Ok(())
     }

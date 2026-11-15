@@ -278,6 +278,12 @@ fn form_join_ping_and_tables() {
     );
     assert!(nt.contains("0200000000000002"), "{nt}");
 
+    // router <id> for the neighbor router (by RLOC16) and for an unused ID
+    let ri = h.cmd(0, "router 0x0c00");
+    assert!(ri.starts_with("Alloc: 1\nRouter ID: 3\nRloc: 0c00\n"), "{ri}");
+    assert!(ri.contains("Link: 1\nExt Addr: 0200000000000002\n"), "{ri}");
+    assert_eq!(h.cmd(0, "router 40"), "Alloc: 0\nDone\n");
+
     // The end device can reach the leader's RLOC through its parent.
     let rloc = line_value(&h.cmd(0, "ipaddr rloc"));
     assert_eq!(h.cmd(2, &format!("ping {rloc}")), "");
