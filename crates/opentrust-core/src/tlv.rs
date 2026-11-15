@@ -154,12 +154,15 @@ impl<'a> Iterator for TlvIter<'a> {
 }
 
 /// Find the first TLV of type `ty` (OT `Tlv::FindTlv`). [`Error::NotFound`]
-/// if absent, [`Error::Parse`] if a malformed TLV is hit before it.
+/// if absent. Like OpenThread, a malformed (truncated) TLV before the wanted
+/// one ends the search without an error of its own, so that is also
+/// [`Error::NotFound`]; use [`validate`] to reject malformed input.
 pub fn find(buf: &[u8], ty: u8) -> Result<Tlv<'_>> {
     for t in TlvIter::new(buf) {
-        let t = t?;
-        if t.ty == ty {
-            return Ok(t);
+        match t {
+            Ok(t) if t.ty == ty => return Ok(t),
+            Ok(_) => {}
+            Err(_) => break,
         }
     }
     Err(Error::NotFound)
@@ -357,7 +360,9 @@ mod tests {
         assert_eq!(it.next().unwrap().unwrap_err(), Error::Parse);
         assert!(it.next().is_none());
         assert_eq!(find(&bad, 1).unwrap().read_u8(), Ok(9));
-        assert_eq!(find(&bad, 3), Err(Error::Parse));
+        // A malformed TLV in front of the wanted one ends the search like in
+        // OpenThread (`Tlv::FindTlv`): not found, not a parse error.
+        assert_eq!(find(&bad, 3), Err(Error::NotFound));
         assert_eq!(find(&buf, 9), Err(Error::NotFound));
     }
 

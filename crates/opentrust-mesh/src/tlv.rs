@@ -212,8 +212,9 @@ impl<'a> ThreadTlv<'a> {
 }
 
 /// Read view over a payload of Thread network-layer TLVs. Each accessor
-/// returns [`Error::NotFound`] if the TLV is absent and [`Error::Parse`] if
-/// it (or an earlier TLV) is malformed, like OT `Tlv::Find`.
+/// returns [`Error::NotFound`] if the TLV is absent (a malformed TLV ends the
+/// search) and [`Error::Parse`] if it has a wrong length, like OT
+/// `Tlv::Find`.
 #[derive(Debug, Clone, Copy)]
 pub struct ThreadTlvs<'a>(&'a [u8]);
 
@@ -409,8 +410,8 @@ mod tests {
             ThreadTlvs::new(&[7, 3, 0, 0, 0]).router_mask(),
             Err(Error::Parse)
         );
-        // Truncated TLV.
-        assert_eq!(ThreadTlvs::new(&[2, 2, 0]).rloc16(), Err(Error::Parse));
+        // Truncated TLV: the search ends without finding it (OT `Tlv::Find`).
+        assert_eq!(ThreadTlvs::new(&[2, 2, 0]).rloc16(), Err(Error::NotFound));
         // Longer router mask is accepted (OT only checks the minimum).
         let mut v = [0u8; 12];
         v[0] = 7;
