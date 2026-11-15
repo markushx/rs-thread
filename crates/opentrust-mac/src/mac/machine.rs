@@ -2201,10 +2201,16 @@ impl<
     /// dropped and reported, the operation finished.
     fn prepare_indirect_frame(&mut self, i: usize) -> bool {
         if !self.indirect.frames[i].prepared {
-            let more = self
-                .indirect
-                .count_for(self.indirect.frames[i].dst, &self.neighbors)
-                > 1;
+            // A caller that fragments a message sets Frame Pending itself
+            // (more fragments follow); it is kept.
+            let preset = Frame::parse(&self.indirect.frames[i].frame)
+                .map(|f| f.frame_pending())
+                .unwrap_or(false);
+            let more = preset
+                || self
+                    .indirect
+                    .count_for(self.indirect.frames[i].dst, &self.neighbors)
+                    > 1;
             let mut frame = self.indirect.frames[i].frame.clone();
             // Frame Pending tells the child to poll again; it is covered by
             // the MIC, so it is fixed now for all attempts.

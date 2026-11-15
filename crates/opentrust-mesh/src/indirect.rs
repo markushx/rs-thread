@@ -27,13 +27,13 @@
 //! supervision message (OT `AddMessageForSleepyChild`).
 
 use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
-use opentrust_core::types::{LinkSecurity, Rloc16};
+use opentrust_core::types::{ExtAddress, LinkSecurity, Rloc16};
 use opentrust_core::{Error, Result};
 use opentrust_lowpan::frag::Fragmenter;
 use opentrust_lowpan::iphc::ContextProvider;
 use opentrust_mac::frame::Address;
 
-use crate::forwarder::{FrameSink, MacDest, TxFrame};
+use crate::forwarder::{FrameSink, MacDest, TxFrame, frame_payload_limit};
 use crate::radio::RadioLink;
 
 /// Largest datagram that is queued (IPv6 minimum MTU).
@@ -60,6 +60,11 @@ struct Entry {
     frames_done: u16,
     /// Failed attempts of the frame in flight.
     attempts: u8,
+    /// Own and child extended addresses: the message is sent between the
+    /// extended addresses (a Child ID Response, the child has no RLOC16 yet).
+    ext: Option<(ExtAddress, ExtAddress)>,
+    /// MAC security of the frames (the datagram's original link security).
+    security: LinkSecurity,
     datagram: Chain,
 }
 
@@ -203,7 +208,14 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
             .ok_or(Error::NoBufs)
     }
 
-    fn insert(&mut self, child: Rloc16, kind: Kind, datagram: &[u8]) -> Result<()> {
+    fn insert(
+        &mut self,
+        child: Rloc16,
+        kind: Kind,
+        datagram: &[u8],
+        ext: Option<(ExtAddress, ExtAddress)>,
+        security: LinkSecurity,
+    ) -> Result<()> {
         let i = self.free_slot()?;
         let had = self.count(child) > 0;
         let order = self.next_order;
@@ -218,6 +230,8 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
             len: datagram.len(),
             frames_done: 0,
             attempts: 0,
+            ext,
+            security,
             datagram: chain,
         };
         self.slots[i] = Some(e);
@@ -230,12 +244,71 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
     /// child is dropped. [`Error::NoBufs`] if the queue is full,
     /// [`Error::InvalidArgs`] if the datagram is too large.
     pub fn enqueue(&mut self, child: Rloc16, datagram: &[u8]) -> Result<()> {
+        self.enqueue_secured(child, datagram, LinkSecurity::Network)
+    }
+
+    /// [`IndirectQueue::enqueue`] with the MAC security of the frames.
+    pub fn enqueue_secured(
+        &mut self,
+        child: Rloc16,
+        datagram: &[u8],
+        security: LinkSecurity,
+    ) -> Result<()> {
         if datagram.len() > MAX_DATAGRAM {
             return Err(Error::InvalidArgs);
         }
         // A real message makes the supervision message superfluous.
         self.drop_supervision(child);
-        self.insert(child, Kind::Datagram, datagram)
+        self.insert(child, Kind::Datagram, datagram, None, security)
+    }
+
+    /// Like [`IndirectQueue::enqueue`], for a child that has no RLOC16 yet
+    /// (OT `SendChildIdResponse`: the response is addressed to the child's
+    /// extended address from this device's extended address).
+    pub fn enqueue_ext(
+        &mut self,
+        child: Rloc16,
+        own: ExtAddress,
+        child_ext: ExtAddress,
+        datagram: &[u8],
+        security: LinkSecurity,
+    ) -> Result<()> {
+        if datagram.len() > MAX_DATAGRAM {
+            return Err(Error::InvalidArgs);
+        }
+        self.drop_supervision(child);
+        self.insert(
+            child,
+            Kind::Datagram,
+            datagram,
+            Some((own, child_ext)),
+            security,
+        )
+    }
+
+    /// The MAC source and destination and the fragment payload limit of the
+    /// frames of `e`.
+    fn addressing(
+        e: Option<&Entry>,
+        own_rloc16: Rloc16,
+        child: Rloc16,
+        max_payload: usize,
+    ) -> (Address, MacDest, usize, LinkSecurity) {
+        let security = e.map_or(LinkSecurity::Network, |e| e.security);
+        match e.and_then(|e| e.ext) {
+            Some((own, c)) => {
+                let src = Address::Extended(own);
+                let dst = MacDest::Extended(c);
+                let max = max_payload.min(frame_payload_limit(&src, dst, security));
+                (src, dst, max, security)
+            }
+            None => (
+                Address::Short(own_rloc16.into()),
+                MacDest::Short(child),
+                max_payload,
+                security,
+            ),
+        }
     }
 
     fn drop_supervision(&mut self, child: Rloc16) {
@@ -255,7 +328,8 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
         if self.count(child) > 0 {
             return false;
         }
-        self.insert(child, Kind::Supervision, &[]).is_ok()
+        self.insert(child, Kind::Supervision, &[], None, LinkSecurity::Network)
+            .is_ok()
     }
 
     /// Drop everything queued for `child` (OT
@@ -319,10 +393,11 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
                 message: true,
             });
         }
+        let (src, dst, max_payload, _) = Self::addressing(Some(e), own_rloc16, child, max_payload);
         let mut f = Fragmenter::new(
             contexts,
-            Address::Short(own_rloc16.into()),
-            Address::Short(child.into()),
+            src,
+            dst.address(),
             &datagram[..e.len],
             e.tag,
             None,
@@ -370,10 +445,12 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
             } else {
                 e.attempts = 0;
                 e.frames_done += 1;
+                let (src, dst, max_payload, _) =
+                    Self::addressing(Some(e), own_rloc16, child, max_payload);
                 let mut f = Fragmenter::new(
                     contexts,
-                    Address::Short(own_rloc16.into()),
-                    Address::Short(child.into()),
+                    src,
+                    dst.address(),
                     &datagram[..e.len],
                     e.tag,
                     None,
@@ -413,12 +490,18 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
             let Ok(f) = self.next_frame(child, own_rloc16, contexts, max_payload, &mut buf) else {
                 break;
             };
+            let (src, dst, _, security) = Self::addressing(
+                self.head(child).and_then(|i| self.slots[i].as_ref()),
+                own_rloc16,
+                child,
+                max_payload,
+            );
             let ok = sink
                 .transmit(&TxFrame {
-                    src: Address::Short(own_rloc16.into()),
-                    dst: MacDest::Short(child),
+                    src,
+                    dst,
                     payload: &buf[..f.len],
-                    security: LinkSecurity::Network,
+                    security,
                     frame_pending: false,
                     indirect: true,
                     csl: true,
@@ -448,12 +531,18 @@ impl<const N: usize, const P: usize> IndirectQueue<N, P> {
     ) -> Result<PollOutcome> {
         let mut buf = [0u8; 128];
         let f = self.next_frame(child, own_rloc16, contexts, max_payload, &mut buf)?;
+        let (src, dst, _, security) = Self::addressing(
+            self.head(child).and_then(|i| self.slots[i].as_ref()),
+            own_rloc16,
+            child,
+            max_payload,
+        );
         let ok = sink
             .transmit(&TxFrame {
-                src: Address::Short(own_rloc16.into()),
-                dst: MacDest::Short(child),
+                src,
+                dst,
                 payload: &buf[..f.len],
-                security: LinkSecurity::Network,
+                security,
                 frame_pending: f.frame_pending,
                 indirect: true,
                 csl: false,

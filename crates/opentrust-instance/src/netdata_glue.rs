@@ -31,7 +31,7 @@ use crate::{Event, Instance};
 #[derive(Debug, Default)]
 pub(crate) struct GlueState {
     pub neighbors: Vec<(u16, [u8; 8]), 40>,
-    pub src_match: Vec<Rloc16, 16>,
+    pub src_match: Vec<(Rloc16, Option<opentrust_core::types::ExtAddress>), 16>,
     pub unsecure_ports: Vec<u16, 2>,
     pub last_drop: Option<DropReason>,
     pub located: Option<Located>,

@@ -78,7 +78,7 @@ use crate::radio::RadioLink;
 pub const MAX_FRAME_PAYLOAD: usize = 106;
 /// Largest MAC payload of a direct frame from `src` to `dst` with
 /// `security` (IEEE 802.15.4-2006 frame, PAN ID compression, AES-CCM*-32).
-fn frame_payload_limit(src: &Address, dst: MacDest, security: LinkSecurity) -> usize {
+pub(crate) fn frame_payload_limit(src: &Address, dst: MacDest, security: LinkSecurity) -> usize {
     let src_len = match src {
         Address::Extended(_) => 8,
         Address::Short(_) => 2,
@@ -121,7 +121,7 @@ pub enum MacDest {
 }
 
 impl MacDest {
-    fn address(self) -> Address {
+    pub(crate) fn address(self) -> Address {
         match self {
             Self::Short(r) => Address::Short(r.into()),
             Self::Extended(e) => Address::Extended(e),
@@ -263,6 +263,9 @@ pub enum Route {
     Indirect {
         /// The child.
         child: Rloc16,
+        /// The child's extended address if it has no RLOC16 yet (Child ID
+        /// Response): the frames are exchanged between extended addresses.
+        to_ext: Option<ExtAddress>,
     },
 }
 
@@ -509,6 +512,23 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
             {
                 return Ok(Route::Indirect {
                     child: c.neighbor.rloc16,
+                    to_ext: None,
+                });
+            }
+            // The Child ID Response for a sleepy child that is attaching
+            // (the child is already valid when the queued MLE message is
+            // routed, but has not confirmed its RLOC16 yet): queued for its
+            // data poll, between extended addresses (OT
+            // `AddMessageForSleepyChild`).
+            if let Some(c) = mle
+                .children()
+                .find_by_ext(&ext_of_dst(), StateFilter::AnyExceptInvalid)
+                && !c.neighbor.mode.rx_on_when_idle()
+                && c.neighbor.rloc16 != Rloc16::INVALID
+            {
+                return Ok(Route::Indirect {
+                    child: c.neighbor.rloc16,
+                    to_ext: Some(c.neighbor.ext_address),
                 });
             }
             return Ok(Route::Direct {
@@ -570,7 +590,10 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
             if let Some(c) = mle.children().find_by_rloc(hop, StateFilter::Valid)
                 && !c.neighbor.mode.rx_on_when_idle()
             {
-                return Ok(Route::Indirect { child: hop });
+                return Ok(Route::Indirect {
+                    child: hop,
+                    to_ext: None,
+                });
             }
             return Ok(Route::Direct {
                 dst: MacDest::Short(hop),
@@ -754,7 +777,12 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
             };
         }
         match Self::route(now, r, resolver, &h.src, &h.dst, security, events) {
-            Ok(Route::Indirect { child }) => match self.indirect.enqueue(child, datagram) {
+            Ok(Route::Indirect { child, to_ext }) => match match to_ext {
+                Some(e) => self
+                    .indirect
+                    .enqueue_ext(child, r.ext, e, datagram, security),
+                None => self.indirect.enqueue_secured(child, datagram, security),
+            } {
                 Ok(()) => {
                     self.csl_flush(r, sink);
                     SendResult::Indirect(child)
@@ -865,9 +893,12 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
             Address::Short(s) => children
                 .find_by_rloc(Rloc16(s.0), StateFilter::Valid)
                 .map(|c| c.neighbor.rloc16),
+            // A child polls by extended address until its Child ID Response
+            // is delivered (it is not valid before that).
             Address::Extended(e) => children
-                .find_by_ext(e, StateFilter::Valid)
-                .map(|c| c.neighbor.rloc16),
+                .find_by_ext(e, StateFilter::AnyExceptInvalid)
+                .map(|c| c.neighbor.rloc16)
+                .filter(|r| *r != Rloc16::INVALID),
             Address::None => None,
         }
     }

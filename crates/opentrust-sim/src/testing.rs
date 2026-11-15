@@ -79,6 +79,7 @@ struct AirNode {
     sleeping: bool,
     channel: u8,
     config: opentrust_platform::radio::Config,
+    src_match: opentrust_platform::radio::SrcMatchConfig,
     rx: VecDeque<(Vec<u8>, PsduRxInfo)>,
     waker: Option<Waker>,
     in_tx: bool,
@@ -109,6 +110,7 @@ impl Air {
                     sleeping: true,
                     channel: 0,
                     config: opentrust_platform::radio::Config::new(),
+                    src_match: opentrust_platform::radio::SrcMatchConfig::new(),
                     rx: VecDeque::new(),
                     waker: None,
                     in_tx: false,
@@ -181,8 +183,9 @@ impl Radio for AirRadio<'_> {
 
     async fn set_src_match_config(
         &mut self,
-        _: &opentrust_platform::radio::SrcMatchConfig,
+        c: &opentrust_platform::radio::SrcMatchConfig,
     ) -> Result<(), Self::Error> {
+        self.air.borrow_mut().nodes[self.id].src_match = c.clone();
         Ok(())
     }
 
@@ -227,6 +230,8 @@ impl Radio for AirRadio<'_> {
         let dst_pan = frame.pan_id();
         let ack_request = frame.frame_control().ack_request();
         let unicast = !dst.is_none() && !dst.is_broadcast();
+        let is_poll = frame.is_data_request();
+        let src = frame.src_address();
         let mut air = self.air.borrow_mut();
         let mut ack: Option<Vec<u8>> = None;
         for j in 0..air.nodes.len() {
@@ -239,6 +244,7 @@ impl Radio for AirRadio<'_> {
                 continue;
             }
             let mut will_ack = false;
+            let mut fp = false;
             if ack_request && unicast {
                 let cfg = &air.nodes[j].config;
                 let pan_ok =
@@ -251,6 +257,14 @@ impl Radio for AirRadio<'_> {
                     _ => false,
                 };
                 will_ack = pan_ok && addr_ok;
+                if will_ack && is_poll {
+                    let (s, e) = match src {
+                        Address::Short(s) => (s.0, 0),
+                        Address::Extended(e) => (0xfffe, ext_to_u64(&e)),
+                        _ => (0xfffe, 0),
+                    };
+                    fp = air.nodes[j].src_match.ack_frame_pending(s, e);
+                }
             }
             let info = PsduRxInfo {
                 len: psdu.len(),
@@ -259,7 +273,7 @@ impl Radio for AirRadio<'_> {
                 lqi: Some(150),
                 timestamp_us: None,
                 ack_security: None,
-                acked_with_frame_pending: will_ack.then_some(false),
+                acked_with_frame_pending: will_ack.then_some(fp),
             };
             air.nodes[j].rx.push_back((psdu.to_vec(), info));
             if let Some(w) = air.nodes[j].waker.take() {
@@ -267,7 +281,7 @@ impl Radio for AirRadio<'_> {
             }
             if will_ack && ack.is_none() {
                 let mut buf = [0u8; 16];
-                let n = FrameBuilder::imm_ack_for(&mut buf, &frame, false).expect("ack");
+                let n = FrameBuilder::imm_ack_for(&mut buf, &frame, fp).expect("ack");
                 let mut a = buf[..n].to_vec();
                 a.extend_from_slice(&fcs(&buf[..n]));
                 ack = Some(a);

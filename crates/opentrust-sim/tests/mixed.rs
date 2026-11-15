@@ -211,3 +211,38 @@ fn opentrust_leader_pings_ot_sleepy_child_with_large_datagrams() {
         );
     }
 }
+
+/// A sleepy OpenThread child attaches to an OpenTrust leader: the leader
+/// queues the Child ID Response for the child's data poll (extended
+/// addresses), and the child is reachable both ways afterwards.
+#[test]
+fn ot_sleepy_child_attaches_to_opentrust_leader() {
+    let Some(mut e) = env("sed-ot", &[(1, true), (2, false)]) else {
+        return;
+    };
+    let sim = &mut e.sim;
+    ok(sim, 1, "dataset init new");
+    ok(sim, 1, "dataset commit active");
+    ok(sim, 1, "ifconfig up");
+    ok(sim, 1, "thread start");
+    sim.run(40.0);
+    assert_eq!(state(sim, 1), "leader");
+    let tlv = ok(sim, 1, "dataset active -x")[0].clone();
+    ok(sim, 2, "mode -");
+    ok(sim, 2, "pollperiod 1000");
+    ok(sim, 2, &format!("dataset set active {tlv}"));
+    ok(sim, 2, "ifconfig up");
+    ok(sim, 2, "thread start");
+    sim.run(20.0);
+    assert_eq!(state(sim, 2), "child");
+    let a1 = mesh_local(sim, 1);
+    let a2 = mesh_local(sim, 2);
+    assert!(pings(sim, 2, &a1), "ping {a1} from the sleepy child");
+    sim.send(1, &format!("ping {a2} 8 1 1 64 8"));
+    sim.run(10.0);
+    let out = sim.drain(1);
+    assert!(
+        out.iter().any(|l| l.contains("1 packets received")),
+        "ping of the sleepy child: {out:?}"
+    );
+}

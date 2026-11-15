@@ -101,6 +101,23 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
         }
         let n = b.build()?;
         let frame = FrameBuf::from_slice(&buf[..n]).map_err(|_| opentrust_core::Error::NoBufs)?;
+        // A frame for a sleepy child waits in the MAC for the child's poll
+        // (the source match table answers the poll with Frame Pending);
+        // without this the frame would be sent directly to a sleeping radio.
+        if f.indirect && !f.csl && f.dst != MacDest::Broadcast {
+            if f.payload.is_empty() {
+                // An empty answer to a poll (nothing queued, or a
+                // supervision message): the MAC sends its own empty frame
+                // to a poll acknowledged with Frame Pending.
+                return Ok(());
+            }
+            self.tx.handle = self.tx.handle.wrapping_add(1);
+            return self.mac.transmit_indirect(
+                TxHandle(self.tx.handle),
+                mac_address(f.dst),
+                &frame,
+            );
+        }
         // Keep the order: nothing overtakes frames that wait for the MAC.
         if self.tx.pending.is_empty() {
             self.tx.handle = self.tx.handle.wrapping_add(1);
@@ -852,15 +869,25 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// The source match table follows the children with queued messages.
     pub(crate) fn sync_src_match(&mut self) {
-        let mut want: Vec<Rloc16, 16> = Vec::new();
+        // A child is matched by its short address and by its extended one (a
+        // child polls its parent by extended address until it has attached).
+        let mut want: Vec<(Rloc16, Option<opentrust_core::types::ExtAddress>), 16> = Vec::new();
         for c in self.fwd.indirect.src_match_children() {
-            let _ = want.push(c);
+            let ext = self
+                .mle
+                .children()
+                .find_by_rloc(c, StateFilter::AnyExceptInvalid)
+                .map(|ch| ch.neighbor.ext_address);
+            let _ = want.push((c, ext));
         }
         for old in &self.glue.src_match {
             if !want.contains(old) {
                 self.core
                     .mac
-                    .src_match_remove(Address::Short(ShortAddress(old.0)));
+                    .src_match_remove(Address::Short(ShortAddress(old.0.0)));
+                if let Some(e) = old.1 {
+                    self.core.mac.src_match_remove(Address::Extended(e));
+                }
             }
         }
         for new in &want {
@@ -868,7 +895,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 let _ = self
                     .core
                     .mac
-                    .src_match_add(Address::Short(ShortAddress(new.0)));
+                    .src_match_add(Address::Short(ShortAddress(new.0.0)));
+                if let Some(e) = new.1 {
+                    let _ = self.core.mac.src_match_add(Address::Extended(e));
+                }
             }
         }
         self.glue.src_match = want;
