@@ -108,7 +108,53 @@ static BTP_CTX: StaticCell<TroubleBtpGattContext> = StaticCell::new();
 #[cfg(feature = "ble")]
 static SDC_MEM: StaticCell<nrf_sdc::Mem<{ ble::SDC_MEM }>> = StaticCell::new();
 
-static LOGIC_CELL: StaticCell<TestOnOffDeviceLogic> = StaticCell::new();
+static LOGIC_CELL: StaticCell<LightLogic> = StaticCell::new();
+
+/// The light itself: the OnOff cluster switches LED1 (P0.13, active low) in
+/// the same call that changes the attribute, so the LED follows a Matter
+/// command at once (and the restored state at startup).
+struct LightLogic {
+    led: rs_matter::utils::sync::blocking::Mutex<
+        rs_matter::utils::cell::RefCell<embassy_nrf::gpio::Output<'static>>,
+    >,
+    on: core::sync::atomic::AtomicBool,
+}
+
+impl LightLogic {
+    fn new(led: embassy_nrf::gpio::Output<'static>) -> Self {
+        Self {
+            led: rs_matter::utils::sync::blocking::Mutex::new(
+                rs_matter::utils::cell::RefCell::new(led),
+            ),
+            on: core::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// Whether the light is on.
+    fn is_on(&self) -> bool {
+        self.on.load(core::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl OnOffHooks for LightLogic {
+    // The On/Off Light cluster set (Lighting feature) of rs-matter's test logic.
+    const CLUSTER: rs_matter::dm::Cluster<'static> = <TestOnOffDeviceLogic as OnOffHooks>::CLUSTER;
+    // Persist a change at once, as the test logic did before.
+    const PERSIST_DELAY_MS: u32 = 0;
+
+    fn set_on_off(&self, on: bool) {
+        self.on.store(on, core::sync::atomic::Ordering::Relaxed);
+        self.led.lock(|led| {
+            led.borrow_mut()
+                .set_level(if on { Level::Low } else { Level::High })
+        });
+    }
+
+    async fn handle_off_with_effect(&self, _effect: on_off::EffectVariantEnum) {
+        // No dimming: the effect ends with the light off, which
+        // `set_on_off` already did.
+    }
+}
 
 const NODE: Node<'static> = Node {
     endpoints: &[
@@ -116,7 +162,7 @@ const NODE: Node<'static> = Node {
         Endpoint::new(
             1,
             devices!(DEV_TYPE_ON_OFF_LIGHT),
-            clusters!(desc::DescHandler::CLUSTER, TestOnOffDeviceLogic::CLUSTER),
+            clusters!(desc::DescHandler::CLUSTER, LightLogic::CLUSTER),
         ),
     ],
 };
@@ -209,7 +255,7 @@ async fn main(spawner: Spawner) {
     let Board {
         rng,
         rng2,
-        mut led1,
+        led1,
         mut radio,
         mut flash,
         button1,
@@ -268,7 +314,7 @@ async fn main(spawner: Spawner) {
     ));
     let crypto = default_crypto(rng2, DAC_PRIVKEY);
     let mut rand = crypto.rand().unwrap();
-    let logic: &'static TestOnOffDeviceLogic = LOGIC_CELL.init(TestOnOffDeviceLogic::new(false));
+    let logic: &'static LightLogic = LOGIC_CELL.init(LightLogic::new(led1));
     let on_off_handler = on_off::OnOffHandler::new_standalone(
         Dataver::new_rand(&mut rand),
         1,
@@ -411,7 +457,6 @@ async fn main(spawner: Spawner) {
             let on = logic.is_on();
             if last_on != Some(on) {
                 info!("on-off: {}", on);
-                led1.set_level(if on { Level::Low } else { Level::High });
                 last_on = Some(on);
             }
             {
