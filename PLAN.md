@@ -335,6 +335,8 @@ Security-relevant decisions for the review before M4:
 - [ ] nRF54L15/H20: radio driver, timers, CRACEN crypto
 - [ ] ESP32-C6/H2 (802.15.4 capable; RISC-V): radio via `esp-ieee802154` (esp-hal), reuse esp-rs/openthread platform glue
 - [ ] Example apps per board: MTD (SED) sensor, FTD router, CLI over UART/USB-CDC
+  - [x] CLI over UART on the nRF52840 DK (`examples/nrf52840-leader --bin cli --features cli-all`, UARTE0 on the J-Link VCOM, prompt `> `, echo and CR/LF as OT's UART CLI, settings in RAM): interop against `ot-cli-ftd` on a second DK on channel 25 with CLI commands only (OT forms / OpenTrust joins by `dataset set active`, OpenTrust forms / OT joins; `state`, `ping` and `udp` both ways to ML-EID and RLOC, `router table`, `child table`, `neighbor table`, `netdata show`, `ipaddr`, `dataset active` identical in format). Flash 447 KB with no command group, 501 KB with all, RAM 98 / 106 KB (per group: dataset +8 KB, scan +3, ping +4, tables +10, netdata +5, srp +5, dns +2, udp +3, commissioning +16 KB flash and +7 KB RAM)
+  - [ ] CLI firmware: persistent settings in a flash region of its own, commissioner / joiner against OpenThread on hardware (needs an `ot-cli-ftd` built with `OT_COMMISSIONER` and `OT_JOINER`), `child <id>`, `counters mle`, `dataset mgmtsetcommand` / `mgmtgetcommand`
 - [ ] Footprint budgets (flash/RAM per role) and power measurements for SED/SSED
 - [ ] Hardware-in-loop interop test with OT RCP/`ot-br-posix` border router
 
