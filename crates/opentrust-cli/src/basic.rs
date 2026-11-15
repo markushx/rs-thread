@@ -337,7 +337,11 @@ where
 
     pub(crate) fn extaddr(&mut self, a: &Args<'_>) -> R {
         if !a.get(1).is_empty() {
-            return Err(E::INVALID_ARGS);
+            let x = parse_hex_exact::<8>(a.get(1))?;
+            return self
+                .i
+                .set_ext_address(opentrust_instance::ExtAddress(x))
+                .map_err(E::from);
         }
         hex(self.o, &self.i.ext_address().0);
         ln!(self.o);

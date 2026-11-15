@@ -81,6 +81,19 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.start_inner(now, false)
     }
 
+    /// Set the extended address (OT `otLinkSetExtendedAddress`) and with it
+    /// the link-local address. [`Error::InvalidState`] while Thread is
+    /// started.
+    pub fn set_ext_address(&mut self, ext: ExtAddress) -> Result<()> {
+        if self.started {
+            return Err(Error::InvalidState);
+        }
+        use opentrust_mle::env::MleEnv as _;
+        let iid = self.core.ml_iid;
+        self.core.apply_restored_identity(&ext, &iid);
+        Ok(())
+    }
+
     /// Whether the IPv6 interface is enabled.
     pub fn ip6_enabled(&self) -> bool {
         self.ip6_enabled

@@ -22,8 +22,8 @@
 //! - `OT_CLI_PATH`: `ot-cli-ftd` (default `<target dir>/ot-sim/ot-cli-ftd`,
 //!   built by `cargo build -p openthread-sys` when missing).
 //!
-//! Packet verification (`PACKET_VERIFICATION`, needs `tshark`) is off: the
-//! cases run their CLI based checks only.
+//! Packet verification (`PACKET_VERIFICATION`, needs `tshark`) is off unless
+//! `OPENTRUST_CERT_PKTVERIFY=1`: the cases then also verify the captured packets.
 
 #![allow(clippy::std_instead_of_core)]
 
@@ -32,6 +32,11 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use opentrust_sim::vtsim::{opentrust_cli_vt, ot_cli_ftd};
+
+/// Packet verification with `tshark`: `OPENTRUST_CERT_PKTVERIFY=1`.
+fn pktverify() -> bool {
+    std::env::var("OPENTRUST_CERT_PKTVERIFY").as_deref() == Ok("1")
+}
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -198,7 +203,7 @@ fn run_case(
         .env("VIRTUAL_TIME", "1")
         .env("PORT_OFFSET", offset.to_string())
         .env("TEST_NAME", format!("{case}-{tag}"))
-        .env_remove("PACKET_VERIFICATION")
+        .env("PACKET_VERIFICATION", if pktverify() { "1" } else { "0" })
         .stdin(Stdio::null())
         .stdout(Stdio::from(
             std::fs::File::create(dir.join("out.log")).unwrap(),

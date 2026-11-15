@@ -286,6 +286,244 @@ pub fn new_instance(node_id: u16, settings: FileSettings, seed: u64) -> Box<VtIn
     ))
 }
 
+/// OpenThread's MAC filter (`macfilter`): which source addresses are heard and
+/// with which fixed RSS. The thread-cert scripts build their topologies with
+/// it. OpenThread applies it in the MAC after the radio ACKed the frame
+/// and to the ACKs of the frames it sends; here it sits in the radio.
+#[derive(Debug, Default)]
+pub struct MacFilter {
+    mode: FilterMode,
+    entries: Vec<FilterEntry>,
+    default_rss: Option<i8>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum FilterMode {
+    #[default]
+    Disabled,
+    Allowlist,
+    Denylist,
+}
+
+#[derive(Debug, Clone)]
+struct FilterEntry {
+    ext: [u8; 8],
+    filtered: bool,
+    rss: Option<i8>,
+}
+
+/// Noise floor OpenThread's filter commands use to convert link quality to RSS.
+const NOISE_FLOOR: i8 = -100;
+
+fn lq_to_rss(lq: u8) -> i8 {
+    NOISE_FLOOR
+        + match lq {
+            3 => 50,
+            2 => 15,
+            1 => 5,
+            _ => 0,
+        }
+}
+
+fn rss_to_lq(rss: i8) -> u8 {
+    match i16::from(rss) - i16::from(NOISE_FLOOR) {
+        21.. => 3,
+        11..=20 => 2,
+        3..=10 => 1,
+        _ => 0,
+    }
+}
+
+/// OpenThread error codes the filter commands answer with.
+const E_INVALID_ARGS: u8 = 7;
+const E_NOT_FOUND: u8 = 23;
+const E_INVALID_COMMAND: u8 = 35;
+
+fn parse_ext(s: &str) -> Option<[u8; 8]> {
+    if s.len() != 16 {
+        return None;
+    }
+    let mut b = [0u8; 8];
+    for (i, o) in b.iter_mut().enumerate() {
+        *o = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(b)
+}
+
+fn hex8(b: &[u8; 8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+impl MacFilter {
+    /// Apply the filter to a frame from `ext`: `None` if it is filtered
+    /// out, else the fixed RSS to use, if any.
+    pub fn apply(&self, ext: &[u8; 8]) -> Option<Option<i8>> {
+        let e = self.entries.iter().find(|e| &e.ext == ext);
+        let listed = e.is_some_and(|e| e.filtered);
+        match self.mode {
+            FilterMode::Disabled => {}
+            FilterMode::Allowlist if !listed => return None,
+            FilterMode::Denylist if listed => return None,
+            _ => {}
+        }
+        Some(e.and_then(|e| e.rss).or(self.default_rss))
+    }
+
+    fn entry(&mut self, ext: [u8; 8]) -> &mut FilterEntry {
+        if let Some(p) = self.entries.iter().position(|e| e.ext == ext) {
+            return &mut self.entries[p];
+        }
+        self.entries.push(FilterEntry {
+            ext,
+            filtered: false,
+            rss: None,
+        });
+        self.entries.last_mut().unwrap()
+    }
+
+    fn print_entry(out: &mut String, e: &FilterEntry) {
+        out.push_str(&hex8(&e.ext));
+        if let Some(r) = e.rss {
+            out.push_str(&format!(" : rss {r} (lqi {})", rss_to_lq(r)));
+        }
+        out.push_str("\r\n");
+    }
+
+    fn print_addr(&self, out: &mut String, header: bool) {
+        if header {
+            out.push_str("Address Mode: ");
+        }
+        out.push_str(match self.mode {
+            FilterMode::Disabled => "Disabled\r\n",
+            FilterMode::Allowlist => "Allowlist\r\n",
+            FilterMode::Denylist => "Denylist\r\n",
+        });
+        for e in self.entries.iter().filter(|e| e.filtered) {
+            Self::print_entry(out, e);
+        }
+    }
+
+    fn print_rss(&self, out: &mut String, header: bool) {
+        if header {
+            out.push_str("RssIn List:\r\n");
+        }
+        for e in self.entries.iter().filter(|e| e.rss.is_some()) {
+            Self::print_entry(out, e);
+        }
+        if let Some(r) = self.default_rss {
+            out.push_str(&format!("Default rss: {r} (lqi {})\r\n", rss_to_lq(r)));
+        }
+    }
+
+    /// Run `macfilter <args>`; prints the output and returns the OpenThread
+    /// error code on failure.
+    pub fn command(&mut self, args: &[&str], out: &mut String) -> Result<(), u8> {
+        let a = |i: usize| args.get(i).copied().unwrap_or("");
+        match a(0) {
+            "" => {
+                self.print_addr(out, true);
+                self.print_rss(out, true);
+                Ok(())
+            }
+            "addr" => match a(1) {
+                "" => {
+                    self.print_addr(out, false);
+                    Ok(())
+                }
+                "add" => {
+                    let ext = parse_ext(a(2)).ok_or(E_INVALID_ARGS)?;
+                    self.entry(ext).filtered = true;
+                    if !a(3).is_empty() {
+                        let rss: i8 = a(3).parse().map_err(|_| E_INVALID_ARGS)?;
+                        self.entry(ext).rss = Some(rss);
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let ext = parse_ext(a(2)).ok_or(E_INVALID_ARGS)?;
+                    if let Some(p) = self.entries.iter().position(|e| e.ext == ext) {
+                        if self.entries[p].rss.is_some() {
+                            self.entries[p].filtered = false;
+                        } else {
+                            self.entries.remove(p);
+                        }
+                    }
+                    Ok(())
+                }
+                "clear" => {
+                    self.entries.retain_mut(|e| {
+                        e.filtered = false;
+                        e.rss.is_some()
+                    });
+                    Ok(())
+                }
+                m @ ("disable" | "allowlist" | "denylist") => {
+                    if !a(2).is_empty() {
+                        return Err(E_INVALID_ARGS);
+                    }
+                    self.mode = match m {
+                        "allowlist" => FilterMode::Allowlist,
+                        "denylist" => FilterMode::Denylist,
+                        _ => FilterMode::Disabled,
+                    };
+                    Ok(())
+                }
+                _ => Err(E_INVALID_COMMAND),
+            },
+            "rss" => match a(1) {
+                "" => {
+                    self.print_rss(out, false);
+                    Ok(())
+                }
+                c @ ("add" | "add-lqi") => {
+                    let rss: i8 = if c == "add" {
+                        a(3).parse().map_err(|_| E_INVALID_ARGS)?
+                    } else {
+                        let lq: u8 = a(3).parse().map_err(|_| E_INVALID_ARGS)?;
+                        if lq > 3 {
+                            return Err(E_INVALID_ARGS);
+                        }
+                        lq_to_rss(lq)
+                    };
+                    if a(2) == "*" {
+                        self.default_rss = Some(rss);
+                    } else {
+                        let ext = parse_ext(a(2)).ok_or(E_INVALID_ARGS)?;
+                        self.entry(ext).rss = Some(rss);
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    if a(2) == "*" {
+                        self.default_rss = None;
+                        return Ok(());
+                    }
+                    let ext = parse_ext(a(2)).ok_or(E_INVALID_ARGS)?;
+                    let Some(p) = self.entries.iter().position(|e| e.ext == ext) else {
+                        return Err(E_NOT_FOUND);
+                    };
+                    if self.entries[p].filtered {
+                        self.entries[p].rss = None;
+                    } else {
+                        self.entries.remove(p);
+                    }
+                    Ok(())
+                }
+                "clear" => {
+                    self.default_rss = None;
+                    self.entries.retain_mut(|e| {
+                        e.rss = None;
+                        e.filtered
+                    });
+                    Ok(())
+                }
+                _ => Err(E_INVALID_COMMAND),
+            },
+            _ => Err(E_INVALID_COMMAND),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RxState {
     Sleep,
@@ -299,6 +537,7 @@ struct PendingTx {
     wait_ack: bool,
     echoed: bool,
     abort_at: Option<u64>,
+    dst: Address,
 }
 
 /// The radio of one node: state set by the stack, transmit and receive over
@@ -311,10 +550,9 @@ pub struct VtRadio {
     src_match: SrcMatchConfig,
     tx: Option<PendingTx>,
     scan: Option<(u64, u8)>,
-}
-
-fn lqi_of(rssi: i8) -> u8 {
-    (i32::from(rssi) + 100).clamp(0, 100) as u8 * 2 + 50
+    /// The MAC filter (`macfilter`).
+    pub filter: MacFilter,
+    neighbors: Vec<(u16, [u8; 8])>,
 }
 
 /// RSSI the simulation platform reports for every frame.
@@ -330,12 +568,33 @@ impl VtRadio {
             src_match: SrcMatchConfig::new(),
             tx: None,
             scan: None,
+            filter: MacFilter::default(),
+            neighbors: Vec::new(),
         }
     }
 
     /// The link (for sleep events).
     pub fn link(&self) -> &VtLink {
         &self.link
+    }
+
+    /// Tell the radio the neighbors (RLOC16 and extended address) the stack
+    /// knows, so that the MAC filter can resolve short source addresses.
+    pub fn set_neighbors(&mut self, n: Vec<(u16, [u8; 8])>) {
+        self.neighbors = n;
+    }
+
+    /// The extended address (as `extaddr` prints it) behind a MAC address.
+    fn ext_of(&self, a: Address) -> Option<[u8; 8]> {
+        match a {
+            Address::Extended(e) => Some(e.0),
+            Address::Short(s) => self
+                .neighbors
+                .iter()
+                .find(|(r, _)| *r == s.0)
+                .map(|(_, e)| *e),
+            _ => None,
+        }
     }
 
     /// The next time the radio has work (ACK wait abort, energy scan end),
@@ -395,6 +654,7 @@ impl VtRadio {
                     return;
                 };
                 let dst = frame.dst_address();
+                let dst_addr = dst;
                 let unicast = !dst.is_none() && !dst.is_broadcast();
                 let wait_ack = tx.wait_ack && frame.frame_control().ack_request() && unicast;
                 let seq = psdu.get(2).copied().unwrap_or(0);
@@ -413,6 +673,7 @@ impl VtRadio {
                     seq,
                     wait_ack,
                     echoed: false,
+                    dst: dst_addr,
                     abort_at: tx.abort_at.map(|i| i.as_micros().saturating_sub(TIME_BASE)),
                 });
             }
@@ -421,13 +682,7 @@ impl VtRadio {
 
     /// A radio event from the simulator: a frame of another node, or the echo
     /// of the node's own transmission.
-    pub fn on_radio(
-        &mut self,
-        inst: &mut VtInstance,
-        now_us: u64,
-        data: &[u8],
-        filter: &mut dyn FnMut(&Frame<'_>) -> bool,
-    ) {
+    pub fn on_radio(&mut self, inst: &mut VtInstance, now_us: u64, data: &[u8]) {
         let t = instant(now_us);
         let Some((&channel, psdu)) = data.split_first() else {
             return;
@@ -443,12 +698,20 @@ impl VtRadio {
                 && tx.echoed
                 && psdu[2] == tx.seq
             {
+                // The filter drops the ACKs of filtered neighbors, too.
+                let mut rssi = RX_RSSI;
+                if let Some(ext) = self.ext_of(tx.dst) {
+                    match self.filter.apply(&ext) {
+                        None => return,
+                        Some(r) => rssi = r.unwrap_or(rssi),
+                    }
+                }
                 self.tx = None;
                 let info = PsduRxInfo {
                     len: psdu.len(),
                     channel,
-                    rssi: Some(RX_RSSI),
-                    lqi: Some(lqi_of(RX_RSSI)),
+                    rssi: Some(rssi),
+                    lqi: None,
                     timestamp_us: None,
                     ack_security: None,
                     acked_with_frame_pending: None,
@@ -508,14 +771,18 @@ impl VtRadio {
                 let _ = self.link.send(1, EV_RADIO, &a);
             }
         }
-        if !filter(&frame) {
-            return;
+        let mut rssi = RX_RSSI;
+        if let Some(ext) = self.ext_of(frame.src_address()) {
+            match self.filter.apply(&ext) {
+                None => return,
+                Some(r) => rssi = r.unwrap_or(rssi),
+            }
         }
         let info = PsduRxInfo {
             len: psdu.len(),
             channel,
-            rssi: Some(RX_RSSI),
-            lqi: Some(lqi_of(RX_RSSI)),
+            rssi: Some(rssi),
+            lqi: None,
             timestamp_us: None,
             ack_security: None,
             acked_with_frame_pending: will_ack.then_some(fp),

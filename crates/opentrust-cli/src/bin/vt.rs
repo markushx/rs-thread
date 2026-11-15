@@ -127,10 +127,31 @@ impl Node {
     fn sim_event(&mut self, ev: VtEvent) {
         self.now_us += ev.delay;
         if ev.kind == EV_RADIO {
-            self.radio
-                .on_radio(&mut self.inst, self.now_us, &ev.data, &mut |_| true);
+            let n = self
+                .inst
+                .neighbor_table()
+                .iter()
+                .map(|n| (n.rloc16.0, n.ext.0))
+                .collect();
+            self.radio.set_neighbors(n);
+            self.radio.on_radio(&mut self.inst, self.now_us, &ev.data);
         }
         self.settle();
+    }
+
+    /// `macfilter` lives in the radio of the node.
+    fn macfilter(&mut self, args: &[&str]) {
+        match self.radio.filter.command(args, &mut self.out) {
+            Ok(()) => self.out.push_str("Done\r\n"),
+            Err(n) => {
+                let name = match n {
+                    7 => "InvalidArgs",
+                    23 => "NotFound",
+                    _ => "InvalidCommand",
+                };
+                let _ = write!(self.out, "Error {n}: {name}\r\n");
+            }
+        }
     }
 
     /// Process a byte of console input (OpenThread's UART CLI: echo, CR or LF
@@ -162,8 +183,17 @@ impl Node {
                     let line =
                         String::from_utf8_lossy(&std::mem::take(&mut self.line.buf)).into_owned();
                     let t = instant(self.now_us);
-                    self.cli
-                        .process_line(&mut self.inst, t, &line, &mut self.out);
+                    let mut words = line.split_whitespace();
+                    let first = words.next();
+                    if first == Some("exit") {
+                        self.flush();
+                        std::process::exit(0);
+                    } else if first == Some("macfilter") {
+                        self.macfilter(&words.collect::<Vec<_>>());
+                    } else {
+                        self.cli
+                            .process_line(&mut self.inst, t, &line, &mut self.out);
+                    }
                     self.out.push_str("> ");
                     self.settle();
                 }
