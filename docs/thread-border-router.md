@@ -287,6 +287,36 @@ Security, Bluetooth). Linux chip-tool (BlueZ) needs neither.
   until it expires (133 s): the next PASE session then gets
   `InvalidAuthentication` on `ArmFailSafe`; this is rs-matter's handling of a
   closed commissioning session, not this layer's.
+- **The border router start script runs `dataset init new` on every start**:
+  the network key, channel, PAN ID, Extended PAN ID and name stay, but the
+  mesh-local prefix and the PSKc are new, and the Active Timestamp is 1 again.
+  A device holding the earlier dataset cannot tell the datasets apart (equal
+  timestamps count as equal), so it keeps its old mesh-local prefix; the border
+  router does not push the new one. What the light (and an OpenThread device,
+  tested with `ot-cli-ftd` on a second DK) does then:
+  - it attaches to the border router with its stored dataset, as a Child, and
+    receives the new Network Data (OMR prefix, SRP server, default route);
+  - its ML-EID and RLOC live under the old prefix and are not reachable from
+    the border router's side; the OMR address and the SRP registration work;
+  - Address Queries and Notifications between it and the border router are
+    dropped (their source is not mesh-local for the other side), so a Child
+    sends datagrams for on-mesh addresses (for example the border router host's
+    OMR address, where chip-tool lives) through its parent after the first query
+    failed: the first reply after a long pause takes a few seconds (a toggle
+    took about 7 s on the DK), later ones are quicker;
+  - Thread diagnostics, `ping` of the ML-EID and anything else that needs the
+    old prefix keep failing until the light is given the current dataset: re-run
+    `AddOrUpdateThreadNetwork` with the new dataset (the PSKc and prefix change),
+    or keep the BR dataset stable (`dataset init new` only on the first start; see
+    the otbr `dataset` persistence under `/var/lib/thread`).
+  A light that restored the Router role has to give up its Link Requests first
+  (see the 13 s above; with the Leader role or many children OpenThread makes up
+  to six attempts), so the first attach can take 20 to 30 s. Earlier builds
+  stopped Thread when the network manager's 20 s connect attempt ended and
+  restarted the whole restore on the next attempt, so such a light stayed
+  `Detached` for ever (`Connecting to network ...` every few seconds, followed by
+  `role: "Disabled"`, `Detached`); the stop only happens now for a network the node
+  was not holding.
 - **The light does not attach**: dataset wrong or a different channel (check
   `ot-ctl dataset active`), or the stored network wins (factory reset).
   `role: "Detached"` forever means no parent answered; a leader of its own network
