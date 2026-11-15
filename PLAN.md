@@ -347,6 +347,8 @@ Security-relevant decisions for the review before M4:
 ## Phase 13 – Certification readiness & docs
 
 - [ ] Map every Thread 1.4.1 test-plan case to status (pass/fail/NA)
+- [ ] Cross-check OpenTrust against OpenThread
+- [ ] Cross-check OpenTrust against Thread specification
 - [ ] Security review (key handling, frame counters, replay protection). Items the `Instance` adds for the review:
   - link-layer replay protection for received data frames is `Mle::check_link_frame`, called by the `Instance` before the forwarder for every secured frame (key ID mode 1) from a known neighbor; frames from unknown sources pass, key ID mode 2 frames are not checked; key ID mode 0 frames are checked per KEK (counter above the last accepted one) and accepted only from the peer of the running Joiner Entrust exchange
   - the unsecure-port filter in `Instance::unsecure_allowed` (datagrams without link security only for UDP to the MLE port and the ports of `add_unsecure_port`)
@@ -354,7 +356,6 @@ Security-relevant decisions for the review before M4:
   - the SLAAC IID secret key and the ML-EID IID come from the instance RNG; the secret key is stored in the settings in clear
   - a non-FTD child accepts MAC frames from its parent without per-frame counter state beyond what `check_link_frame` keeps
 - [ ] API docs, architecture doc, porting guide for new platforms
-- [ ] Release crates to crates.io
 
 ## Phase 14 – ESP32 targets
 
@@ -377,6 +378,7 @@ Security-relevant decisions for the review before M4:
 ## Phase 17 – Publish OpenTrust
 
 - [ ] Push to Github/Gitlab
+- [ ] Release crates to crates.io
 - [ ] Announce / Market OpenTrust
 
 ## Phase 18 – Maintenance
