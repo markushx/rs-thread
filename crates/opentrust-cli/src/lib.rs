@@ -254,6 +254,7 @@ where
             "partitionid" => self.partitionid(a),
             "childtimeout" => self.childtimeout(a),
             "pollperiod" => self.pollperiod(a),
+            "csl" => self.csl(a),
             "childsupervision" => self.childsupervision(a),
             "keysequence" => self.keysequence(a),
             "mliid" => self.mliid(a),

@@ -57,6 +57,48 @@ where
         Ok(())
     }
 
+    /// `csl`, `csl channel|period|timeout [value]`, `csl accuracy|uncertainty`
+    /// (the period is in microseconds, a multiple of 160 like OpenThread).
+    pub(crate) fn csl(&mut self, a: &Args<'_>) -> R {
+        match (a.get(1), a.get(2)) {
+            ("", _) => {
+                ln!(self.o, "channel: {}", self.i.csl_channel());
+                ln!(self.o, "period: {}us", u32::from(self.i.csl_period()) * 160);
+                ln!(self.o, "timeout: {}s", self.i.csl_timeout());
+                Ok(())
+            }
+            ("accuracy", "") => {
+                ln!(self.o, "{}", self.i.csl_clock_accuracy().0);
+                Ok(())
+            }
+            ("uncertainty", "") => {
+                ln!(self.o, "{}", self.i.csl_clock_accuracy().1);
+                Ok(())
+            }
+            ("channel", v) => {
+                let ch = crate::util::parse_u8(v)?;
+                if !(11..=26).contains(&ch) && ch != 0 {
+                    return Err(E::INVALID_ARGS);
+                }
+                self.i.set_csl_channel(ch, self.now);
+                Ok(())
+            }
+            ("period", v) => {
+                let us = parse_u32(v)?;
+                if us % 160 != 0 || us / 160 > u32::from(u16::MAX) {
+                    return Err(E::INVALID_ARGS);
+                }
+                self.i.set_csl_period((us / 160) as u16, self.now);
+                Ok(())
+            }
+            ("timeout", v) => {
+                self.i.set_csl_timeout(parse_u32(v)?, self.now);
+                Ok(())
+            }
+            _ => Err(E::INVALID_COMMAND),
+        }
+    }
+
     pub(crate) fn childsupervision(&mut self, a: &Args<'_>) -> R {
         match (a.get(1), a.get(2)) {
             ("interval", "") => {

@@ -336,6 +336,50 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     // ------------------------------------------------------------ MLE settings
 
+    /// The CSL period in units of 10 symbols (160 us), 0 if CSL is off.
+    pub fn csl_period(&self) -> u16 {
+        self.mle.csl_period()
+    }
+
+    /// The CSL channel (0: the PAN channel).
+    pub fn csl_channel(&self) -> u8 {
+        self.mle.csl_channel()
+    }
+
+    /// The CSL synchronized timeout in seconds.
+    pub fn csl_timeout(&self) -> u32 {
+        self.mle.csl_timeout()
+    }
+
+    /// Set the CSL period in units of 10 symbols (OT `otLinkSetCslPeriod`,
+    /// 0 turns CSL off). A child tells its parent.
+    pub fn set_csl_period(&mut self, period: u16, now: Instant) {
+        self.core.now = now;
+        self.mle.set_csl_period(&mut self.core, now, period);
+        self.poll(now);
+    }
+
+    /// Set the CSL channel (0: the PAN channel).
+    pub fn set_csl_channel(&mut self, channel: u8, now: Instant) {
+        self.core.now = now;
+        self.mle.set_csl_channel(&mut self.core, now, channel);
+        self.poll(now);
+    }
+
+    /// Set the CSL synchronized timeout in seconds.
+    pub fn set_csl_timeout(&mut self, secs: u32, now: Instant) {
+        self.core.now = now;
+        self.mle.set_csl_timeout(&mut self.core, now, secs);
+        self.core.apply_poll_period();
+        self.poll(now);
+    }
+
+    /// The CSL clock accuracy of the radio (PPM) and its uncertainty (10 us).
+    pub fn csl_clock_accuracy(&self) -> (u8, u8) {
+        let c = self.core.mac.caps();
+        (c.csl_accuracy_ppm, c.csl_uncertainty)
+    }
+
     /// The child timeout in seconds (OT `otThreadGetChildTimeout`).
     pub fn child_timeout(&self) -> u32 {
         self.mle.child_timeout()

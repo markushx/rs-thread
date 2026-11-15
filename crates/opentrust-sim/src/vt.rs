@@ -13,7 +13,9 @@
 //! to the sender as the transmit-done notification.
 //!
 //! [`VtLink`] is the socket, [`VtRadio`] the radio behind the Instance
-//! (receive, transmit, ACK in the radio, energy scan), [`FileSettings`] the
+//! (receive, transmit, energy scan; the stack builds the ACKs, enhanced ones
+//! with the CSL IE for CSL children, and samples CSL windows itself, see
+//! [`set_clock`]), [`FileSettings`] the
 //! settings file of a node and [`new_instance`] builds the node.
 
 #![allow(clippy::std_instead_of_core)]
@@ -31,7 +33,8 @@ use opentrust_mac::frame::{Address, Frame, FrameBuilder};
 use opentrust_mac::mac::{ext_to_u64, fcs};
 use opentrust_platform::SettingsStore;
 use opentrust_platform::radio::{
-    Capabilities, Config as RadioConfig, MacCapabilities, PsduRxInfo, RadioCaps, SrcMatchConfig,
+    Capabilities, Config as RadioConfig, MacCapabilities, PsduRxInfo, RadioCaps, RadioClock,
+    SrcMatchConfig,
 };
 
 use crate::rng::SimRng;
@@ -54,6 +57,20 @@ const TIME_BASE: u64 = 1_000_000_000;
 /// The stack's time for `now_us` microseconds of virtual time.
 pub fn instant(now_us: u64) -> Instant {
     Instant::from_micros(TIME_BASE.saturating_add(now_us))
+}
+
+thread_local! {
+    static CLOCK_US: core::cell::Cell<u64> = const { core::cell::Cell::new(0) };
+}
+
+/// Set the radio clock of this thread's node to `now_us` virtual
+/// microseconds (the stack reads it through [`RadioClock`] for CSL timing).
+pub fn set_clock(now_us: u64) {
+    CLOCK_US.with(|c| c.set(now_us));
+}
+
+fn radio_clock() -> u64 {
+    CLOCK_US.with(core::cell::Cell::get)
 }
 
 /// An event of the simulation protocol.
@@ -88,8 +105,14 @@ impl VtLink {
     pub fn connect(node_id: u16) -> io::Result<Self> {
         let base = env_u16("PORT_BASE", 9000);
         let offset = env_u16("PORT_OFFSET", 0) * (MAX_NODES + 1);
-        let sock = UdpSocket::bind(("127.0.0.1", base + offset + node_id))?;
-        let server = SocketAddr::from(([127, 0, 0, 1], base + offset));
+        Self::connect_at(node_id, base + offset)
+    }
+
+    /// Bind the socket of node `node_id` for the simulator listening on
+    /// `127.0.0.1:<server_port>`.
+    pub fn connect_at(node_id: u16, server_port: u16) -> io::Result<Self> {
+        let sock = UdpSocket::bind(("127.0.0.1", server_port + node_id))?;
+        let server = SocketAddr::from(([127, 0, 0, 1], server_port));
         Ok(Self { sock, server })
     }
 
@@ -260,11 +283,17 @@ pub type VtInstance = Instance<FileSettings, SoftCrypto, SimRng>;
 
 /// What the radio behind a node reports to the stack: the OpenThread
 /// simulation radio does CSMA, ACK timeout and retries in the core, the radio
-/// only sends and matches ACKs.
+/// only sends and matches ACKs. Like OpenThread's simulation radio it has no
+/// timed receive or transmit: the MAC samples CSL windows and times CSL
+/// transmissions with the radio clock (virtual microseconds, see
+/// [`set_clock`]) and builds the (enhanced) ACKs itself.
 pub fn caps() -> RadioCaps {
     RadioCaps {
         phy: Capabilities::ENERGY_SCAN,
-        mac: MacCapabilities::TX_ACK | MacCapabilities::RX_ACK | MacCapabilities::SRC_MATCH,
+        mac: MacCapabilities::TX_ACK | MacCapabilities::SRC_MATCH,
+        clock: Some(RadioClock(radio_clock)),
+        csl_accuracy_ppm: 0,
+        csl_uncertainty: 0,
         ..RadioCaps::default()
     }
 }
@@ -553,6 +582,8 @@ pub struct VtRadio {
     /// The MAC filter (`macfilter`).
     pub filter: MacFilter,
     neighbors: Vec<(u16, [u8; 8])>,
+    /// The ACK the stack sent last (its echo is not a frame to handle).
+    last_ack: Vec<u8>,
 }
 
 /// RSSI the simulation platform reports for every frame.
@@ -570,6 +601,7 @@ impl VtRadio {
             scan: None,
             filter: MacFilter::default(),
             neighbors: Vec::new(),
+            last_ack: Vec::new(),
         }
     }
 
@@ -610,6 +642,7 @@ impl VtRadio {
 
     /// Run the radio timers due at `now_us`.
     pub fn on_timer(&mut self, inst: &mut VtInstance, now_us: u64) {
+        set_clock(now_us);
         let t = instant(now_us);
         if let Some(tx) = &self.tx
             && tx.abort_at.is_some_and(|a| a <= now_us)
@@ -627,6 +660,7 @@ impl VtRadio {
 
     /// Execute a command of the stack.
     pub fn exec(&mut self, inst: &mut VtInstance, now_us: u64, a: RadioAction) {
+        set_clock(now_us);
         let t = instant(now_us);
         match a {
             RadioAction::Configure(c) => self.config = c,
@@ -653,6 +687,23 @@ impl VtRadio {
                     );
                     return;
                 };
+                if psdu.first().is_some_and(|b| b & 7 == 2) {
+                    // An ACK built by the stack: on the air at once.
+                    let mut m = Vec::with_capacity(1 + psdu.len());
+                    m.push(tx.channel);
+                    m.extend_from_slice(&psdu);
+                    let sent = self.link.send(1, EV_RADIO, &m).is_ok();
+                    self.last_ack = psdu;
+                    inst.handle_radio_tx_done(
+                        if sent {
+                            TxOutcome::Sent
+                        } else {
+                            TxOutcome::Failed(opentrust_platform::radio::RadioErrorKind::TxFailed)
+                        },
+                        t,
+                    );
+                    return;
+                }
                 let dst = frame.dst_address();
                 let dst_addr = dst;
                 let unicast = !dst.is_none() && !dst.is_broadcast();
@@ -683,6 +734,7 @@ impl VtRadio {
     /// A radio event from the simulator: a frame of another node, or the echo
     /// of the node's own transmission.
     pub fn on_radio(&mut self, inst: &mut VtInstance, now_us: u64, data: &[u8]) {
+        set_clock(now_us);
         let t = instant(now_us);
         let Some((&channel, psdu)) = data.split_first() else {
             return;
@@ -691,6 +743,10 @@ impl VtRadio {
             return;
         }
         let is_ack = psdu[0] & 7 == 2;
+        if is_ack && psdu == self.last_ack.as_slice() {
+            self.last_ack.clear();
+            return;
+        }
         if is_ack {
             // Only the ACK of the transmission in flight is of interest.
             if let Some(tx) = &self.tx
@@ -712,7 +768,10 @@ impl VtRadio {
                     channel,
                     rssi: Some(rssi),
                     lqi: None,
-                    timestamp_us: None,
+                    // As OpenThread's simulation radio: the time of the end
+                    // of the ACK, which is also the time its CSL phase
+                    // refers to.
+                    timestamp_us: Some(now_us),
                     ack_security: None,
                     acked_with_frame_pending: None,
                 };
@@ -760,21 +819,26 @@ impl VtRadio {
                 fp = self.src_match.ack_frame_pending(s, e);
             }
         }
-        if will_ack {
-            let mut buf = [0u8; 16];
-            if let Ok(n) = FrameBuilder::imm_ack_for(&mut buf, &frame, fp) {
-                let f = fcs(&buf[..n]);
-                let mut a = Vec::with_capacity(n + 3);
-                a.push(channel);
-                a.extend_from_slice(&buf[..n]);
-                a.extend_from_slice(&f);
-                let _ = self.link.send(1, EV_RADIO, &a);
-            }
-        }
         let mut rssi = RX_RSSI;
         if let Some(ext) = self.ext_of(frame.src_address()) {
             match self.filter.apply(&ext) {
-                None => return,
+                None => {
+                    // OpenThread's radio ACKs the frame before its MAC
+                    // filter drops it; the stack never sees it, so the
+                    // radio sends the ACK.
+                    if will_ack {
+                        let mut buf = [0u8; 16];
+                        if let Ok(n) = FrameBuilder::imm_ack_for(&mut buf, &frame, fp) {
+                            let f = fcs(&buf[..n]);
+                            let mut a = Vec::with_capacity(n + 3);
+                            a.push(channel);
+                            a.extend_from_slice(&buf[..n]);
+                            a.extend_from_slice(&f);
+                            let _ = self.link.send(1, EV_RADIO, &a);
+                        }
+                    }
+                    return;
+                }
                 Some(r) => rssi = r.unwrap_or(rssi),
             }
         }
@@ -785,8 +849,128 @@ impl VtRadio {
             lqi: None,
             timestamp_us: None,
             ack_security: None,
-            acked_with_frame_pending: will_ack.then_some(fp),
+            // The stack builds the ACK (enhanced for 2015 frames).
+            acked_with_frame_pending: None,
         };
         inst.handle_radio_rx(psdu, &info, t);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentrust_mac::mac::{Psdu, TxAction};
+    use opentrust_platform::radio::PsduTxInfo;
+
+    /// A node on a private simulator port with the simulator's socket.
+    fn node(port: u16) -> (UdpSocket, VtRadio, Box<VtInstance>) {
+        let server = UdpSocket::bind(("127.0.0.1", port)).expect("simulator socket");
+        server
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
+        let radio = VtRadio::new(VtLink::connect_at(1, port).expect("node socket"));
+        let inst = new_instance(1, FileSettings::memory(), 7);
+        (server, radio, inst)
+    }
+
+    fn broadcast_data() -> Vec<u8> {
+        let mut buf = [0u8; 64];
+        let n = FrameBuilder::new(&mut buf)
+            .frame_type(opentrust_mac::frame::FrameType::Data)
+            .sequence(5)
+            .dst_pan(opentrust_core::types::PanId(0xffff))
+            .dst(Address::Short(
+                opentrust_core::types::ShortAddress::BROADCAST,
+            ))
+            .src(Address::Short(opentrust_core::types::ShortAddress(0x1234)))
+            .payload(&[1, 2, 3])
+            .build()
+            .unwrap();
+        let mut v = buf[..n].to_vec();
+        let f = fcs(&v);
+        v.extend_from_slice(&f);
+        v
+    }
+
+    #[test]
+    fn caps_have_the_virtual_clock_and_no_hardware_ack() {
+        let c = caps();
+        let clock = c.clock.expect("clock");
+        set_clock(123_456);
+        assert_eq!(clock.now_us(), 123_456);
+        set_clock(1_000_000);
+        assert_eq!(clock.now_us(), 1_000_000);
+        assert!(!c.mac.contains(MacCapabilities::RX_ACK));
+        assert!(!c.phy.contains(Capabilities::RECEIVE_TIMING));
+    }
+
+    #[test]
+    fn sleeping_radio_hears_no_frames() {
+        let (_srv, mut radio, mut inst) = node(24_100);
+        let mut rx = vec![11u8];
+        rx.extend_from_slice(&broadcast_data());
+        // Asleep: not a single frame reaches the stack.
+        radio.exec(&mut inst, 1_000, RadioAction::Sleep);
+        radio.on_radio(&mut inst, 2_000, &rx);
+        assert_eq!(inst.mac().counters().rx_total, 0);
+        // Awake on another channel it does not hear it either.
+        radio.exec(&mut inst, 3_000, RadioAction::Receive { channel: 12 });
+        radio.on_radio(&mut inst, 4_000, &rx);
+        assert_eq!(inst.mac().counters().rx_total, 0);
+        radio.exec(&mut inst, 5_000, RadioAction::Receive { channel: 11 });
+        radio.on_radio(&mut inst, 6_000, &rx);
+        assert_eq!(inst.mac().counters().rx_total, 1);
+        // Asleep again (a CSL window ended).
+        radio.exec(&mut inst, 7_000, RadioAction::Sleep);
+        radio.on_radio(&mut inst, 8_000, &rx);
+        assert_eq!(inst.mac().counters().rx_total, 1);
+    }
+
+    #[test]
+    fn an_ack_built_by_the_stack_goes_on_the_air_at_once() {
+        let (srv, mut radio, mut inst) = node(24_140);
+        radio.exec(&mut inst, 1_000, RadioAction::Receive { channel: 15 });
+        // An enhanced ACK (2015 frame version, CSL IE) as the MAC builds it.
+        let mut buf = [0u8; 32];
+        let n = FrameBuilder::new(&mut buf)
+            .frame_type(opentrust_mac::frame::FrameType::Ack)
+            .version(opentrust_mac::frame::FrameVersion::V2015)
+            .sequence(9)
+            .dst_pan(opentrust_core::types::PanId(0xface))
+            .dst(Address::Short(opentrust_core::types::ShortAddress(0x0400)))
+            .header_ie(opentrust_mac::frame::CslIe {
+                phase: 100,
+                period: 3125,
+                rendezvous_time: None,
+            })
+            .build()
+            .unwrap();
+        let mut psdu = Psdu::new();
+        psdu.extend_from_slice(&buf[..n]).unwrap();
+        psdu.extend_from_slice(&fcs(&buf[..n])).unwrap();
+        let sent = psdu.to_vec();
+        radio.exec(
+            &mut inst,
+            2_000,
+            RadioAction::Transmit(TxAction {
+                psdu,
+                info: PsduTxInfo::default(),
+                channel: 15,
+                power: 0,
+                cca_threshold: None,
+                wait_ack: false,
+                abort_at: None,
+            }),
+        );
+        let mut m = [0u8; 256];
+        let len = srv.recv(&mut m).expect("frame at the simulator");
+        assert_eq!(m[8], EV_RADIO);
+        assert_eq!(m[11], 15);
+        assert_eq!(&m[12..len], sent.as_slice());
+        // The echo of the ACK is not handled as a received frame.
+        let mut echo = vec![15u8];
+        echo.extend_from_slice(&sent);
+        radio.on_radio(&mut inst, 2_001, &echo);
+        assert_eq!(inst.mac().counters().rx_total, 0);
     }
 }

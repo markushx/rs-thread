@@ -23,6 +23,7 @@ use std::sync::mpsc;
 use opentrust_cli::Cli;
 use opentrust_sim::vt::{
     EV_ALARM, EV_RADIO, FileSettings, VtEvent, VtInstance, VtLink, VtRadio, instant, new_instance,
+    set_clock,
 };
 
 const LINE_MAX: usize = 384;
@@ -126,6 +127,7 @@ impl Node {
 
     fn sim_event(&mut self, ev: VtEvent) {
         self.now_us += ev.delay;
+        set_clock(self.now_us);
         if ev.kind == EV_RADIO {
             let n = self
                 .inst
@@ -182,6 +184,7 @@ impl Node {
                     self.out.push_str("\r\n");
                     let line =
                         String::from_utf8_lossy(&std::mem::take(&mut self.line.buf)).into_owned();
+                    set_clock(self.now_us);
                     let t = instant(self.now_us);
                     let mut words = line.split_whitespace();
                     let first = words.next();
