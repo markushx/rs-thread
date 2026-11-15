@@ -273,3 +273,23 @@ fn rejects_malformed() {
     assert!(NetworkData::<8>::from_slice(&[0x02, 0x05, 1]).is_err());
     assert!(NetworkData::<4>::from_slice(&[0x02, 0x04, 1, 2, 3, 4]).is_err());
 }
+
+/// OpenThread `tests/unit/test_serial_number.cpp` `TestPreference`
+/// (2-bit route preference encoding).
+#[test]
+fn test_preference() {
+    assert_eq!(preference_to_bits(1), 0x1);
+    assert_eq!(preference_to_bits(0), 0x0);
+    assert_eq!(preference_to_bits(-1), 0x3);
+    assert_eq!(preference_to_bits(2), 0x1);
+    assert_eq!(preference_to_bits(-2), 0x3);
+    assert_eq!(preference_to_bits(127), 0x1);
+    assert_eq!(preference_to_bits(-128), 0x3);
+    for hi in [0u8, 4, 0xfc] {
+        assert_eq!(preference_from_bits(0x1 | hi), 1);
+        assert_eq!(preference_from_bits(hi), 0);
+        assert_eq!(preference_from_bits(0x3 | hi), -1);
+        // The reserved value reads as medium.
+        assert_eq!(preference_from_bits(0x2 | hi), 0);
+    }
+}
