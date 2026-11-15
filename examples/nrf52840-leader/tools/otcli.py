@@ -52,7 +52,8 @@ def run(port, cmds, timeout=10):
                 while time.time() < end:
                     r, _, _ = select.select([fd], [], [], 0.2)
                     if r:
-                        print(os.read(fd, 4096).decode(errors='replace').rstrip())
+                        sys.stdout.write(os.read(fd, 4096).decode(errors='replace').replace('\r\n', '\n'))
+                        sys.stdout.flush()
                 continue
             os.write(fd, c.encode() + b'\n')
             # `ping` prints its summary line first, then Done.
