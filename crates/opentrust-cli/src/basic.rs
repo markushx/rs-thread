@@ -40,11 +40,17 @@ impl Legacy {
 pub(crate) const COMMANDS: &[&str] = &[
     "channel",
     "child",
+    "childmax",
+    "childsupervision",
+    "childtimeout",
     "commissioner",
+    "contextreusedelay",
     "counters",
     "dataset",
+    "detach",
     "discover",
     "dns",
+    "eidcache",
     "eui64",
     "extaddr",
     "extpanid",
@@ -54,23 +60,31 @@ pub(crate) const COMMANDS: &[&str] = &[
     "ipaddr",
     "ipmaddr",
     "joiner",
+    "keysequence",
     "leaderdata",
     "leaderweight",
+    "mliid",
     "mode",
     "neighbor",
     "netdata",
+    "networkidtimeout",
     "networkkey",
     "networkname",
     "panid",
+    "parentpriority",
     "partitionid",
     "ping",
+    "pollperiod",
+    "preferrouterid",
     "prefix",
+    "releaserouterid",
     "reset",
     "rloc16",
     "route",
     "router",
     "routerdowngradethreshold",
     "routereligible",
+    "routeridrange",
     "routerselectionjitter",
     "routerupgradethreshold",
     "scan",
@@ -108,7 +122,15 @@ where
                 | "routerupgradethreshold"
                 | "routerdowngradethreshold"
                 | "routereligible"
-                | "leaderweight" => cfg!(feature = "ftd"),
+                | "leaderweight"
+                | "childmax"
+                | "contextreusedelay"
+                | "eidcache"
+                | "networkidtimeout"
+                | "parentpriority"
+                | "preferrouterid"
+                | "releaserouterid"
+                | "routeridrange" => cfg!(feature = "ftd"),
                 "commissioner" | "joiner" => cfg!(feature = "commissioning"),
                 "dataset" => cfg!(feature = "dataset"),
                 "discover" | "scan" => cfg!(feature = "scan"),
@@ -359,9 +381,16 @@ where
         Ok(())
     }
 
-    pub(crate) fn partitionid(&mut self) -> R {
-        ln!(self.o, "{}", self.i.partition_id());
-        Ok(())
+    pub(crate) fn partitionid(&mut self, a: &Args<'_>) -> R {
+        match a.get(1) {
+            "" => {
+                ln!(self.o, "{}", self.i.partition_id());
+                Ok(())
+            }
+            #[cfg(feature = "ftd")]
+            "preferred" => self.preferred_partition(a),
+            _ => Err(E::INVALID_COMMAND),
+        }
     }
 
     pub(crate) fn leaderdata(&mut self) -> R {

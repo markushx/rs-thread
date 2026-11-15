@@ -68,6 +68,55 @@ fn leader_prefers_previous_router_id_and_weight() {
 }
 
 #[test]
+fn leader_uses_router_id_range_and_preferred_partition() {
+    let mut sim = Sim::new(1);
+    let m = &mut sim.nodes[0].mle;
+    assert_eq!(
+        m.set_router_id_range(9, 8),
+        Err(opentrust_core::Error::InvalidArgs)
+    );
+    assert_eq!(
+        m.set_router_id_range(0, 63),
+        Err(opentrust_core::Error::InvalidArgs)
+    );
+    m.set_router_id_range(20, 22).unwrap();
+    m.cfg.router.preferred_partition_id = 0x1234;
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    let n = &sim.nodes[0];
+    assert!((20..=22).contains(&n.mle.leader_data().leader_router_id));
+    assert_eq!(n.mle.leader_data().partition_id, 0x1234);
+}
+
+#[test]
+fn parent_priority_is_assignable() {
+    let mut sim = Sim::new(1);
+    let m = &mut sim.nodes[0].mle;
+    assert_eq!(
+        m.set_parent_priority(2),
+        Err(opentrust_core::Error::InvalidArgs)
+    );
+    assert_eq!(
+        m.set_parent_priority(-3),
+        Err(opentrust_core::Error::InvalidArgs)
+    );
+    assert_eq!(
+        m.fill_connectivity().parent_priority,
+        crate::tlv::ParentPriority::Medium
+    );
+    m.set_parent_priority(1).unwrap();
+    assert_eq!(
+        m.fill_connectivity().parent_priority,
+        crate::tlv::ParentPriority::High
+    );
+    m.set_parent_priority(-1).unwrap();
+    assert_eq!(
+        m.fill_connectivity().parent_priority,
+        crate::tlv::ParentPriority::Low
+    );
+}
+
+#[test]
 fn become_leader_checks_weight_when_attached() {
     let mut sim = leader_sim(1);
     // Already leader: no-op.

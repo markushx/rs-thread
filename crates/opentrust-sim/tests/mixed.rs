@@ -134,3 +134,80 @@ fn ot_leader_opentrust_router() {
 fn opentrust_leader_ot_router() {
     run_case("rust-leader", true);
 }
+
+/// A sleepy OpenTrust child attaches to an OpenThread parent, which sends the
+/// Child ID Response indirectly.
+#[test]
+fn opentrust_sleepy_child_attaches_to_ot_router() {
+    let Some(mut e) = env("sed", &[(1, false), (2, true)]) else {
+        return;
+    };
+    let sim = &mut e.sim;
+    ok(sim, 1, "dataset init new");
+    ok(sim, 1, "dataset commit active");
+    ok(sim, 1, "ifconfig up");
+    ok(sim, 1, "thread start");
+    sim.run(25.0);
+    assert_eq!(state(sim, 1), "leader");
+    let tlv = ok(sim, 1, "dataset active -x")[0].clone();
+    ok(sim, 2, "mode -");
+    ok(sim, 2, "childtimeout 6");
+    ok(sim, 2, &format!("dataset set active {tlv}"));
+    ok(sim, 2, "ifconfig up");
+    ok(sim, 2, "thread start");
+    let mut attached = None;
+    for t in 1..=30 {
+        sim.run(0.5);
+        let s = state(sim, 2);
+        if s == "child" {
+            attached = Some(t);
+            break;
+        }
+    }
+    // The SED polls its candidate parent for the Child ID Response: it is
+    // attached within a few seconds although its timeout is 6 s.
+    assert!(
+        attached.is_some_and(|t| t <= 14),
+        "attached at {attached:?} half seconds"
+    );
+}
+
+/// An OpenTrust leader pings a sleepy OpenThread child of an OpenThread
+/// router with datagrams up to the IPv6 minimum MTU (fragmented, forwarded
+/// and queued indirectly).
+#[test]
+fn opentrust_leader_pings_ot_sleepy_child_with_large_datagrams() {
+    let Some(mut e) = env("big", &[(1, true), (2, false), (3, false)]) else {
+        return;
+    };
+    form_and_join(&mut e, 1, 2);
+    let sim = &mut e.sim;
+    let tlv = ok(sim, 1, "dataset active -x")[0].clone();
+    let ext1 = ok(sim, 1, "extaddr")[0].clone();
+    let ext2 = ok(sim, 2, "extaddr")[0].clone();
+    let ext3 = ok(sim, 3, "extaddr")[0].clone();
+    ok(sim, 3, &format!("macfilter addr add {ext2}"));
+    ok(sim, 3, "macfilter addr allowlist");
+    ok(sim, 1, &format!("macfilter addr add {ext2}"));
+    ok(sim, 1, "macfilter addr allowlist");
+    ok(sim, 2, &format!("macfilter addr add {ext1}"));
+    ok(sim, 2, &format!("macfilter addr add {ext3}"));
+    ok(sim, 2, "macfilter addr allowlist");
+    ok(sim, 3, "mode -");
+    ok(sim, 3, "childtimeout 6");
+    ok(sim, 3, &format!("dataset set active {tlv}"));
+    ok(sim, 3, "ifconfig up");
+    ok(sim, 3, "thread start");
+    sim.run(30.0);
+    assert_eq!(state(sim, 3), "child");
+    let a3 = ok(sim, 3, "ipaddr mleid")[0].clone();
+    for size in [8, 100, 400, 800, 1232] {
+        sim.send(1, &format!("ping {a3} {size} 1 1 64 5"));
+        sim.run(8.0);
+        let out = sim.drain(1);
+        assert!(
+            out.iter().any(|l| l.contains("1 packets received")),
+            "ping of {size} bytes: {out:?}"
+        );
+    }
+}

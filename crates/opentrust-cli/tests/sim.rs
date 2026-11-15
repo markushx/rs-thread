@@ -422,3 +422,97 @@ fn commissioner_and_joiner() {
     assert_eq!(h.cmd(1, "thread start"), "Done\n");
     h.wait_state(1, "router", 300);
 }
+
+#[test]
+fn mle_parameter_commands() {
+    let mut h = H::new(&[Kind::Router, Kind::Router, Kind::Sleepy], 11);
+    for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+        h.net.medium.connect(a, b, -60);
+    }
+
+    // Defaults and setters while disabled.
+    assert_eq!(h.cmd(0, "childmax"), "10\nDone\n");
+    assert_eq!(h.cmd(0, "childmax 2"), "Done\n");
+    assert_eq!(h.cmd(0, "childmax 0"), "Error 7: InvalidArgs\n");
+    assert_eq!(h.cmd(0, "childmax 11"), "Error 7: InvalidArgs\n");
+    assert_eq!(h.cmd(0, "childmax"), "2\nDone\n");
+    assert_eq!(h.cmd(0, "childtimeout"), "240\nDone\n");
+    assert_eq!(h.cmd(0, "childtimeout 3"), "Done\n");
+    assert_eq!(h.cmd(0, "childtimeout"), "5\nDone\n");
+    assert_eq!(h.cmd(0, "networkidtimeout 110"), "Done\n");
+    assert_eq!(h.cmd(0, "networkidtimeout"), "110\nDone\n");
+    assert_eq!(h.cmd(0, "parentpriority"), "-2\nDone\n");
+    assert_eq!(h.cmd(0, "parentpriority 1"), "Done\n");
+    assert_eq!(h.cmd(0, "parentpriority 2"), "Error 7: InvalidArgs\n");
+    assert_eq!(h.cmd(0, "routeridrange"), "0 62\nDone\n");
+    assert_eq!(h.cmd(0, "routeridrange 5 4"), "Error 7: InvalidArgs\n");
+    assert_eq!(h.cmd(0, "routeridrange 3 9"), "Done\n");
+    assert_eq!(h.cmd(0, "routeridrange"), "3 9\nDone\n");
+    assert_eq!(h.cmd(0, "contextreusedelay 100"), "Done\n");
+    assert_eq!(h.cmd(0, "contextreusedelay"), "100\nDone\n");
+    assert_eq!(h.cmd(0, "keysequence guardtime 0"), "Done\n");
+    assert_eq!(h.cmd(0, "keysequence guardtime"), "0\nDone\n");
+    assert_eq!(h.cmd(0, "childsupervision interval"), "129\nDone\n");
+    assert_eq!(h.cmd(0, "childsupervision checktimeout"), "190\nDone\n");
+    assert_eq!(h.cmd(0, "childsupervision failcounter"), "0\nDone\n");
+    assert_eq!(h.cmd(0, "childsupervision failcounter reset"), "Done\n");
+    assert_eq!(h.cmd(0, "partitionid preferred 7"), "Done\n");
+    assert_eq!(h.cmd(0, "partitionid preferred"), "7\nDone\n");
+    assert_eq!(h.cmd(0, "mliid 0011223344556677"), "Done\n");
+    assert_eq!(h.cmd(0, "pollperiod 5"), "Error 7: InvalidArgs\n");
+    assert_eq!(h.cmd(0, "eidcache"), "Done\n");
+
+    // The leader uses the preferred partition ID and router ID range.
+    assert_eq!(h.cmd(0, "channel 15"), "Done\n");
+    assert_eq!(h.cmd(0, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(0, "thread start"), "Done\n");
+    h.wait_state(0, "leader", 60);
+    assert_eq!(h.cmd(0, "partitionid"), "7\nDone\n");
+    assert!(h.cmd(0, "ipaddr mleid").contains(":11:2233:4455:6677"));
+    assert_eq!(h.cmd(0, "childmax 3"), "Done\n");
+
+    // A router joins; releasing its router ID is a leader command.
+    let tlvs = line_value(&h.cmd(0, "dataset active -x"));
+    assert_eq!(h.cmd(1, &format!("dataset set active {tlvs}")), "Done\n");
+    assert_eq!(h.cmd(1, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    h.wait_state(1, "router", 300);
+    let id = u16::from_str_radix(&h.cmd(1, "rloc16")[..4], 16).unwrap() >> 10;
+    assert!((3..=9).contains(&id), "router id {id} outside the range");
+    assert_eq!(h.cmd(1, "releaserouterid 1"), "Error 13: InvalidState\n");
+    assert_eq!(h.cmd(0, "releaserouterid 60"), "Error 23: NotFound\n");
+
+    // Asynchronous detach of the router.
+    assert_eq!(h.cmd(1, "detach async"), "Done\n");
+    h.run(3);
+    assert_eq!(h.cmd(1, "state"), "disabled\nDone\n");
+    // A blocking detach prints at the end.
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    h.wait_state(1, "router", 300);
+    assert_eq!(h.cmd(1, "detach"), "");
+    let out = h.wait_for(1, "Done", 5);
+    assert_eq!(out, "Finished detaching\nDone\n");
+}
+
+#[test]
+fn sleepy_child_with_short_timeout_attaches() {
+    let mut h = H::new(&[Kind::Router, Kind::Router], 5);
+    assert_eq!(h.cmd(1, "mode -"), "Done\n");
+    h.net.medium.connect(0, 1, -60);
+    assert_eq!(h.cmd(0, "channel 15"), "Done\n");
+    assert_eq!(h.cmd(0, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(0, "thread start"), "Done\n");
+    h.wait_state(0, "leader", 60);
+    let tlvs = line_value(&h.cmd(0, "dataset active -x"));
+    assert_eq!(h.cmd(1, &format!("dataset set active {tlvs}")), "Done\n");
+    assert_eq!(h.cmd(1, "childtimeout 6"), "Done\n");
+    assert_eq!(h.cmd(1, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    let mut t = 0;
+    while h.cmd(1, "state") != "child\nDone\n" {
+        h.run(1);
+        t += 1;
+        assert!(t < 15, "attach took more than 15 s");
+    }
+    println!("attached after {t} s");
+}

@@ -11,8 +11,9 @@ use rand_core::{CryptoRng, Rng};
 use crate::Ctx;
 use crate::util::{Args, E, Ip6, R, ln, out, parse_ip6, parse_u8, parse_u16};
 
-/// Largest echo payload (the instance sends from a stack buffer).
-const MAX_PAYLOAD: usize = 512;
+/// Largest echo payload: the IPv6 minimum MTU less the IPv6 and ICMPv6
+/// headers (OT `kMaxPingSize`). The instance sends from a stack buffer.
+const MAX_PAYLOAD: usize = 1232;
 /// Echo requests whose send time is remembered for the round-trip time.
 const SLOTS: usize = 16;
 /// OT defaults.

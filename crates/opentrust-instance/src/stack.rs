@@ -36,7 +36,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::Rng;
 
 /// Capacity of the child table (router role).
-pub const CHILDREN: usize = 8;
+pub const CHILDREN: usize = 10;
 
 /// UDP sockets of the application.
 pub const UDP_SOCKETS: usize = 5;
@@ -573,6 +573,23 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
     ) -> Result<()> {
         self.mac
             .configure_enh_ack_probing(rloc16.into(), *ext, flags)
+    }
+
+    fn set_attach_polling(&mut self, candidate: Option<ExtAddress>) {
+        match candidate {
+            Some(ext) => {
+                // The receiver stays on until the attach ends: a parent
+                // that sends the Child ID Response directly (not after a
+                // poll) is heard as well.
+                self.mac.set_poll_while_rx_on(true);
+                self.mac.start_polling(Address::Extended(ext), self.now);
+                self.mac.set_poll_attach_mode(true, self.now);
+            }
+            None => {
+                self.mac.set_poll_attach_mode(false, self.now);
+                self.mac.stop_polling();
+            }
+        }
     }
 
     fn set_poll_attach_mode(&mut self, fast: bool) {

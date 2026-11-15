@@ -166,6 +166,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     .push_event(Event::PartitionChanged { partition_id });
             }
             MleEvent::NetworkDataChanged => {}
+            MleEvent::DetachedGracefully => {
+                self.started = false;
+                self.fwd.clear();
+                self.core.push_event(Event::DetachedGracefully);
+            }
             MleEvent::ChildAdded { ext, rloc16 } => {
                 self.core.push_event(Event::ChildAdded { ext, rloc16 });
             }

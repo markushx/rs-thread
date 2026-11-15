@@ -144,7 +144,22 @@ pub struct RouterConfig {
     /// Seconds without a new router ID sequence before the leader is
     /// considered lost.
     pub network_id_timeout_secs: u8,
+    /// Parent priority announced in Parent Responses (OT
+    /// `mParentPriority`): -1 low, 0 medium, 1 high, or
+    /// [`PARENT_PRIORITY_UNSPECIFIED`] to derive it from the child table.
+    pub parent_priority: i8,
+    /// Partition ID used when this device starts a partition as leader
+    /// (OT `mPreferredLeaderPartitionId`); 0 picks a random one.
+    pub preferred_partition_id: u32,
+    /// Lowest router ID the leader assigns (OT `mMinRouterId`).
+    pub router_id_min: u8,
+    /// Highest router ID the leader assigns (OT `mMaxRouterId`).
+    pub router_id_max: u8,
 }
+
+/// [`RouterConfig::parent_priority`] value for "derive it" (OT
+/// `kParentPriorityUnspecified`).
+pub const PARENT_PRIORITY_UNSPECIFIED: i8 = -2;
 
 impl RouterConfig {
     /// OpenThread defaults.
@@ -157,6 +172,10 @@ impl RouterConfig {
             downgrade_threshold: ROUTER_DOWNGRADE_THRESHOLD,
             selection_jitter_secs: ROUTER_SELECTION_JITTER_SECS,
             network_id_timeout_secs: NETWORK_ID_TIMEOUT_SECS,
+            parent_priority: PARENT_PRIORITY_UNSPECIFIED,
+            preferred_partition_id: 0,
+            router_id_min: 0,
+            router_id_max: crate::consts::MAX_ROUTER_ID,
         }
     }
 }

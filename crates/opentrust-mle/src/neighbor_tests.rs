@@ -357,3 +357,25 @@ fn router_table() {
     rt.clear();
     assert_eq!(rt.count(StateFilter::Any), 0);
 }
+
+#[test]
+fn child_table_max_allowed() {
+    let mut tab = ChildTable::<4>::new();
+    assert_eq!(tab.max_allowed(), 4);
+    assert_eq!(tab.set_max_allowed(0).unwrap_err(), Error::InvalidArgs);
+    assert_eq!(tab.set_max_allowed(5).unwrap_err(), Error::InvalidArgs);
+    tab.set_max_allowed(2).unwrap();
+    tab.add(ext(1), t(0)).unwrap();
+    tab.add(ext(2), t(0)).unwrap();
+    assert_eq!(tab.add(ext(3), t(0)).unwrap_err(), Error::NoBufs);
+    assert_eq!(
+        tab.insert(Child::new(ext(3), t(0))).unwrap_err(),
+        Error::NoBufs
+    );
+    // The limit cannot change while children exist.
+    tab.find_by_ext_mut(&ext(1), StateFilter::Any)
+        .unwrap()
+        .neighbor
+        .set_state(NeighborState::Valid, t(1));
+    assert_eq!(tab.set_max_allowed(3).unwrap_err(), Error::InvalidState);
+}

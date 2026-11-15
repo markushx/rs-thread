@@ -225,6 +225,9 @@ pub struct Mac<
     ext: ExtAddress,
     channel: u8,
     rx_on_when_idle: bool,
+    /// Poll although the receiver is on when idle (attach, see
+    /// [`Mac::set_poll_while_rx_on`]).
+    poll_while_rx_on: bool,
     promiscuous: bool,
     beacon_enabled: bool,
     beacon: Option<ThreadBeaconPayload>,
@@ -355,6 +358,7 @@ impl<
             ext,
             channel: Channel::MIN,
             rx_on_when_idle: true,
+            poll_while_rx_on: false,
             promiscuous: false,
             beacon_enabled: false,
             beacon: None,
@@ -511,6 +515,15 @@ impl<
     /// Set rx-on-when-idle (`false` for a sleepy end device).
     pub fn set_rx_on_when_idle(&mut self, on: bool) {
         self.rx_on_when_idle = on;
+    }
+
+    /// Let the data poll sender poll while the receiver is on when idle.
+    /// A device attaching as a sleepy child polls its parent candidate for
+    /// the Child ID Response but keeps listening, so that a parent sending
+    /// the response directly is heard as well. Cleared by
+    /// [`stop_polling`](Self::stop_polling).
+    pub fn set_poll_while_rx_on(&mut self, on: bool) {
+        self.poll_while_rx_on = on;
     }
 
     /// Promiscuous mode: every frame is delivered unfiltered and
@@ -1219,6 +1232,7 @@ impl<
 
     /// Stop polling.
     pub fn stop_polling(&mut self) {
+        self.poll_while_rx_on = false;
         self.poll.stop();
     }
 
@@ -1259,7 +1273,7 @@ impl<
     /// or the receiver is on when idle; [`Error::Already`] if a poll is
     /// already pending.
     pub fn send_data_poll(&mut self, now: Instant) -> Result<()> {
-        if !self.poll.enabled || self.rx_on_when_idle {
+        if !self.poll.enabled || (self.rx_on_when_idle && !self.poll_while_rx_on) {
             self.poll.stop();
             return Err(Error::InvalidState);
         }
