@@ -308,13 +308,14 @@ Security-relevant decisions for the review before M4:
 - [x] `opentrust-cli-vt` (`opentrust-cli --features sim`): `ot-cli-ftd`-compatible node (argv: node id; stdin/stdout CLI with echo and prompt; `PORT_OFFSET`/`PORT_BASE`; settings in `tmp/<offset>_<id>.flash`); the MTD variant (`ot-cli-mtd`) is not built
 - [ ] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
   - [x] builds OT reference nodes from `openthread-sys/vendor/openthread` (simulation platform): `cargo build -p openthread-sys` (build script, about 25 s, 11 MB build tree)
-  - [ ] runs selected `thread-cert` cases (Cert_5_1_*, 5_2_*, 5_3_*, …, v1_2_*) with Rust nodes as DUT and OT nodes as peers
-  - [ ] manages Python venv (`.venv` already present) via `uv`/pip for pktverify/pyshark deps
+  - [x] runs `thread-cert` cases Cert_5_1_*, 5_2_*, 5_3_* with OpenTrust nodes in place of OT nodes (`crates/opentrust-sim/tests/thread_cert.rs`, `OPENTRUST_CERT=1`): 178 of 243 runs pass, details in `docs/test-status.md`; v1_2_* and pktverify (Linux only) not run
+  - [ ] cert failures open: SED attach to an OpenTrust parent, missing CLI commands (`childmax`, `childtimeout`, `releaserouterid`, ...); five cases fail with OpenThread only
+  - [x] manages Python venv (`.venv`, created / completed with pip: pexpect, pycryptodome, pyshark 0.4.6, lxml)
 - [ ] Port OT C++ unit-test vectors (`tests/unit/*.cpp`: mac frame, lowpan, mle, crypto, dataset, network data, coap) into Rust `#[test]`s
 - [ ] Differential tests: same input to `openthread-sys` (FFI) and Rust impl, compare outputs (codecs, crypto, KDF)
 - [ ] OTNS (OpenThread Network Simulator) integration for large-topology/visual testing
 - [ ] Fuzzing (`cargo fuzz`) for all parsers (MAC, 6LoWPAN, MLE TLVs, CoAP, MeshCoP TLVs)
-- [ ] Track cert test pass-rate in `docs/test-status.md`
+- [x] Track cert test pass-rate in `docs/test-status.md`
 
 ## Phase 12 – Embedded targets
 
