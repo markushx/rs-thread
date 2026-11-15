@@ -215,6 +215,7 @@ async fn main(spawner: Spawner) {
         button1,
         #[cfg(feature = "ble")]
         ble,
+        ..
     } = nrf52840_leader::init(&spawner);
     nrf52840_leader::flash::check();
     if nrf52840_leader::flash::factory_reset_requested(&button1).await {
