@@ -191,5 +191,12 @@ pub fn preferred_anycast(entries: &[AnycastInfo]) -> Option<AnycastInfo> {
             break;
         }
     }
+    // The version is the minimum supported by all entries with the
+    // selected sequence number.
+    for e in entries {
+        if e.sequence_number == best.sequence_number {
+            best.version = best.version.min(e.version);
+        }
+    }
     Some(best)
 }

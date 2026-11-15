@@ -706,3 +706,106 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         true
     }
 }
+
+#[cfg(test)]
+mod ot_vector_tests {
+    extern crate std;
+
+    use std::vec::Vec as StdVec;
+
+    use opentrust_dns::srp::discovery::{anycast_entries, preferred_anycast};
+    use opentrust_mesh::netdata::NetworkDataView;
+
+    use super::adapt;
+
+    const COMM: [u8; 6] = [0x08, 0x04, 0x0b, 0x02, 0x50, 0xb0];
+
+    /// Anycast Service TLV (`0x5c` service data) with one Server sub-TLV
+    /// of RLOC16 `0x5000 + idx`, optionally with a version byte.
+    fn svc(id: u8, seq: u8, idx: u8, version: Option<u8>) -> StdVec<u8> {
+        let mut v = std::vec![0x0b, 0x08, 0x80 | id, 0x02, 0x5c, seq, 0x0d, 0x02, 0x50, idx];
+        if let Some(ver) = version {
+            v[1] = 0x09;
+            v[7] = 0x03;
+            v.push(ver);
+        }
+        v
+    }
+
+    fn cat(parts: &[StdVec<u8>]) -> StdVec<u8> {
+        let mut d = COMM.to_vec();
+        for p in parts {
+            d.extend_from_slice(p);
+        }
+        d
+    }
+
+    /// OpenThread `tests/unit/test_network_data.cpp`
+    /// `TestNetworkDataDsnSrpAnycastSeqNumSelection`.
+    #[test]
+    fn test_network_data_dsn_srp_anycast_seq_num_selection() {
+        let plain = |seqs: &[u8]| -> StdVec<u8> {
+            cat(&seqs
+                .iter()
+                .enumerate()
+                .map(|(i, &s)| svc(i as u8, s, i as u8, None))
+                .collect::<StdVec<_>>())
+        };
+        // (network data, sequence numbers in order, preferred seq, preferred version)
+        let mut tests: StdVec<(StdVec<u8>, StdVec<u8>, u8, u8)> = StdVec::new();
+        for (seqs, pref) in [
+            (&[1u8, 129][..], 129u8),
+            (&[133, 5], 133),
+            (&[1, 2, 255], 2),
+            (&[10, 130, 250], 250),
+            (&[130, 250, 10], 250),
+            (&[250, 10, 130], 250),
+            (&[250, 10, 138], 250),
+            (&[1, 2, 255, 254], 2),
+            (&[1, 2, 255, 254], 2),
+            (&[254, 2, 120, 1], 120),
+            (&[240, 2, 120, 1], 240),
+        ] {
+            tests.push((plain(seqs), seqs.to_vec(), pref, 0));
+        }
+        // 12: second service carries a version byte.
+        tests.push((
+            cat(&[svc(0, 1, 0, None), svc(1, 129, 1, Some(1))]),
+            std::vec![1, 129],
+            129,
+            1,
+        ));
+        // 13: one service with two Server sub-TLVs (version 2).
+        let mut t13 = cat(&[svc(0, 1, 0, None)]);
+        t13.extend_from_slice(&[0x0b, 0x0e, 0x81, 0x02, 0x5c, 0x81]);
+        t13.extend_from_slice(&[0x0d, 0x03, 0x50, 0x01, 0x02, 0x0d, 0x03, 0x50, 0x02, 0x02]);
+        tests.push((t13, std::vec![1, 129, 129], 129, 2));
+        // 14 and 15: one service with three or four Server sub-TLVs.
+        let mut t14 = COMM.to_vec();
+        t14.extend_from_slice(&[0x0b, 0x13, 0x81, 0x02, 0x5c, 0x07]);
+        t14.extend_from_slice(&[0x0d, 0x03, 0x50, 0x00, 0x01]);
+        t14.extend_from_slice(&[0x0d, 0x03, 0x50, 0x01, 0x02]);
+        t14.extend_from_slice(&[0x0d, 0x03, 0x50, 0x02, 0x03]);
+        tests.push((t14, std::vec![7, 7, 7], 7, 1));
+        let mut t15 = COMM.to_vec();
+        t15.extend_from_slice(&[0x0b, 0x17, 0x81, 0x02, 0x5c, 0x03]);
+        t15.extend_from_slice(&[0x0d, 0x03, 0x50, 0x00, 0x01]);
+        t15.extend_from_slice(&[0x0d, 0x03, 0x50, 0x01, 0x02]);
+        t15.extend_from_slice(&[0x0d, 0x02, 0x50, 0x02]);
+        t15.extend_from_slice(&[0x0d, 0x03, 0x50, 0x03, 0x01]);
+        tests.push((t15, std::vec![3, 3, 3, 3], 3, 0));
+
+        for (n, (data, seqs, pref_seq, pref_ver)) in tests.iter().enumerate() {
+            let entries: StdVec<_> = NetworkDataView(data).services().map(adapt).collect();
+            let any: StdVec<_> = anycast_entries(entries.iter().copied(), [0; 8]).collect();
+            assert_eq!(any.len(), seqs.len(), "case {}", n + 1);
+            for (i, a) in any.iter().enumerate() {
+                assert_eq!(a.sequence_number, seqs[i], "case {}", n + 1);
+                assert_eq!(a.rloc16, 0x5000 + i as u16, "case {}", n + 1);
+            }
+            let p = preferred_anycast(&any).unwrap();
+            assert_eq!(p.sequence_number, *pref_seq, "case {}", n + 1);
+            assert_eq!(p.version, *pref_ver, "case {}", n + 1);
+        }
+    }
+}
