@@ -348,6 +348,13 @@ pub trait MleEnv {
     fn set_parent(&mut self, parent: Option<(ExtAddress, Rloc16)>);
     /// Data poll period for sleepy end devices (`None` = no polling).
     fn set_poll_period(&mut self, period: Option<Duration>);
+    /// A sleepy device waits for the Child ID Response of `candidate`: poll
+    /// it by its extended address at the attach poll period (OT
+    /// `SendChildIdRequest`: `SetAttachMode(true)`); `None` ends it and
+    /// stops polling. The receiver stays on (OT turns it off here), so that
+    /// a parent that sends the response directly is heard too. Default:
+    /// no-op.
+    fn set_attach_polling(&mut self, _candidate: Option<ExtAddress>) {}
     /// Poll quickly while attaching (OT `DataPollSender::SetAttachMode`).
     fn set_poll_attach_mode(&mut self, _fast: bool) {}
     /// Poll the parent a few times at the fast poll period, e.g. after a

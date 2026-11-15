@@ -379,6 +379,9 @@ impl<const C: usize> Mle<C> {
                     self.attach.candidate = None;
                     self.attach.received_response_from_parent = false;
                     self.attach.parent_request_counter = 0;
+                    if self.role != Role::Child {
+                        env.set_attach_polling(None);
+                    }
                     env.set_rx_on_when_idle(true);
                 }
                 self.attach.parent_request_counter += 1;
@@ -800,6 +803,9 @@ impl<const C: usize> Mle<C> {
         })?;
         if let Some(c) = self.attach.candidate.as_mut() {
             c.parent.router.neighbor.state = NeighborState::Valid;
+        }
+        if !self.is_rx_on_when_idle() {
+            env.set_attach_polling(Some(cand_ext));
         }
         Ok(())
     }

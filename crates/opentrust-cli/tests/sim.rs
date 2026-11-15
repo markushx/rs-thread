@@ -493,3 +493,26 @@ fn mle_parameter_commands() {
     let out = h.wait_for(1, "Done", 5);
     assert_eq!(out, "Finished detaching\nDone\n");
 }
+
+#[test]
+fn sleepy_child_with_short_timeout_attaches() {
+    let mut h = H::new(&[Kind::Router, Kind::Router], 5);
+    assert_eq!(h.cmd(1, "mode -"), "Done\n");
+    h.net.medium.connect(0, 1, -60);
+    assert_eq!(h.cmd(0, "channel 15"), "Done\n");
+    assert_eq!(h.cmd(0, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(0, "thread start"), "Done\n");
+    h.wait_state(0, "leader", 60);
+    let tlvs = line_value(&h.cmd(0, "dataset active -x"));
+    assert_eq!(h.cmd(1, &format!("dataset set active {tlvs}")), "Done\n");
+    assert_eq!(h.cmd(1, "childtimeout 6"), "Done\n");
+    assert_eq!(h.cmd(1, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    let mut t = 0;
+    while h.cmd(1, "state") != "child\nDone\n" {
+        h.run(1);
+        t += 1;
+        assert!(t < 15, "attach took more than 15 s");
+    }
+    println!("attached after {t} s");
+}
