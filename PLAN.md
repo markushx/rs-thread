@@ -370,6 +370,20 @@ Security-relevant decisions for the review before M4:
 - [x] Remove mention of PLAN phases from code and comments (keep it that way for new code)
 - [ ] Check what can/needs to be disabled on embedded devices
 
+## Phase 16 – Port ot-br-posix
+
+- [ ] Port ot-br-posix to Rust
+
+## Phase 17 – Publish OpenTrust
+
+- [ ] Push to Github/Gitlab
+- [ ] Announce / Market OpenTrust
+
+## Phase 18 – Maintenance
+
+- [ ] Align with current OpenThread main branch
+- [ ] Align with later Thread versions
+
 ## Milestones
 
 - [ ] **M1 – Codecs**: MAC + 6LoWPAN + MLE TLVs + crypto, verified by OT vectors and differential tests
