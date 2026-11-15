@@ -819,6 +819,7 @@ The OpenTrust node for OpenThread's virtual-time simulation platform differs fro
 ## Unit-test vectors
 
 - **Empty network name.** OT's `NetworkName::Set` accepts an empty name (its `TestNetworkName` sets one); `NetworkName::new` rejects it, as Thread 1.4.1 requires 1 to 16 bytes.
+
 ## Matter light (`examples/nrf52840-light`)
 
 - **Early acknowledgement of CASE Sigma1 and Sigma3.** The responder acknowledges both messages at once (standalone MRP ack, then a 30 ms pause so the transport and the Thread driver send it) before the crypto starts. rs-matter 95e4110 has this as a TODO (`MRP_STANDALONE_ACK_TIMEOUT_MS`) and acknowledges only with the reply; on the Cortex-M4 (software P-256, no executor yield during the crypto) the reply came 1.3 to 1.5 s later and chip-tool (MRP 500/300 ms) retransmitted Sigma1 once or twice and Sigma3 up to three times. The Matter SDK acknowledges after 200 ms if no reply is ready; this stack acknowledges unconditionally (one extra 26 byte frame per handshake). Implemented as a patched copy of `rs-matter-sc` in `third_party/rs-matter-sc` (see its `README.OPENTRUST.md`), taken in through `[patch]`.
