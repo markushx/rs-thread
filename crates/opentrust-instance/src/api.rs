@@ -444,8 +444,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Set the supervision interval (OT `otChildSupervisionSetInterval`).
     pub fn set_supervision_interval(&mut self, secs: u16, now: Instant) {
         self.core.now = now;
-        self.mle
-            .set_supervision_interval(&mut self.core, now, secs);
+        self.mle.set_supervision_interval(&mut self.core, now, secs);
         self.poll(now);
     }
 

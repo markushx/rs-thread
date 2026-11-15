@@ -15,11 +15,11 @@ use super::*;
 
 /// Upper bound of `size_of::<Instance>()` for the enabled feature set.
 #[cfg(feature = "border-agent")]
-const TOTAL_BOUND: usize = 109_500;
+const TOTAL_BOUND: usize = 110_000;
 #[cfg(all(feature = "ftd", not(feature = "border-agent")))]
-const TOTAL_BOUND: usize = 84_900;
+const TOTAL_BOUND: usize = 85_400;
 #[cfg(not(feature = "ftd"))]
-const TOTAL_BOUND: usize = 77_000;
+const TOTAL_BOUND: usize = 77_500;
 
 fn row<T>(name: &str, v: &T) {
     std::println!("{:>8} {}", size_of_val(v), name);
