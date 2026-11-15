@@ -816,6 +816,28 @@ The OpenTrust node for OpenThread's virtual-time simulation platform differs fro
 - **Console.** The terminal is not in raw mode, the node echoes the typed line like the OT UART CLI; `exit` ends the process.
 - **Sleepy children of an OpenTrust parent.** The Child ID Response goes out directly to the child's extended address, as long as the child is not "confirmed"; an `ot-cli-ftd` SED has its radio off after the Child ID Request and polls, so it does not attach to an OpenTrust router (see `docs/test-status.md`).
 
+## Differences found by the differential tests (`crates/opentrust-difftest`, [docs/differential-tests.md](docs/differential-tests.md))
+
+Where OpenThread's output is lossy, malformed or undefined for an input, OpenTrust does the correct or stricter thing. None of these inputs is produced by a Thread device.
+
+| Area | OpenThread | OpenTrust | Interop |
+|------|------------|-----------|---------|
+| 6LoWPAN, context shorter than 64 bits | Compresses an address with non-zero bits between the prefix and the IID using the context; the bits are lost | Uses such a context only if those bits are zero | none |
+| 6LoWPAN, `fe80::/10` but not `fe80::/64` | Compressed as link-local; the middle 54 bits are lost | Sent inline | none |
+| 6LoWPAN, multicast `ffxx::` with an all-zero group | Sets the multicast bit and emits no address bytes (corrupt datagram) | Sent inline | none |
+| 6LoWPAN, header-depth fallback after Hop-by-Hop | Sets the "next header compressed" bit although the UDP header stays uncompressed | Clears the bit, UDP inline (stream decodes correctly) | none |
+| 6LoWPAN, no link-layer address for an elided IID | Ignores the derivation error: compares against / yields an uninitialized IID | Does not elide on compress, rejects such a frame on decompress | stricter |
+| 6LoWPAN, link-local IID with a context in the CID byte | Applies the context's bits beyond /64 to the IID derived from the link-layer address (SAC/DAC = 0) | Applies a context only for stateful addresses | stricter |
+| 6LoWPAN, trailing PadN | Elides a trailing PadN of any size | Same (RFC 6282 limits it to 7 octets); the padding data bytes are not restored | none |
+| MAC frames, reserved bits and values | Honours Sequence Number Suppression / IE Present in every frame version, accepts address mode 01, reserved version 3, frame types 4, 6, 7; takes the frame counter even when suppressed; does not know Header Termination 1; accepts header IEs without termination before a payload and a MAC command without command ID | Rejects or ignores these (see `docs/differential-tests.md`) | stricter |
+| MAC security levels | Encrypts the payload at every level, asserts on level 4 | Level 1 to 3 authenticate only (IEEE 802.15.4); level 4 encrypts without MIC | none (Thread uses level 5) |
+| MeshCoP network name | `IsValidUtf8String`: rejects control characters, accepts overlong encodings and surrogates | Rejects control characters (same) and, through `str::from_utf8`, overlongs and surrogates | stricter |
+| Network Data stable copy | Keeps the bits behind a prefix length as received | Zeroes them (the Has Route flags byte and the context ALOC rules match OpenThread since the differential tests) | none |
+| Network Data, Context longer than its prefix | Reads the bytes behind the prefix into the context prefix | Truncates the context to the prefix length | stricter |
+| Network Data, several Context sub-TLVs in one prefix | Reports every one | Reports the first | stricter |
+| PBKDF2-CMAC | Asserts on odd iteration counts and salts over 30 bytes | Any iteration count 1 or more, any salt length | none |
+| TLV lookup | A truncated TLV ends the search: not found | Same (`opentrust_core::tlv::find` returned a parse error before) | none |
+
 ## Unit-test vectors
 
 - **Empty network name.** OT's `NetworkName::Set` accepts an empty name (its `TestNetworkName` sets one); `NetworkName::new` rejects it, as Thread 1.4.1 requires 1 to 16 bytes.

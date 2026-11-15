@@ -53,7 +53,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [x] `opentrust_core::crypto`: `CryptoBackend` trait, CCM* (M=0/4/8/16), MAC/MLE nonces, MAC/MLE/TREL keys, HKDF, TLS 1.2 PRF, KEK, PBKDF2-AES-CMAC-PRF-128/PSKc, `soft-crypto` backend; spec + OT unit-test vectors
   - [ ] HW backends (Phase 12)
   - [x] EC-JPAKE + DTLS 1.2 (Phase 5b, see ADR 0001)
-  - [ ] Cross-check TREL key, KEK and MLE-message vectors (self-generated) against `openthread-sys` (Phase 11)
+  - [x] Cross-check TREL key, KEK and MLE-message vectors (self-generated) against `openthread-sys`: `crates/opentrust-difftest/tests/crypto.rs` compares the TREL key (OT's HKDF), the KEK (SHA-256 of the DTLS key block; TLS 1.2 PRF against P_SHA256 composed of OT's HMAC), the Thread MLE / MAC keys (OT `KeyManager`), the MLE nonce and CCM* (OT `AesCcm`); the assembly of the MLE aux header and AAD is not compared with OT's `Mle` class (`docs/differential-tests.md`)
   - [x] Secret key types are not `Copy`, zeroize on drop, constant-time `==`
 - [x] Entropy: `opentrust_platform::Entropy` = `rand_core::CryptoRng` (0.10, same as rs-matter/esp-rs openthread)
 - [x] Decide EC-JPAKE / DTLS 1.2 source (→ [ADR 0001](docs/decisions/0001-ecjpake-dtls.md), accepted: Rust EC-JPAKE on `p256` + minimal sans-IO DTLS 1.2, mbedTLS only as test oracle): no mainstream Rust crate implements the EC-JPAKE TLS cipher suite (draft-cragie-tls-ecjpake-01) → port from mbedTLS vs. own implementation on RustCrypto `p256`; check whether rs-matter's `Crypto` trait can be shared
@@ -93,7 +93,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [x] Routing table / next-hop provider, ICMPv6 destination-unreachable decisions, EID-RLOC cache update from forwarded frames (Phase 7a: `opentrust_mesh::forwarder`, which drives `forward`'s rules on `Mle::next_hop_and_path_cost`)
   - [ ] Forwarding queue with message priorities, aging, delay-aware queue management and fragment priority tracking (the forwarder routes and transmits a datagram at once)
 - [x] Port OT `test_lowpan.cpp` vectors as Rust tests (all 58 IPHC vectors + `TestLowpanMeshHeader` + `TestLowpanFragmentHeader`), plus randomized round-trips and no-panic tests
-  - [ ] Differential tests against OpenThread's `Lowpan` via `openthread-sys` (Phase 11)
+  - [x] Differential tests against OpenThread's `Lowpan` via `openthread-sys`: `crates/opentrust-difftest/tests/lowpan.rs` (random datagrams, contexts and link-layer addresses: identical compressed bytes, same decompression; OT quirks classified, one OpenTrust bug fixed; `docs/differential-tests.md`)
 
 ## Phase 4 – IPv6 / UDP / ICMPv6 core (§5)
 
@@ -312,7 +312,7 @@ Security-relevant decisions for the review before M4:
   - [ ] cert failures open: SED attach to an OpenTrust parent, missing CLI commands (`childmax`, `childtimeout`, `releaserouterid`, ...); five cases fail with OpenThread only
   - [x] manages Python venv (`.venv`, created / completed with pip: pexpect, pycryptodome, pyshark 0.4.6, lxml)
 - [x] Port OT C++ unit-test vectors (`tests/unit/*.cpp`: mac frame, lowpan, mle, crypto, dataset, network data, coap) into Rust `#[test]`s (inventory and status per test in `docs/ot-unit-test-port.md`; the rest is OT-internal framework, IPv4/NAT64, Spinel/HDLC and platform tests with no OpenTrust counterpart)
-- [ ] Differential tests: same input to `openthread-sys` (FFI) and Rust impl, compare outputs (codecs, crypto, KDF)
+- [x] Differential tests: same input to `openthread-sys` (FFI) and Rust impl, compare outputs (codecs, crypto, KDF): `crates/opentrust-difftest` (feature `ot`; C++ shim `tools/openthread-sys/shim/diff_shim.cpp`, feature `diff-shim`) compares crypto / KDF, 6LoWPAN, MAC frames, MeshCoP datasets, Network Data and MLE TLV lookup with seeded random inputs; skipped without the feature; coverage and findings in `docs/differential-tests.md`, deviations in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`; five OpenTrust defects found and fixed
 - [ ] OTNS (OpenThread Network Simulator) integration for large-topology/visual testing
 - [ ] Fuzzing (`cargo fuzz`) for all parsers (MAC, 6LoWPAN, MLE TLVs, CoAP, MeshCoP TLVs)
 - [x] Track cert test pass-rate in `docs/test-status.md`
@@ -388,10 +388,10 @@ Security-relevant decisions for the review before M4:
 
 ## Milestones
 
-- [ ] **M1 – Codecs**: MAC + 6LoWPAN + MLE TLVs + crypto, verified by OT vectors and differential tests
+- [x] **M1 – Codecs**: MAC + 6LoWPAN + MLE TLVs + crypto, verified by OT vectors and differential tests
   - [x] Codecs for MAC, 6LoWPAN, MLE TLVs, crypto, MeshCoP TLVs, network data, CoAP
-  - [ ] OT unit-test vectors ported (`tests/unit/*.cpp`, Phase 11; in part already)
-  - [ ] Differential tests against `openthread-sys` (Phase 11)
+  - [x] OT unit-test vectors ported (`tests/unit/*.cpp`, `docs/ot-unit-test-port.md`)
+  - [x] Differential tests against `openthread-sys` (`crates/opentrust-difftest`, `docs/differential-tests.md`; CoAP, the large MLE TLVs and the MeshCoP TLVs outside the dataset are not covered differentially)
 - [ ] **M2 – MTD in sim**: Rust MED/SED attaches to OT leader in simulation; ping works
   - [x] MED: OpenTrust MEDs attach to an OT leader and answer pings in the OT virtual-time simulation (Cert_5_3_04 nodes 4-7)
   - [ ] SED: OpenTrust SED in the mixed simulation (Cert_5_3_04 node 3, Cert_5_3_02 node 4 fail); also Cert_5_1_02 node 3 (MED)
