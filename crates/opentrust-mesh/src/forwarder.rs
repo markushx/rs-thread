@@ -76,6 +76,9 @@ use crate::radio::RadioLink;
 /// Largest MAC payload of a frame without mesh header (short addresses,
 /// PAN ID compression, AES-CCM*-32 security).
 pub const MAX_FRAME_PAYLOAD: usize = 106;
+/// MAC overhead of the CSL IE a CSL receiver puts into its frames: the
+/// Header IE (2 + 4 octets) and the Header Termination 2 IE before the payload.
+pub const CSL_IE_OVERHEAD: usize = 8;
 /// Largest MAC payload of a direct frame from `src` to `dst` with
 /// `security` (IEEE 802.15.4-2006 frame, PAN ID compression, AES-CCM*-32).
 pub(crate) fn frame_payload_limit(src: &Address, dst: MacDest, security: LinkSecurity) -> usize {
@@ -656,6 +659,13 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
         // more (or less) MAC overhead than the short-address default.
         let max = if mesh.is_none() {
             max.min(frame_payload_limit(&mac_src, dst, security))
+        } else {
+            max
+        };
+        // A CSL receiver puts a CSL IE (and the header termination IE that
+        // follows it) into every frame it sends: that much less payload.
+        let max = if r.mle.is_csl_enabled() {
+            max.saturating_sub(CSL_IE_OVERHEAD)
         } else {
             max
         };

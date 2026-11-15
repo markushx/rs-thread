@@ -69,6 +69,12 @@ pub fn set_clock(now_us: u64) {
     CLOCK_US.with(|c| c.set(now_us));
 }
 
+/// `VT_TRACE=1`: print the radio actions and the frames received to stderr.
+fn trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VT_TRACE").is_some())
+}
+
 fn radio_clock() -> u64 {
     CLOCK_US.with(core::cell::Cell::get)
 }
@@ -662,6 +668,16 @@ impl VtRadio {
     pub fn exec(&mut self, inst: &mut VtInstance, now_us: u64, a: RadioAction) {
         set_clock(now_us);
         let t = instant(now_us);
+        if trace() {
+            match &a {
+                RadioAction::Transmit(tx) => eprintln!(
+                    "[{now_us}] TX ch{} {:02x?}",
+                    tx.channel,
+                    &tx.psdu[..tx.psdu.len().min(24)]
+                ),
+                o => eprintln!("[{now_us}] {o:?}"),
+            }
+        }
         match a {
             RadioAction::Configure(c) => self.config = c,
             RadioAction::SetSrcMatch(c) => self.src_match = c,
@@ -741,6 +757,14 @@ impl VtRadio {
         };
         if self.state != RxState::Receive(channel) || psdu.len() < 3 {
             return;
+        }
+        if trace() {
+            eprintln!(
+                "[{now_us}] RX {:?} len{} {:02x?}",
+                self.state,
+                psdu.len(),
+                &psdu[..psdu.len().min(24)]
+            );
         }
         let is_ack = psdu[0] & 7 == 2;
         if is_ack && psdu == self.last_ack.as_slice() {

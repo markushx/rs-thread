@@ -146,6 +146,20 @@ fn csl_pings(e: &mut Env, ot_parent: bool) {
         rtts.push(ping_rtt(sim, 2, &a1).expect("ping CSL child -> parent"));
         sim.run(1.3);
     }
+    // The child did not poll for these pings (the poll that follows a frame
+    // with Frame Pending below is its answer to more fragments).
+    let after = counter(sim, 2, "TxDataPoll");
+    // Fragmented datagrams: each fragment of the request waits for a window
+    // of the child (one per period), the reply's fragments go out at once.
+    for (from, to) in [(1, &a2), (2, &a1)] {
+        sim.send(from, &format!("ping {to} 128 1 1 64 8"));
+        sim.run(10.0);
+        let out = sim.drain(from);
+        assert!(
+            out.iter().any(|l| l.contains("1 packets received")),
+            "fragmented ping from node {from}: {out:?}"
+        );
+    }
     // The request waits for the child's window (up to one period), the
     // reply is sent at once; the other way the request is immediate and the
     // reply waits for the next window.
@@ -159,7 +173,6 @@ fn csl_pings(e: &mut Env, ot_parent: bool) {
         "child lost CSL synchronization: {:?}",
         sim.cmd(1, "child 1")
     );
-    let after = counter(sim, 2, "TxDataPoll");
     assert!(
         after <= polls + 1,
         "the CSL child polled {} times for 8 pings",
