@@ -620,8 +620,11 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 
 ### Sleepy children attaching and polling (Instance glue)
 
-- The parent sends link-local unicast messages to a sleepy child indirectly only after the child is `Child::confirmed` (it has sent a Child Update Request, or was restored). OT sends the Child ID Response indirectly to the child's extended address; here the response goes out directly while the child still listens, because the indirect path addresses frames by RLOC16, which the child does not know yet.
-- Attach mode of the data poll sender (`Mac::set_poll_attach_mode`, 100 ms) and fast polls after a Data Request (`MleEnv::send_fast_polls`) are implemented; attach-mode polling is not started right after the Child ID Request as in OT (see above).
+- The parent queues link-local unicast messages for a valid sleepy child by RLOC16 once the child is `Child::confirmed` (it has sent a Child Update Request, or was restored). Until then, the Child ID Response (the message queued before the child confirms anything) is queued by extended addresses (own extended address to the child's), like OT `SendChildIdResponse`; the child's data poll by extended address finds it (`poll_child` accepts a child that is not valid yet when it polls by extended address, the source match table holds both addresses of a queued child). The queue keeps the link security of each entry (MLE messages have none, as in OT); the fragment payload limit follows the entry's addressing and security.
+- Frames for sleepy children are handed to the MAC's indirect queue (`Mac::transmit_indirect`) when the child polls, so the poll is answered with the data frame; an empty answer (nothing queued, supervision message) is left to the MAC, which sends its own empty frame for a poll acknowledged with Frame Pending. A Frame Pending bit set by the caller (more fragments) is kept by `Mac` when the frame is prepared, OT computes it in `DataPollHandler` for the queue of the child. Before, the frames went to the MAC's direct queue and a sleeping child heard them only by luck of retransmissions.
+- A data poll refreshes the child's last-heard time (OT `DataPollHandler::HandleDataPoll`); other secured frames from a child do not yet (OT `Mac::HandleReceivedFrame` does).
+- The first MPL transmission of a multicast datagram received from the mesh is queued for the sleepy children, later retransmissions are not (OT `Mpl::HandleRetransmissionTimer` marks only retransmissions).
+- Attach mode of the data poll sender (`Mac::set_poll_attach_mode`, 100 ms) and fast polls after a Data Request (`MleEnv::send_fast_polls`) are implemented.
 
 ### DUA, MLR and Backbone Router client in the `Instance` (`opentrust-instance::bbr`)
 
@@ -802,7 +805,7 @@ The interpreter prints OpenThread's output (`Done`, `Error <n>: <Name>` with OT 
 - **CLI firmware (`examples/nrf52840-leader`, `--bin cli --features cli-all`)** keeps its settings in RAM: they are gone after a reset, so `reset` / `factoryreset` start from a clean device (OT restores the network from flash). The flash regions of the other firmware binaries are not used. The UART line editor ignores escape sequences (no history) and treats CR LF as one line end.
 - **Interop peer.** The `ot-cli-ftd` of the test setup is built without `OT_COMMISSIONER` / `OT_JOINER`, so the commissioner / joiner commands could not be exercised against OpenThread on hardware (only in the simulator).
 - **MLE parameter commands** (`childmax`, `childtimeout`, `childsupervision`, `pollperiod`, `keysequence`, `networkidtimeout`, `parentpriority`, `preferrouterid`, `releaserouterid`, `routeridrange`, `contextreusedelay`, `eidcache`, `mliid`, `detach`, `partitionid preferred`). `routeridrange`, `parentpriority`, `contextreusedelay`, `eidcache` and `childmax` need the `ftd` feature. `keysequence counter` refuses a value below the current counter (`InvalidArgs`; OT sets it unconditionally). `eidcache` has no `transTime` / `eid` fields (the resolver keeps no last-transaction data) and always prints `rampDown=0`. `childmax` is limited by the child table capacity (`CHILDREN`, 10 like OT's default, was 8). `pollperiod` prints the poll period the instance uses (the child timeout derived default, or the set value if shorter).
-- **Attach polling of a sleepy device.** OT turns the receiver off after sending the Child ID Request and polls the parent candidate. OpenTrust polls the candidate (by extended address, attach poll period) but keeps the receiver on until the attach ends, because the OpenTrust parent still sends the Child ID Response directly instead of queueing it for the child; a device that sleeps right away would miss it. Costs a little energy during attach.
+- **Attach polling of a sleepy device.** As OT: after the Child ID Request the receiver is off and the parent candidate is polled by extended address (attach poll period); the parent queues the Child ID Response for the poll.
 
 ## Simulation platform node (`opentrust-cli-vt`, `opentrust_sim::vt`)
 
@@ -814,7 +817,7 @@ The OpenTrust node for OpenThread's virtual-time simulation platform differs fro
 - **Seeds.** The random source is a seeded xorshift generator (`OPENTRUST_SEED`, node ID), not cryptographic; sim only.
 - **Settings** are kept in `tmp/<PORT_OFFSET>_<node id>.flash` (own record format, not OT's flash layout). `reset` re-creates the node in the same process; virtual time continues.
 - **Console.** The terminal is not in raw mode, the node echoes the typed line like the OT UART CLI; `exit` ends the process.
-- **Sleepy children of an OpenTrust parent.** The Child ID Response goes out directly to the child's extended address, as long as the child is not "confirmed"; an `ot-cli-ftd` SED has its radio off after the Child ID Request and polls, so it does not attach to an OpenTrust router (see `docs/test-status.md`).
+- **Sleepy children of an OpenTrust parent.** An `ot-cli-ftd` SED attaches to an OpenTrust router or leader: the Child ID Response is queued for its data poll (see "Sleepy children attaching and polling"). The test radio medium of `opentrust_sim::testing` implements the source match table (it answered every poll without Frame Pending before).
 
 ## Differences found by the differential tests (`crates/opentrust-difftest`, [docs/differential-tests.md](docs/differential-tests.md))
 

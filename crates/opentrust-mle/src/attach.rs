@@ -806,6 +806,10 @@ impl<const C: usize> Mle<C> {
         }
         if !self.is_rx_on_when_idle() {
             env.set_attach_polling(Some(cand_ext));
+            // The receiver is off between polls from here on (OT
+            // `SendChildIdRequest`); the parent queues the Child ID Response
+            // for the poll.
+            env.set_rx_on_when_idle(false);
         }
         Ok(())
     }

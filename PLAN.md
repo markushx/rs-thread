@@ -308,8 +308,9 @@ Security-relevant decisions for the review before M4:
 - [x] `opentrust-cli-vt` (`opentrust-cli --features sim`): `ot-cli-ftd`-compatible node (argv: node id; stdin/stdout CLI with echo and prompt; `PORT_OFFSET`/`PORT_BASE`; settings in `tmp/<offset>_<id>.flash`); the MTD variant (`ot-cli-mtd`) is not built
 - [ ] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
   - [x] builds OT reference nodes from `openthread-sys/vendor/openthread` (simulation platform): `cargo build -p openthread-sys` (build script, about 25 s, 11 MB build tree)
-  - [x] runs `thread-cert` cases Cert_5_1_*, 5_2_*, 5_3_* with OpenTrust nodes in place of OT nodes (`crates/opentrust-sim/tests/thread_cert.rs`, `OPENTRUST_CERT=1`): 197 of 243 runs pass (the rest: 42 baseline failures with all-OT nodes, 4 OT SEDs attaching to an OpenTrust router), details in `docs/test-status.md`; v1_2_* and pktverify (Linux only) not run
-  - [ ] cert failures open: SED attach to an OpenTrust parent, missing CLI commands (`childmax`, `childtimeout`, `releaserouterid`, ...); five cases fail with OpenThread only
+  - [x] runs `thread-cert` cases Cert_5_1_*, 5_2_*, 5_3_* with OpenTrust nodes in place of OT nodes (`crates/opentrust-sim/tests/thread_cert.rs`, `OPENTRUST_CERT=1`): 202 of 243 runs pass (the rest: 41 failures of the five cases that also fail with all-OT nodes), details in `docs/test-status.md`; v1_2_* and pktverify (Linux only) not run
+  - [x] OT SED attach to an OpenTrust parent (Child ID Response queued for the poll)
+  - [ ] cert failures open: five cases fail with OpenThread only
   - [x] manages Python venv (`.venv`, created / completed with pip: pexpect, pycryptodome, pyshark 0.4.6, lxml)
 - [x] Port OT C++ unit-test vectors (`tests/unit/*.cpp`: mac frame, lowpan, mle, crypto, dataset, network data, coap) into Rust `#[test]`s (inventory and status per test in `docs/ot-unit-test-port.md`; the rest is OT-internal framework, IPv4/NAT64, Spinel/HDLC and platform tests with no OpenTrust counterpart)
 - [x] Differential tests: same input to `openthread-sys` (FFI) and Rust impl, compare outputs (codecs, crypto, KDF): `crates/opentrust-difftest` (feature `ot`; C++ shim `tools/openthread-sys/shim/diff_shim.cpp`, feature `diff-shim`) compares crypto / KDF, 6LoWPAN, MAC frames, MeshCoP datasets, Network Data and MLE TLV lookup with seeded random inputs; skipped without the feature; coverage and findings in `docs/differential-tests.md`, deviations in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`; five OpenTrust defects found and fixed
@@ -394,11 +395,11 @@ Security-relevant decisions for the review before M4:
   - [x] Differential tests against `openthread-sys` (`crates/opentrust-difftest`, `docs/differential-tests.md`; CoAP, the large MLE TLVs and the MeshCoP TLVs outside the dataset are not covered differentially)
 - [ ] **M2 – MTD in sim**: Rust MED/SED attaches to OT leader in simulation; ping works
   - [x] MED: OpenTrust MEDs attach to an OT leader and answer pings in the OT virtual-time simulation (Cert_5_3_04 nodes 4-7)
-  - [ ] SED: OpenTrust SED in the mixed simulation (Cert_5_3_04 node 3, Cert_5_3_02 node 4 fail); also Cert_5_1_02 node 3 (MED)
+  - [x] SED: OpenTrust SED in the mixed simulation (Cert_5_3_04 node 3, Cert_5_3_02 node 4, Cert_5_1_02 node 3 pass)
 - [ ] **M3 – FTD in sim**: Rust router/leader; mixed Rust/OT network passes core `thread-cert` 5.x cases
   - [x] Mixed OT/OpenTrust network in OT's virtual-time simulation (`opentrust-sim/tests/mixed.rs`), OpenTrust as leader and as router
   - [x] `thread-cert` harness (`opentrust-sim/tests/thread_cert.rs`)
-  - [ ] Core 5.1 / 5.2 / 5.3 cases pass with OpenTrust in every role (178 of 243 runs, `docs/test-status.md`)
+  - [ ] Core 5.1 / 5.2 / 5.3 cases pass with OpenTrust in every role (202 of 243 runs, the rest are baseline failures, `docs/test-status.md`)
 - [ ] **M4 – Commissioning & Matter**: Joiner + Commissioner interop with OT; SRP client; rs-matter device reachable over a Rust Thread node in sim
   - [x] SRP client (against the OTBR SRP server on hardware)
   - [x] rs-matter device reachable over a Rust Thread node in sim (`opentrust-matter/tests/light.rs`) and on the nRF52840 through an OTBR
