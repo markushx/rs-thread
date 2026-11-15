@@ -75,6 +75,7 @@ unsafe extern "C" {
     fn diff_mac_build(p: *const MacBuild, out: *mut u8, cap: u16, len: *mut u16) -> i32;
     fn diff_mac_secure(key: *const u8, ext: *const u8, psdu: *mut u8, len: u16) -> i32;
     fn diff_dataset_roundtrip(tlvs: *const u8, len: u8, out: *mut u8, out_len: *mut u8) -> i32;
+    fn diff_netdata(tlvs: *const u8, len: u16, mode: i32, out: *mut u8, cap: u16) -> i32;
     fn diff_mac_parse(psdu: *const u8, len: u16, info: *mut MacInfo);
 }
 
@@ -409,6 +410,26 @@ impl Ot {
         }
         out.truncate(n as usize);
         Ok(out)
+    }
+
+    /// Loads Network Data; `stable` loads it as the stable subset and returns
+    /// the stored bytes, otherwise the text dump of OpenThread's iterators.
+    /// `None` if OpenThread refuses the data.
+    pub fn netdata(&self, tlvs: &[u8], stable: bool) -> Option<Vec<u8>> {
+        let mut out = vec![0u8; 8192];
+        let n = unsafe {
+            diff_netdata(
+                tlvs.as_ptr(),
+                tlvs.len() as u16,
+                stable as i32,
+                out.as_mut_ptr(),
+                out.len() as u16,
+            )
+        };
+        (n >= 0).then(|| {
+            out.truncate(n as usize);
+            out
+        })
     }
 
     pub fn mac_parse(&self, psdu: &[u8]) -> MacInfo {

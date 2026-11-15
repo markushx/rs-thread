@@ -9,10 +9,12 @@
 #include "openthread-core-config.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <openthread/dataset.h>
 #include <openthread/instance.h>
+#include <openthread/netdata.h>
 #include <openthread/platform/crypto.h>
 
 #include "common/code_utils.hpp"
@@ -624,6 +626,121 @@ int diff_dataset_roundtrip(const uint8_t *tlvs, uint8_t len, uint8_t *out, uint8
     memcpy(out, conv.mTlvs, conv.mLength);
     *out_len = conv.mLength;
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Network Data
+// ---------------------------------------------------------------------------
+
+static int PutHex(char *aOut, size_t aCap, const uint8_t *aBytes, size_t aLen)
+{
+    int n = 0;
+    for (size_t i = 0; i < aLen && n + 2 < static_cast<int>(aCap); i++)
+    {
+        n += snprintf(aOut + n, aCap - n, "%02x", aBytes[i]);
+    }
+    return n;
+}
+
+static int PutPrefix(char *aOut, size_t aCap, const otIp6Prefix &aPrefix)
+{
+    // Bits behind the prefix length are not significant: mask them.
+    uint8_t bytes[16];
+    memcpy(bytes, aPrefix.mPrefix.mFields.m8, sizeof(bytes));
+    for (unsigned i = 0; i < 16; i++)
+    {
+        if (i * 8 >= aPrefix.mLength)
+        {
+            bytes[i] = 0;
+        }
+        else if (i * 8 + 8 > aPrefix.mLength)
+        {
+            bytes[i] &= static_cast<uint8_t>(0xff << (i * 8 + 8 - aPrefix.mLength));
+        }
+    }
+    int n = PutHex(aOut, aCap, bytes, (aPrefix.mLength + 7) / 8);
+    return n + snprintf(aOut + n, aCap - n, "/%u", aPrefix.mLength);
+}
+
+// Loads `tlvs` as the Network Data of the instance (`mode` 0: full set,
+// 1: stable subset, like a child receiving stable data only).
+// Mode 0 writes a text dump of the entries OpenThread's public iterators
+// return (on-mesh prefixes, routes, services, contexts); mode 1 writes the
+// stored bytes (`RemoveTemporaryData` applied). Returns the output length or
+// -1 if the data was refused.
+int diff_netdata(const uint8_t *tlvs, uint16_t len, int mode, uint8_t *out, uint16_t cap)
+{
+    char                  *o = reinterpret_cast<char *>(out);
+    int                    n = 0;
+    Message               *message = Inst().Get<MessagePool>().Allocate(Message::kTypeIp6);
+    OffsetRange            range;
+    Error                  error;
+    otNetworkDataIterator  it;
+    otBorderRouterConfig   br;
+    otExternalRouteConfig  rt;
+    otServiceConfig        sv;
+    otLowpanContextInfo    cx;
+
+    if (message == nullptr)
+    {
+        return -1;
+    }
+    message->AppendBytes(tlvs, len);
+    range.Init(0, len);
+    error = Inst().Get<NetworkData::Leader>().SetNetworkData(
+        0, 0, mode == 1 ? NetworkData::kStableSubset : NetworkData::kFullSet, *message, range);
+    message->Free();
+    if (error != kErrorNone)
+    {
+        return -1;
+    }
+
+    if (mode == 1)
+    {
+        uint8_t l = 255;
+        uint8_t buf[255];
+        if (otNetDataGet(&Inst(), false, buf, &l) != OT_ERROR_NONE || l > cap)
+        {
+            return -1;
+        }
+        memcpy(out, buf, l);
+        return l;
+    }
+
+    it = OT_NETWORK_DATA_ITERATOR_INIT;
+    while (otNetDataGetNextOnMeshPrefix(&Inst(), &it, &br) == OT_ERROR_NONE)
+    {
+        n += snprintf(o + n, cap - n, "B ");
+        n += PutPrefix(o + n, cap - n, br.mPrefix);
+        n += snprintf(o + n, cap - n, " pref=%d P%d S%d D%d C%d R%d O%d N%d DP%d stable=%d rloc=%04x\n", br.mPreference,
+                      br.mPreferred, br.mSlaac, br.mDhcp, br.mConfigure, br.mDefaultRoute, br.mOnMesh, br.mNdDns,
+                      br.mDp, br.mStable, br.mRloc16);
+    }
+    it = OT_NETWORK_DATA_ITERATOR_INIT;
+    while (otNetDataGetNextRoute(&Inst(), &it, &rt) == OT_ERROR_NONE)
+    {
+        n += snprintf(o + n, cap - n, "R ");
+        n += PutPrefix(o + n, cap - n, rt.mPrefix);
+        n += snprintf(o + n, cap - n, " pref=%d nat64=%d adv=%d stable=%d rloc=%04x\n", rt.mPreference, rt.mNat64,
+                      rt.mAdvPio, rt.mStable, rt.mRloc16);
+    }
+    it = OT_NETWORK_DATA_ITERATOR_INIT;
+    while (otNetDataGetNextService(&Inst(), &it, &sv) == OT_ERROR_NONE)
+    {
+        n += snprintf(o + n, cap - n, "S id=%u ent=%u sd=", sv.mServiceId, sv.mEnterpriseNumber);
+        n += PutHex(o + n, cap - n, sv.mServiceData, sv.mServiceDataLength);
+        n += snprintf(o + n, cap - n, " srv=");
+        n += PutHex(o + n, cap - n, sv.mServerConfig.mServerData, sv.mServerConfig.mServerDataLength);
+        n += snprintf(o + n, cap - n, " stable=%d rloc=%04x\n", sv.mServerConfig.mStable, sv.mServerConfig.mRloc16);
+    }
+    it = OT_NETWORK_DATA_ITERATOR_INIT;
+    while (otNetDataGetNextLowpanContextInfo(&Inst(), &it, &cx) == OT_ERROR_NONE)
+    {
+        n += snprintf(o + n, cap - n, "C id=%u comp=%d ", cx.mContextId, cx.mCompressFlag);
+        n += PutPrefix(o + n, cap - n, cx.mPrefix);
+        n += snprintf(o + n, cap - n, " stable=%d\n", cx.mStable);
+    }
+    return n;
 }
 
 // Secures a built frame in place with `TxFrame::ProcessTransmitAesCcm`.
