@@ -36,6 +36,7 @@ mod netdata;
 mod ping;
 #[cfg(feature = "scan")]
 mod scan;
+mod settings;
 #[cfg(feature = "srp")]
 mod srp;
 #[cfg(feature = "tables")]
@@ -61,6 +62,8 @@ pub const VERSION: &str = concat!("OpenTrust/", env!("CARGO_PKG_VERSION"), "; Th
 pub(crate) struct State {
     pub legacy: basic::Legacy,
     pub reset: bool,
+    /// A blocking `detach` waits for the end of the graceful detach.
+    pub detaching: bool,
     #[cfg(feature = "dataset")]
     pub dataset: opentrust_meshcop::dataset::Dataset,
     #[cfg(feature = "ping")]
@@ -103,6 +106,7 @@ impl Cli {
             st: State {
                 legacy: basic::Legacy::default(),
                 reset: false,
+                detaching: false,
                 #[cfg(feature = "dataset")]
                 dataset: opentrust_meshcop::dataset::Dataset::new(),
                 #[cfg(feature = "ping")]
@@ -247,7 +251,29 @@ where
             "eui64" => self.eui64(),
             "rloc16" => self.rloc16(),
             "leaderdata" => self.leaderdata(),
-            "partitionid" => self.partitionid(),
+            "partitionid" => self.partitionid(a),
+            "childtimeout" => self.childtimeout(a),
+            "pollperiod" => self.pollperiod(a),
+            "childsupervision" => self.childsupervision(a),
+            "keysequence" => self.keysequence(a),
+            "mliid" => self.mliid(a),
+            "detach" => self.detach(a),
+            #[cfg(feature = "ftd")]
+            "childmax" => self.childmax(a),
+            #[cfg(feature = "ftd")]
+            "releaserouterid" => self.releaserouterid(a),
+            #[cfg(feature = "ftd")]
+            "preferrouterid" => self.preferrouterid(a),
+            #[cfg(feature = "ftd")]
+            "routeridrange" => self.routeridrange(a),
+            #[cfg(feature = "ftd")]
+            "networkidtimeout" => self.router_u8(a, |c| &mut c.network_id_timeout_secs),
+            #[cfg(feature = "ftd")]
+            "parentpriority" => self.parentpriority(a),
+            #[cfg(feature = "ftd")]
+            "contextreusedelay" => self.contextreusedelay(a),
+            #[cfg(feature = "ftd")]
+            "eidcache" => self.eidcache(),
             "mode" => self.mode(a),
             "ipaddr" => self.ipaddr(a),
             "ipmaddr" => self.ipmaddr(a),
@@ -322,6 +348,7 @@ where
             Event::JoinerResult(r) => self.joiner_result(*r),
             #[cfg(feature = "commissioning")]
             Event::Commissioner(e) => self.commissioner_event(e),
+            Event::DetachedGracefully => self.detach_done(),
             _ => {}
         }
     }

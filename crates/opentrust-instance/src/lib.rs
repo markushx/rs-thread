@@ -248,6 +248,9 @@ pub enum Event {
         /// RSSI in dBm.
         rssi: Option<i8>,
     },
+    /// A graceful detach finished ([`Instance::detach_gracefully`]); Thread
+    /// is stopped.
+    DetachedGracefully,
     /// The key sequence counter changed (rotation, adopted from a neighbor or
     /// the dataset).
     KeySequenceChanged(u32),

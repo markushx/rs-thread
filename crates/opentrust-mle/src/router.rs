@@ -247,6 +247,28 @@ impl<const C: usize> Mle<C> {
         Ok(())
     }
 
+    /// Limit the router IDs the leader assigns (OT `SetRouterIdRange`).
+    /// [`Error::InvalidArgs`] unless `min <= max <= 62`.
+    pub fn set_router_id_range(&mut self, min: u8, max: u8) -> Result<()> {
+        if min > max || max > MAX_ROUTER_ID {
+            return Err(Error::InvalidArgs);
+        }
+        self.cfg.router.router_id_min = min;
+        self.cfg.router.router_id_max = max;
+        Ok(())
+    }
+
+    /// Fix the parent priority of Parent Responses (OT
+    /// `SetAssignParentPriority`): -1, 0, 1, or -2 to derive it again.
+    /// [`Error::InvalidArgs`] outside `-2..=1`.
+    pub fn set_parent_priority(&mut self, priority: i8) -> Result<()> {
+        if !(crate::router_config::PARENT_PRIORITY_UNSPECIFIED..=1).contains(&priority) {
+            return Err(Error::InvalidArgs);
+        }
+        self.cfg.router.parent_priority = priority;
+        Ok(())
+    }
+
     /// Router ID sequence number.
     pub fn router_id_sequence(&self) -> u8 {
         self.rtr.id_sequence
@@ -555,12 +577,14 @@ impl<const C: usize> Mle<C> {
 
     /// Connectivity TLV for Parent Responses (OT `FillConnectivityTlv`).
     pub fn fill_connectivity(&self) -> Connectivity {
-        let max = C as u16;
+        let max = self.children.max_allowed() as u16;
         let n = self.children.count(StateFilter::Valid) as u16;
-        let parent_priority = if max.saturating_sub(n) < max / 3 {
-            ParentPriority::Low
-        } else {
-            ParentPriority::Medium
+        let parent_priority = match self.cfg.router.parent_priority {
+            1 => ParentPriority::High,
+            0 => ParentPriority::Medium,
+            -1 => ParentPriority::Low,
+            _ if max.saturating_sub(n) < max / 3 => ParentPriority::Low,
+            _ => ParentPriority::Medium,
         };
         let mut c = Connectivity {
             parent_priority,
@@ -701,15 +725,18 @@ impl<const C: usize> Mle<C> {
             return Err(Error::InvalidState);
         }
         self.clear_router_table(env);
-        let partition_id = {
+        let partition_id = if self.cfg.router.preferred_partition_id != 0 {
+            self.cfg.router.preferred_partition_id
+        } else {
             let mut b = [0u8; 4];
             env.fill_random(&mut b);
             u32::from_le_bytes(b)
         };
+        let (min_id, max_id) = (self.cfg.router.router_id_min, self.cfg.router.router_id_max);
         let leader_id = if self.rtr.previous_router_id <= MAX_ROUTER_ID {
             self.rtr.previous_router_id
         } else {
-            Self::rand_range(env, 0, u32::from(MAX_ROUTER_ID) + 1) as u8
+            Self::rand_range(env, u32::from(min_id), u32::from(max_id) + 1) as u8
         };
         let mut v = [0u8; 2];
         env.fill_random(&mut v);
@@ -927,13 +954,15 @@ impl<const C: usize> Mle<C> {
         }
         let can =
             |s: &Self, id: u8| !s.rtr.allocated.contains(id) && s.rtr.reuse[usize::from(id)] == 0;
-        let id = match requested.filter(|&id| id <= MAX_ROUTER_ID && can(self, id)) {
+        let (min_id, max_id) = (self.cfg.router.router_id_min, self.cfg.router.router_id_max);
+        let in_range = |id: u8| (min_id..=max_id).contains(&id);
+        let id = match requested.filter(|&id| in_range(id) && can(self, id)) {
             Some(id) => id,
             None => {
                 // Reservoir sampling over the free IDs.
                 let mut chosen = None;
                 let mut n = 0u32;
-                for id in 0..=MAX_ROUTER_ID {
+                for id in min_id..=max_id {
                     if can(self, id) {
                         n += 1;
                         if Self::rand_range(env, 0, n) == 0 {

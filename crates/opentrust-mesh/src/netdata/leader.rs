@@ -555,6 +555,12 @@ impl<const N: usize> Leader<N> {
         self.sync_deadline = None;
     }
 
+    /// Seconds a freed 6LoWPAN Context ID stays unusable (OT
+    /// `GetContextIdReuseDelay`).
+    pub const fn context_id_reuse_delay(&self) -> Duration {
+        self.ids.reuse_delay
+    }
+
     /// This device restored the leader role after a reset (OT
     /// `Leader::Start(kRestoringLeaderRoleAfterReset)`): the store is empty
     /// and registrations / Commissioning Data changes are refused until

@@ -36,7 +36,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::Rng;
 
 /// Capacity of the child table (router role).
-pub const CHILDREN: usize = 8;
+pub const CHILDREN: usize = 10;
 
 /// UDP sockets of the application.
 pub const UDP_SOCKETS: usize = 5;

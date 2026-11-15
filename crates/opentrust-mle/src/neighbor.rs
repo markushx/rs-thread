@@ -670,6 +670,8 @@ pub struct Parent {
 #[derive(Debug, Clone)]
 pub struct ChildTable<const N: usize> {
     slots: [Option<Child>; N],
+    /// Children the table accepts (OT `mMaxChildrenAllowed`, at most `N`).
+    max_allowed: usize,
 }
 
 impl<const N: usize> Default for ChildTable<N> {
@@ -686,7 +688,31 @@ impl<const N: usize> ChildTable<N> {
     pub const fn new() -> Self {
         Self {
             slots: [const { None }; N],
+            max_allowed: N,
         }
+    }
+
+    /// Number of children the table accepts (OT `GetMaxChildrenAllowed`).
+    pub const fn max_allowed(&self) -> usize {
+        self.max_allowed
+    }
+
+    /// Limit the number of children (OT `SetMaxChildrenAllowed`).
+    /// [`Error::InvalidArgs`] unless `1..=N`; [`Error::InvalidState`] while
+    /// there are children in any state but `Invalid`.
+    pub fn set_max_allowed(&mut self, max: usize) -> Result<()> {
+        if max == 0 || max > N {
+            return Err(Error::InvalidArgs);
+        }
+        if self.has_children(StateFilter::AnyExceptInvalid) {
+            return Err(Error::InvalidState);
+        }
+        self.max_allowed = max;
+        Ok(())
+    }
+
+    fn has_room(&self) -> bool {
+        self.slots.iter().flatten().count() < self.max_allowed
     }
 
     /// Remove every child.
@@ -700,6 +726,9 @@ impl<const N: usize> ChildTable<N> {
     pub fn add(&mut self, ext_address: ExtAddress, now: Instant) -> Result<&mut Child> {
         if self.find_by_ext(&ext_address, StateFilter::Any).is_some() {
             return Err(Error::Already);
+        }
+        if !self.has_room() {
+            return Err(Error::NoBufs);
         }
         let slot = self
             .slots
@@ -716,6 +745,9 @@ impl<const N: usize> ChildTable<N> {
             .is_some()
         {
             return Err(Error::Already);
+        }
+        if !self.has_room() {
+            return Err(Error::NoBufs);
         }
         let slot = self
             .slots

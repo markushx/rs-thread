@@ -51,6 +51,8 @@ pub enum ChildUpdateMode {
 pub(crate) struct ChildCtx {
     pub tx_deadline: Option<Instant>,
     pub supervision_deadline: Option<Instant>,
+    /// Supervision check timeouts so far (OT `SupervisionListener::mCounter`).
+    pub supervision_failures: u16,
     /// Delayed Child Update Request that aggregates changes (OT
     /// `ScheduleChildUpdateRequestToParent`).
     pub update_deadline: Option<Instant>,
@@ -67,6 +69,7 @@ impl ChildCtx {
         Self {
             tx_deadline: None,
             supervision_deadline: None,
+            supervision_failures: 0,
             update_deadline: None,
             waiting_child_update_response: false,
             child_update_attempts: 0,
@@ -319,6 +322,53 @@ impl<const C: usize> Mle<C> {
                 .then(|| now.saturating_add(Duration::from_secs(u64::from(t))));
     }
 
+    /// The supervision interval a sleepy child asks of its parent, seconds
+    /// (OT `SupervisionListener::GetInterval`).
+    pub fn supervision_interval(&self) -> u16 {
+        self.cfg.supervision_interval
+    }
+
+    /// Change the supervision interval; a child tells its parent with a
+    /// Child Update Request (OT `SupervisionListener::SetInterval`).
+    pub fn set_supervision_interval<E: MleEnv>(&mut self, env: &mut E, now: Instant, secs: u16) {
+        if secs != self.cfg.supervision_interval {
+            self.cfg.supervision_interval = secs;
+            if self.role == Role::Child {
+                let _ = self.send_child_update_request(env, now);
+            }
+        }
+        self.restart_supervision(now);
+    }
+
+    /// Seconds without a frame from the parent after which a sleepy child
+    /// probes it, 0 = never (OT `SupervisionListener::GetTimeout`).
+    pub fn supervision_check_timeout(&self) -> u16 {
+        self.cfg.supervision_check_timeout
+    }
+
+    /// Change the supervision check timeout (OT
+    /// `SupervisionListener::SetTimeout`).
+    pub fn set_supervision_check_timeout(&mut self, now: Instant, secs: u16) {
+        self.cfg.supervision_check_timeout = secs;
+        self.restart_supervision(now);
+    }
+
+    /// How often the supervision check timed out (OT
+    /// `SupervisionListener::GetErrorCounter`).
+    pub fn supervision_check_failures(&self) -> u16 {
+        self.child.supervision_failures
+    }
+
+    /// Reset the supervision check failure counter.
+    pub fn reset_supervision_check_failures(&mut self) {
+        self.child.supervision_failures = 0;
+    }
+
+    /// The child timeout in seconds (OT `GetTimeout`).
+    pub fn child_timeout(&self) -> u32 {
+        self.cfg.timeout_secs
+    }
+
     /// A secure frame from the parent was received (call from the MAC rx
     /// path; MLE messages from the parent do it themselves). OT
     /// `SupervisionListener::UpdateOnReceive`.
@@ -335,6 +385,7 @@ impl<const C: usize> Mle<C> {
     pub(crate) fn handle_supervision_timer<E: MleEnv>(&mut self, env: &mut E, now: Instant) {
         self.child.supervision_deadline = None;
         if self.role == Role::Child && !self.is_rx_on_when_idle() {
+            self.child.supervision_failures = self.child.supervision_failures.wrapping_add(1);
             let _ = self.send_child_update_request(env, now);
         }
         self.restart_supervision(now);

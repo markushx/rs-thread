@@ -324,6 +324,209 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.apply_poll_period();
     }
 
+    /// The poll period `otLinkGetPollPeriod` reports: the default derived
+    /// from the child timeout, or the one set with
+    /// [`set_poll_period`](Self::set_poll_period) if shorter.
+    pub fn poll_period(&self) -> opentrust_core::time::Duration {
+        let default = self.mle.default_poll_period();
+        self.core
+            .user_poll_period
+            .map_or(default, |p| p.min(default))
+    }
+
+    // ------------------------------------------------------------ MLE settings
+
+    /// The child timeout in seconds (OT `otThreadGetChildTimeout`).
+    pub fn child_timeout(&self) -> u32 {
+        self.mle.child_timeout()
+    }
+
+    /// Set the child timeout (OT `otThreadSetChildTimeout`, clamped to
+    /// 5 s ..= 8 h). A child tells its parent.
+    pub fn set_child_timeout(&mut self, secs: u32, now: Instant) {
+        self.core.now = now;
+        self.mle.set_timeout(&mut self.core, now, secs);
+        self.core.apply_poll_period();
+        self.poll(now);
+    }
+
+    /// Number of children the router accepts (OT
+    /// `otThreadGetMaxAllowedChildren`).
+    pub fn max_children(&self) -> usize {
+        self.mle.children().max_allowed()
+    }
+
+    /// Limit the number of children (OT `otThreadSetMaxAllowedChildren`).
+    /// [`Error::InvalidArgs`] unless `1..=`[`CHILDREN`](crate::CHILDREN);
+    /// [`Error::InvalidState`] while there are children.
+    pub fn set_max_children(&mut self, max: usize) -> Result<()> {
+        self.mle.children_mut().set_max_allowed(max)
+    }
+
+    /// Free a router ID (leader only, OT `otThreadReleaseRouterId`).
+    #[cfg(feature = "ftd")]
+    pub fn release_router_id(&mut self, id: u8, now: Instant) -> Result<()> {
+        self.core.now = now;
+        self.mle.release_router_id(&mut self.core, now, id)?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// Prefer this router ID when requesting one or starting as leader (OT
+    /// `otThreadSetPreferredRouterId`); only while disabled or detached.
+    #[cfg(feature = "ftd")]
+    pub fn set_preferred_router_id(&mut self, id: u8) -> Result<()> {
+        self.mle.set_preferred_router_id(id)
+    }
+
+    /// The router ID range the leader assigns from (OT
+    /// `otThreadGetRouterIdRange`).
+    #[cfg(feature = "ftd")]
+    pub fn router_id_range(&self) -> (u8, u8) {
+        let c = &self.mle.config().router;
+        (c.router_id_min, c.router_id_max)
+    }
+
+    /// Set the router ID range (OT `otThreadSetRouterIdRange`).
+    #[cfg(feature = "ftd")]
+    pub fn set_router_id_range(&mut self, min: u8, max: u8) -> Result<()> {
+        self.mle.set_router_id_range(min, max)
+    }
+
+    /// The parent priority of Parent Responses: -1, 0, 1, or -2 when
+    /// derived from the child table (OT `otThreadGetParentPriority`).
+    #[cfg(feature = "ftd")]
+    pub fn parent_priority(&self) -> i8 {
+        self.mle.config().router.parent_priority
+    }
+
+    /// Fix the parent priority (OT `otThreadSetParentPriority`).
+    #[cfg(feature = "ftd")]
+    pub fn set_parent_priority(&mut self, priority: i8) -> Result<()> {
+        self.mle.set_parent_priority(priority)
+    }
+
+    /// The partition ID used when this device becomes leader of a new
+    /// partition, 0 for a random one (OT `otThreadGetPreferredLeaderPartitionId`).
+    #[cfg(feature = "ftd")]
+    pub fn preferred_partition_id(&self) -> u32 {
+        self.mle.config().router.preferred_partition_id
+    }
+
+    /// Set the partition ID to use as leader (OT
+    /// `otThreadSetPreferredLeaderPartitionId`), 0 for random.
+    #[cfg(feature = "ftd")]
+    pub fn set_preferred_partition_id(&mut self, id: u32) {
+        self.mle.router_config_mut().preferred_partition_id = id;
+    }
+
+    /// Seconds a freed 6LoWPAN Context ID stays unusable (OT
+    /// `otThreadGetContextIdReuseDelay`).
+    #[cfg(feature = "ftd")]
+    pub fn context_id_reuse_delay(&self) -> u32 {
+        self.leader.context_id_reuse_delay().as_secs() as u32
+    }
+
+    /// Set the Context ID reuse delay in seconds (OT
+    /// `otThreadSetContextIdReuseDelay`).
+    #[cfg(feature = "ftd")]
+    pub fn set_context_id_reuse_delay(&mut self, secs: u32) {
+        self.leader
+            .set_context_id_reuse_delay(opentrust_core::time::Duration::from_secs(secs.into()));
+    }
+
+    /// Child supervision interval a sleepy child asks of its parent, in
+    /// seconds (OT `otChildSupervisionGetInterval`).
+    pub fn supervision_interval(&self) -> u16 {
+        self.mle.supervision_interval()
+    }
+
+    /// Set the supervision interval (OT `otChildSupervisionSetInterval`).
+    pub fn set_supervision_interval(&mut self, secs: u16, now: Instant) {
+        self.core.now = now;
+        self.mle
+            .set_supervision_interval(&mut self.core, now, secs);
+        self.poll(now);
+    }
+
+    /// Seconds without a frame from the parent before a sleepy child probes
+    /// it (OT `otChildSupervisionGetCheckTimeout`).
+    pub fn supervision_check_timeout(&self) -> u16 {
+        self.mle.supervision_check_timeout()
+    }
+
+    /// Set the supervision check timeout (OT
+    /// `otChildSupervisionSetCheckTimeout`).
+    pub fn set_supervision_check_timeout(&mut self, secs: u16, now: Instant) {
+        self.mle.set_supervision_check_timeout(now, secs);
+        self.poll(now);
+    }
+
+    /// Supervision check timeouts so far (OT
+    /// `otChildSupervisionGetCheckFailureCounter`).
+    pub fn supervision_check_failures(&self) -> u16 {
+        self.mle.supervision_check_failures()
+    }
+
+    /// Reset the supervision check failure counter.
+    pub fn reset_supervision_check_failures(&mut self) {
+        self.mle.reset_supervision_check_failures();
+    }
+
+    /// The current key sequence counter (OT `otThreadGetKeySequenceCounter`).
+    pub fn key_sequence_counter(&self) -> u32 {
+        self.core.mac.security().key_sequence()
+    }
+
+    /// Set the key sequence counter (OT `otThreadSetKeySequenceCounter`);
+    /// restarts the key switch guard timer. [`Error::InvalidArgs`] if lower
+    /// than the current one.
+    pub fn set_key_sequence_counter(&mut self, counter: u32, now: Instant) -> Result<()> {
+        self.core.mac.security_mut().set_key_sequence(
+            counter,
+            opentrust_mac::security::KeySeqUpdate::FORCE_RESET_GUARD,
+            now,
+        )?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// The key switch guard time in hours (OT `otThreadGetKeySwitchGuardTime`).
+    pub fn key_switch_guard_time(&self) -> u16 {
+        self.core.mac.security().key_switch_guard_hours()
+    }
+
+    /// Set the key switch guard time in hours (OT
+    /// `otThreadSetKeySwitchGuardTime`).
+    pub fn set_key_switch_guard_time(&mut self, hours: u16) {
+        self.core
+            .mac
+            .security_mut()
+            .set_key_switch_guard_hours(hours);
+    }
+
+    /// Set the interface identifier of the mesh-local EID (OT
+    /// `otIp6SetMeshLocalIid`). [`Error::InvalidState`] unless Thread is
+    /// disabled.
+    pub fn set_ml_eid_iid(&mut self, iid: opentrust_core::types::Iid) -> Result<()> {
+        if self.mle.role() != Role::Disabled {
+            return Err(Error::InvalidState);
+        }
+        self.core.ml_iid = iid;
+        self.core.ip6.netif.set_mesh_local_eid(&iid)
+    }
+
+    /// Leave the network politely (OT `otThreadDetachGracefully`): a child
+    /// informs its parent, a router releases its router ID; the device then
+    /// stops and raises [`Event::DetachedGracefully`].
+    /// [`Error::Busy`] while a detach runs.
+    pub fn detach_gracefully(&mut self, now: Instant) -> Result<()> {
+        self.core.now = now;
+        self.mle.detach_gracefully(&mut self.core, now)?;
+        self.poll(now);
+        Ok(())
+    }
+
     // ------------------------------------------------------------ datasets
 
     /// Set the Active Dataset (OT `otDatasetSetActive`): stored, and applied
