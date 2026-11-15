@@ -2398,6 +2398,11 @@ impl<
         if cca_fail {
             self.counters.tx_err_cca += 1;
         }
+        // A retransmission of a frame with a CSL IE (the parent did not
+        // acknowledge the first attempt, so its idea of our phase may be
+        // wrong): a data poll with the CSL IE resynchronizes it (OpenThread
+        // `DataPollSender::ProcessTxDone`, `mIsARetx`).
+        let resync = tx.csl_ie && tx.retries > 0 && matches!(tx.kind, TxKind::Direct(_));
         let next = if cca_fail
             && needs.contains(SoftMacNeeds::CSMA)
             && tx.csma_backoffs < tx.max_csma_backoffs
@@ -2441,6 +2446,9 @@ impl<
                     self.tx_complete(tx, res, now);
                 }
             }
+        }
+        if resync && self.poll.enabled {
+            let _ = self.send_data_poll(now);
         }
     }
 

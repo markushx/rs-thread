@@ -192,19 +192,20 @@ fn opentrust_csl_child_of_ot_parent() {
     csl_pings(&mut e, true);
 }
 
-/// Turning CSL off makes the SSED a plain sleepy child again: it polls only
-/// at its (long) poll period, so a ping from the parent in the meantime is
-/// not answered.
-#[test]
-fn csl_off_makes_the_child_unreachable_between_polls() {
-    let Some(mut e) = env("csl-off", &[(1, false), (2, true)]) else {
+/// The CSL channel moves and comes back, then CSL is turned off: the SSED is
+/// a plain sleepy child again, which polls only at its (long) poll period,
+/// so a ping from the parent right afterwards is not answered (the
+/// OpenThread child behaves like that, too: `csl period 0` sends no Child
+/// Update Request and starts no poll).
+fn csl_off(parent_rust: bool, child_rust: bool) {
+    let Some(mut e) = env("csl-off", &[(1, parent_rust), (2, child_rust)]) else {
         return;
     };
     csl_attach(&mut e);
     let sim = &mut e.sim;
     let a2 = mesh_local(sim, 2);
     assert!(ping_rtt(sim, 1, &a2).is_some(), "ping with CSL on");
-    // The CSL channel moves and comes back (the PAN channel is not 12).
+    // The PAN channel is not 12.
     ok(sim, 2, "csl channel 12");
     sim.run(1.0);
     assert!(ping_rtt(sim, 1, &a2).is_some(), "ping on CSL channel 12");
@@ -214,11 +215,20 @@ fn csl_off_makes_the_child_unreachable_between_polls() {
     assert!(ping_rtt(sim, 1, &a2).is_some(), "ping on the PAN channel");
     sim.run(5.0);
     ok(sim, 2, "csl period 0");
-    sim.run(2.0);
     assert!(
         ping_rtt(sim, 1, &a2).is_none(),
         "the child answered without CSL and without a poll"
     );
+}
+
+#[test]
+fn csl_off_opentrust_child_of_ot_parent() {
+    csl_off(false, true);
+}
+
+#[test]
+fn csl_off_ot_child_of_opentrust_parent() {
+    csl_off(true, false);
 }
 
 /// Both ends are OpenTrust.

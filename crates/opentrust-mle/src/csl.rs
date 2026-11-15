@@ -163,10 +163,10 @@ impl<const C: usize> Mle<C> {
                 if was_on {
                     self.recalculate_poll_period(env);
                     // Back to plain polling: the parent learns it from the
-                    // next Child Update Request (which then lacks the TLVs).
-                    if announce && self.role == Role::Child {
-                        self.schedule_csl_child_update(now);
-                    }
+                    // next Child Update Request (which then lacks the TLVs),
+                    // or when it finds no CSL IE in the child's frames.
+                    // OpenThread sends no Child Update Request for it (and
+                    // so does not start polling at once).
                 }
             }
         }
