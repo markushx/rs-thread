@@ -72,6 +72,8 @@ unsafe extern "C" {
         out_len: *mut u16,
         consumed: *mut u16,
     ) -> i32;
+    fn diff_mac_build(p: *const MacBuild, out: *mut u8, cap: u16, len: *mut u16) -> i32;
+    fn diff_mac_secure(key: *const u8, ext: *const u8, psdu: *mut u8, len: u16) -> i32;
     fn diff_mac_parse(psdu: *const u8, len: u16, info: *mut MacInfo);
 }
 
@@ -124,6 +126,30 @@ pub struct MacInfo {
     pub header_len: u16,
     pub payload_len: u16,
     pub footer_len: u16,
+}
+
+/// `DiffMacBuild` of the shim.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MacBuild {
+    pub frame_type: u8,
+    /// 0 = 2003, 1 = 2006, 2 = 2015.
+    pub version: u8,
+    pub sec_level: u8,
+    pub key_id_mode: u8,
+    pub suppress_seq: u8,
+    pub cmd_id: u8,
+    pub csl_ie: u8,
+    pub empty_payload: u8,
+    pub has_dst_pan: u8,
+    pub has_src_pan: u8,
+    pub dst_pan: u16,
+    pub src_pan: u16,
+    pub dst: MacAddr,
+    pub src: MacAddr,
+    pub seq: u8,
+    pub key_index: u8,
+    pub counter: u32,
 }
 
 static LOCK: Mutex<()> = Mutex::new(());
@@ -344,6 +370,29 @@ impl Ot {
         }
         out.truncate(n as usize);
         Ok((out, consumed as usize))
+    }
+
+    /// Header built by `TxFrame::Info::PrepareHeadersIn` (no payload, zero MIC).
+    pub fn mac_build(&self, p: &MacBuild) -> Option<Vec<u8>> {
+        let mut out = vec![0u8; 256];
+        let mut len = 0u16;
+        let e = unsafe { diff_mac_build(p, out.as_mut_ptr(), out.len() as u16, &mut len) };
+        (e == 0).then(|| {
+            out.truncate(len as usize);
+            out
+        })
+    }
+
+    /// Secures `psdu` (without FCS, zero MIC area) like `ProcessTransmitAesCcm`.
+    pub fn mac_secure(&self, key: &[u8; 16], ext: &[u8; 8], psdu: &mut [u8]) -> bool {
+        unsafe {
+            diff_mac_secure(
+                key.as_ptr(),
+                ext.as_ptr(),
+                psdu.as_mut_ptr(),
+                psdu.len() as u16,
+            ) == 1
+        }
     }
 
     pub fn mac_parse(&self, psdu: &[u8]) -> MacInfo {

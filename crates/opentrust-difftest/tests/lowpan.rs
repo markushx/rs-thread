@@ -176,9 +176,8 @@ mod ot {
                 let plen = c.prefix_len as usize;
                 if plen <= 64 {
                     let random = rng.bytes::<16>();
-                    for i in plen.div_ceil(8)..8 {
-                        a[i] = random[i];
-                    }
+                    let from = plen.div_ceil(8);
+                    a[from..8].copy_from_slice(&random[from..8]);
                     // Keep partial byte bits of the prefix.
                     if plen % 8 != 0 {
                         let keep = 0xffu8 << (8 - plen % 8);

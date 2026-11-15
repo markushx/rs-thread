@@ -431,14 +431,16 @@ void diff_mac_parse(const uint8_t *psdu, uint16_t len, DiffMacInfo *info)
     uint8_t      buf[256];
 
     memset(info, 0, sizeof(*info));
-    if (len > sizeof(buf))
+    if (len + 2 > sizeof(buf))
     {
         return;
     }
+    memset(buf, 0, sizeof(buf));
     memcpy(buf, psdu, len);
     memset(&frame, 0, sizeof(frame));
-    frame.mPsdu   = buf;
-    frame.mLength = len;
+    frame.mPsdu = buf;
+    // OpenThread frames carry their (here zero) 2-byte FCS.
+    frame.mLength = len + 2;
 
     if (frame.ValidatePsdu() != kErrorNone)
     {
@@ -493,14 +495,16 @@ void diff_mac_parse(const uint8_t *psdu, uint16_t len, DiffMacInfo *info)
         }
         if (frame.GetKeyIdMode(v8) == kErrorNone)
         {
-            info->key_id_mode = v8;
+            info->key_id_mode = v8 >> 3; // reported in place (shifted by 3)
         }
         if (frame.GetFrameCounter(v32) == kErrorNone)
         {
             info->has_counter = 1;
             info->counter     = v32;
         }
-        if (frame.GetKeyId(v8) == kErrorNone)
+        // For Key ID Mode 0 OpenThread's `GetKeyId()` returns whatever the
+        // last byte of the security header is: there is no key identifier.
+        if (info->key_id_mode != 0 && frame.GetKeyId(v8) == kErrorNone)
         {
             info->has_key_id = 1;
             info->key_id     = v8;
@@ -508,7 +512,116 @@ void diff_mac_parse(const uint8_t *psdu, uint16_t len, DiffMacInfo *info)
     }
     info->header_len  = frame.GetHeaderLength();
     info->payload_len = frame.GetPayloadLength();
-    info->footer_len  = frame.GetFooterLength();
+    info->footer_len  = frame.GetFooterLength() - 2;
+}
+
+struct DiffMacBuild
+{
+    uint8_t     type;     // frame type bits
+    uint8_t     version;  // 0 = 2003, 1 = 2006, 2 = 2015
+    uint8_t     sec_level;
+    uint8_t     key_id_mode; // 0..3
+    uint8_t     suppress_seq;
+    uint8_t     cmd_id;
+    uint8_t     csl_ie;
+    uint8_t     empty_payload;
+    uint8_t     has_dst_pan;
+    uint8_t     has_src_pan;
+    uint16_t    dst_pan;
+    uint16_t    src_pan;
+    DiffMacAddr dst;
+    DiffMacAddr src;
+    uint8_t     seq;
+    uint8_t     key_index;
+    uint32_t    counter;
+};
+
+// Builds the MAC header with `TxFrame::Info::PrepareHeadersIn` and fills the
+// sequence number, frame counter and key identifier. The frame has no payload;
+// the MIC area is zero. `*len` is the length without FCS.
+int diff_mac_build(const DiffMacBuild *p, uint8_t *out, uint16_t cap, uint16_t *len)
+{
+    Mac::TxFrame       frame;
+    Mac::TxFrame::Info info;
+    uint8_t            buf[256];
+
+    memset(buf, 0, sizeof(buf));
+    memset(&frame, 0, sizeof(frame));
+    frame.mPsdu = buf;
+    frame.mLength = 0;
+
+    info.mType          = static_cast<Mac::Frame::Type>(p->type);
+    info.mVersion       = static_cast<Mac::Frame::Version>(static_cast<uint16_t>(p->version) << 12);
+    info.mSecurityLevel = static_cast<Mac::Frame::SecurityLevel>(p->sec_level);
+    info.mKeyIdMode     = static_cast<Mac::Frame::KeyIdMode>(p->key_id_mode << 3);
+    info.mCommandId     = static_cast<Mac::Frame::CommandId>(p->cmd_id);
+    info.mSuppressSequence = p->suppress_seq;
+    info.mAppendCslIe      = p->csl_ie;
+    info.mEmptyPayload     = p->empty_payload;
+    if (p->has_dst_pan)
+    {
+        info.mPanIds.SetDestination(p->dst_pan);
+    }
+    if (p->has_src_pan)
+    {
+        info.mPanIds.SetSource(p->src_pan);
+    }
+    SetMacAddr(info.mAddrs.mDestination, p->dst);
+    SetMacAddr(info.mAddrs.mSource, p->src);
+
+    info.PrepareHeadersIn(frame);
+
+    if (!p->suppress_seq)
+    {
+        frame.SetSequence(p->seq);
+    }
+    if (p->sec_level != 0)
+    {
+        if (p->key_id_mode == 2)
+        {
+            static const uint8_t kSource[4] = {0xff, 0xff, 0xff, 0xff};
+            frame.SetKeySource(kSource);
+        }
+        frame.SetFrameCounter(p->counter);
+        if (p->key_id_mode != 0)
+        {
+            frame.SetKeyId(p->key_index);
+        }
+    }
+    // `mLength` includes the FCS.
+    *len = frame.mLength - 2;
+    if (*len > cap)
+    {
+        return -1;
+    }
+    memcpy(out, buf, *len);
+    return 0;
+}
+
+// Secures a built frame in place with `TxFrame::ProcessTransmitAesCcm`.
+// `psdu` is `len` bytes without FCS, MIC area included (zero). `ext` is the
+// source extended address in canonical order. Returns 1 if OpenThread
+// processed the frame.
+int diff_mac_secure(const uint8_t *key, const uint8_t *ext, uint8_t *psdu, uint16_t len)
+{
+    Mac::TxFrame     frame;
+    Mac::Key         k;
+    Mac::KeyMaterial km;
+    Mac::ExtAddress  addr;
+    uint8_t          buf[256];
+
+    memset(buf, 0, sizeof(buf));
+    memcpy(buf, psdu, len);
+    memset(&frame, 0, sizeof(frame));
+    frame.mPsdu   = buf;
+    frame.mLength = len + 2; // plus FCS
+    memcpy(k.m8, key, 16);
+    km.SetFrom(k);
+    frame.SetAesKey(km);
+    memcpy(addr.m8, ext, 8);
+    frame.ProcessTransmitAesCcm(addr);
+    memcpy(psdu, buf, len);
+    return frame.IsSecurityProcessed();
 }
 
 } // extern "C"
