@@ -9,7 +9,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, ln, out, parse_hex, parse_ip6, parse_u16};
+use crate::util::{Args, E, Ip6, R, ln, out, parse_hex, parse_ip6, parse_u16};
 
 /// Largest payload of `udp send` and of a printed datagram.
 const MAX_PAYLOAD: usize = 512;
@@ -107,7 +107,7 @@ where
                 self.o,
                 "{} bytes from {} {} ",
                 n,
-                info.meta.peer.ip(),
+                Ip6(*info.meta.peer.ip()),
                 info.meta.peer.port()
             );
             for &b in &buf[..n] {

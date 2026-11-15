@@ -142,6 +142,47 @@ where
                     print_prefix(self.o, &c.prefix);
                     ln!(self.o, " {} {}", c.id, if c.compress { 'c' } else { '-' });
                 }
+                // The Commissioning Dataset: session ID, border agent locator,
+                // joiner UDP port, steering data; ` e` if other TLVs follow.
+                ln!(self.o, "Commissioning:");
+                let (mut sid, mut loc, mut port, mut steer, mut extra) =
+                    (None, None, None, None, false);
+                let mut rest = nd.commissioning_data().unwrap_or(&[]);
+                while let [t, len, tail @ ..] = rest {
+                    let len = usize::from(*len);
+                    let Some((v, next)) = tail.split_at_checked(len) else {
+                        break;
+                    };
+                    let u16v = || (v.len() == 2).then(|| u16::from_be_bytes([v[0], v[1]]));
+                    match *t {
+                        11 => sid = u16v(),
+                        9 => loc = u16v(),
+                        18 => port = u16v(),
+                        8 => steer = Some(v),
+                        _ => extra = true,
+                    }
+                    rest = next;
+                }
+                match sid {
+                    Some(v) => out!(self.o, "{} ", v),
+                    None => out!(self.o, "- "),
+                }
+                match loc {
+                    Some(v) => out!(self.o, "{:04x} ", v),
+                    None => out!(self.o, "- "),
+                }
+                match port {
+                    Some(v) => out!(self.o, "{} ", v),
+                    None => out!(self.o, "- "),
+                }
+                match steer {
+                    Some(v) => hex(self.o, v),
+                    None => out!(self.o, "-"),
+                }
+                if extra {
+                    out!(self.o, " e");
+                }
+                ln!(self.o);
                 Ok(())
             }
             // Local changes are registered with the leader by the instance.

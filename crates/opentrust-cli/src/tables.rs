@@ -161,13 +161,14 @@ where
                     "Age",
                     "Avg RSSI",
                     "Last RSSI",
+                    "LQ In",
                     "R",
                     "D",
                     "N",
                     "Extended MAC",
                     "Version",
                 ],
-                &[6, 8, 5, 10, 11, 1, 1, 1, 18, 9],
+                &[6, 8, 5, 10, 11, 7, 1, 1, 1, 18, 9],
             );
         }
         for n in self.i.neighbor_table() {
@@ -178,6 +179,7 @@ where
                 out!(self.o, "| {:3} ", 0);
                 out!(self.o, "| {:8} ", n.average_rssi);
                 out!(self.o, "| {:9} ", n.average_rssi);
+                out!(self.o, "| {:5} ", n.link_quality_in);
                 out!(self.o, "|{:1}", u8::from(n.rx_on_when_idle));
                 out!(self.o, "|{:1}", u8::from(n.full_thread_device));
                 out!(self.o, "|{:1}", u8::from(n.full_thread_device));

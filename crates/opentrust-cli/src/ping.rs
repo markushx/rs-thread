@@ -9,7 +9,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, ln, out, parse_ip6, parse_u8, parse_u16};
+use crate::util::{Args, E, Ip6, R, ln, out, parse_ip6, parse_u8, parse_u16};
 
 /// Largest echo payload (the instance sends from a stack buffer).
 const MAX_PAYLOAD: usize = 512;
@@ -199,7 +199,7 @@ where
                 self.o,
                 "{} bytes from {}: icmp_seq={} hlim={} time={}ms",
                 r.payload_len + ICMP_HEADER,
-                r.src,
+                Ip6(r.src),
                 r.seq,
                 r.hop_limit,
                 rtt

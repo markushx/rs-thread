@@ -9,7 +9,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, error_name, ln, out, parse_ip6, parse_u16};
+use crate::util::{Args, E, Ip6, R, error_name, ln, out, parse_ip6, parse_u16};
 
 const DNS_PORT: u16 = 53;
 
@@ -93,7 +93,7 @@ where
             DnsOutcome::Address(r) => {
                 out!(self.o, " - ");
                 for ai in &r.addrs {
-                    out!(self.o, "{} TTL:{} ", ai.addr, ai.ttl);
+                    out!(self.o, "{} TTL:{} ", Ip6(ai.addr), ai.ttl);
                 }
                 ln!(self.o);
                 ln!(self.o, "Done");

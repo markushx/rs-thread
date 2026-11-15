@@ -272,7 +272,7 @@ fn form_join_ping_and_tables() {
     let nt = h.cmd(0, "neighbor table");
     assert!(
         nt.starts_with(
-            "| Role | RLOC16 | Age | Avg RSSI | Last RSSI |R|D|N| Extended MAC     | Version |\n"
+            "| Role | RLOC16 | Age | Avg RSSI | Last RSSI | LQ In |R|D|N| Extended MAC     | Version |\n"
         ),
         "{nt}"
     );

@@ -9,7 +9,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, ln, parse_ip6, parse_u16};
+use crate::util::{Args, E, Ip6, R, ln, parse_ip6, parse_u16};
 
 /// Services the CLI can track by name.
 const MAX_SERVICES: usize = 6;
@@ -61,7 +61,7 @@ where
             }
             "server" => {
                 let s = self.i.srp_server().ok_or(E::NOT_FOUND)?;
-                ln!(self.o, "[{}]:{}", s.ip(), s.port());
+                ln!(self.o, "[{}]:{}", Ip6(*s.ip()), s.port());
                 Ok(())
             }
             "start" => {

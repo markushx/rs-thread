@@ -4,7 +4,8 @@
 // Helpers are used by feature-gated command groups.
 #![allow(dead_code)]
 
-use core::fmt::Write;
+use core::fmt::{self, Display, Write};
+use core::net::Ipv6Addr;
 
 use opentrust_core::Error;
 
@@ -253,6 +254,21 @@ pub fn table_separator<W: Write>(out: &mut W, widths: &[usize]) {
         }
     }
     let _ = out.write_str("+\r\n");
+}
+
+/// An IPv6 address as OpenThread prints it: eight hex groups without leading
+/// zeros and without `::` compression (`fe80:0:0:0:1:2:3:4`).
+pub(crate) struct Ip6(pub Ipv6Addr);
+
+impl Display for Ip6 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.0.segments();
+        write!(
+            f,
+            "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+            s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]
+        )
+    }
 }
 
 #[cfg(test)]

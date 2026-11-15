@@ -7,7 +7,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, ln, parse_ip6};
+use crate::util::{Args, E, Ip6, R, ln, parse_ip6};
 
 impl<S, C, Rn, W> Ctx<'_, S, C, Rn, W>
 where
@@ -19,8 +19,12 @@ where
     pub(crate) fn ipaddr(&mut self, a: &Args<'_>) -> R {
         match a.get(1) {
             "" | "-v" => {
-                for u in self.i.unicast_addresses() {
-                    ln!(self.o, "{}", u.addr);
+                // OpenThread lists the newest address first.
+                let n = self.i.unicast_addresses().count();
+                for k in (0..n).rev() {
+                    if let Some(u) = self.i.unicast_addresses().nth(k) {
+                        ln!(self.o, "{}", Ip6(u.addr));
+                    }
                 }
                 Ok(())
             }
@@ -50,15 +54,30 @@ where
 
     fn one_addr(&mut self, a: Option<core::net::Ipv6Addr>) -> R {
         let a = a.ok_or(E::NOT_FOUND)?;
-        ln!(self.o, "{a}");
+        ln!(self.o, "{}", Ip6(a));
         Ok(())
     }
 
     pub(crate) fn ipmaddr(&mut self, a: &Args<'_>) -> R {
         match a.get(1) {
             "" => {
-                for m in self.i.multicast_addresses() {
-                    ln!(self.o, "{m}");
+                // OpenThread lists the subscribed addresses newest first,
+                // then the fixed ones of the interface.
+                let fixed = |m: &core::net::Ipv6Addr| {
+                    let s = m.segments();
+                    s[1..7] == [0; 6]
+                        && matches!((s[0], s[7]), (0xff02 | 0xff03, 1 | 2) | (0xff03, 0xfc))
+                };
+                let n = self.i.multicast_addresses().count();
+                for k in (0..n).rev() {
+                    if let Some(m) = self.i.multicast_addresses().nth(k)
+                        && !fixed(&m)
+                    {
+                        ln!(self.o, "{}", Ip6(m));
+                    }
+                }
+                for m in self.i.multicast_addresses().filter(fixed) {
+                    ln!(self.o, "{}", Ip6(m));
                 }
                 Ok(())
             }
