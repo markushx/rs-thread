@@ -25,7 +25,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [x] Relicense to Apache-2.0: replace `LICENSE`, update `license` fields in all `Cargo.toml`s
 - [x] Decide fate of old code: `openthread-sys` moved to `tools/openthread-sys` (test/interop oracle, not a default workspace member), `openthread-rust` sample removed
-  - [ ] Fix `tools/openthread-sys/build.rs`: stop running `script/bootstrap` (installs system packages) and building inside the source tree; build into `OUT_DIR`; regenerate bindings against the new OpenThread headers (Phase 11)
+  - [x] Fix `tools/openthread-sys/build.rs`: no `script/bootstrap`, cmake + ninja build into `OUT_DIR` (simulation platform, virtual time, `MinSizeRel`, one build tree), bindings regenerated; the reference nodes `ot-cli-ftd` (feature `mtd`: also `ot-cli-mtd`) are copied to `<target dir>/ot-sim/`; the source tree is `vendor/openthread` or `$OPENTHREAD_SRC`
 - [x] Refresh OpenThread submodule to `thread-reference-20250612` (Thread 1.4 reference release, `8a19434`)
 - [x] Evaluate esp-rs/openthread crate → `docs/research/rs-matter-integration.md` (mirror its async `Radio` trait from HEAD, offer a source-compatible `OpenThread`-style facade)
 - [x] Decide scope of BLE commissioning for Matter (BTP): in OpenTrust vs. left to rs-matter/platform BLE stack
@@ -307,7 +307,7 @@ Security-relevant decisions for the review before M4:
 - [ ] `opentrust-sim`: POSIX simulation platform compatible with OT's simulation protocol (UDP-based radio sim, `OT_SIMULATION`/`otns` event format) so Rust nodes and OT nodes share one virtual network
 - [ ] Build `ot-cli-ftd`/`ot-cli-mtd`-compatible binaries from Rust (same CLI prompt/output) so OT `tests/scripts/thread-cert` Python tests can run against them
 - [ ] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
-  - [ ] builds OT reference nodes from `openthread-sys/vendor/openthread` (simulation platform)
+  - [x] builds OT reference nodes from `openthread-sys/vendor/openthread` (simulation platform): `cargo build -p openthread-sys` (build script, about 25 s, 11 MB build tree)
   - [ ] runs selected `thread-cert` cases (Cert_5_1_*, 5_2_*, 5_3_*, …, v1_2_*) with Rust nodes as DUT and OT nodes as peers
   - [ ] manages Python venv (`.venv` already present) via `uv`/pip for pktverify/pyshark deps
 - [ ] Port OT C++ unit-test vectors (`tests/unit/*.cpp`: mac frame, lowpan, mle, crypto, dataset, network data, coap) into Rust `#[test]`s
