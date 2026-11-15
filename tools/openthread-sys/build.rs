@@ -132,7 +132,7 @@ fn main() {
         }
     }
     println!("cargo:rustc-link-lib=openthread-ftd");
-        if cfg!(feature = "cli") {
+    if cfg!(feature = "cli") {
         println!("cargo:rustc-link-lib=openthread-cli-ftd");
     }
     println!("cargo:rustc-link-lib=tcplp-ftd");
