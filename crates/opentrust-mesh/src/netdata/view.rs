@@ -250,12 +250,17 @@ impl<'a> NetworkDataView<'a> {
                     if !p.sub_tlvs().any(|s| s.stable) {
                         continue;
                     }
-                    let ctx = p
-                        .sub_tlvs()
-                        .find(|s| s.ty == ty::CONTEXT)
-                        .and_then(|s| ContextTlv::parse(&s).ok());
                     write_prefix(&mut w, t.stable, p.domain_id, &p.prefix, |w| {
-                        for s in p.sub_tlvs().filter(|s| s.stable) {
+                        for (k, s) in p.sub_tlvs().enumerate().filter(|(_, s)| s.stable) {
+                            // OpenThread removes the temporary sub-TLVs while
+                            // walking the prefix: a Context sub-TLV that is
+                            // not stable is only still there for the
+                            // sub-TLVs before it.
+                            let ctx = p
+                                .sub_tlvs()
+                                .enumerate()
+                                .find(|(j, c)| c.ty == ty::CONTEXT && (c.stable || *j > k))
+                                .and_then(|(_, c)| ContextTlv::parse(&c).ok());
                             copy_stable_prefix_sub(w, &s, ctx.map(|c| c.id))?;
                         }
                         Ok(())
@@ -323,10 +328,11 @@ fn copy_stable_prefix_sub(w: &mut Writer<'_>, s: &RawTlv<'_>, ctx: Option<u8>) -
             let mut buf = [0u8; 255];
             let mut n = 0;
             for e in s.value.chunks_exact(HasRouteEntry::SIZE) {
-                let mut e = HasRouteEntry::parse(e).ok_or(Error::Parse)?;
-                e.rloc16 = STABLE_RLOC16;
+                // Only the RLOC16 changes; the flags byte is kept as received
+                // (reserved bits included), like OpenThread.
                 let mut ew = Writer::new(&mut buf[n..]);
-                e.write(&mut ew)?;
+                ew.write_u16(STABLE_RLOC16)?;
+                ew.write_u8(e[2])?;
                 n += ew.len();
             }
             write_tlv(w, ty::HAS_ROUTE, true, &buf[..n])

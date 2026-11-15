@@ -340,3 +340,45 @@ fn test_ip6_prefix() {
         }
     }
 }
+
+/// A stable prefix TLV with the given sub-TLVs (domain 0, 64-bit prefix).
+fn prefix_tlv(subs: &[u8]) -> Vec<u8> {
+    let mut v = std::vec![0x03, (10 + subs.len()) as u8, 0, 64, 1, 2, 3, 4, 5, 6, 7, 8];
+    v.extend_from_slice(subs);
+    v
+}
+
+/// The stable copy keeps the Has Route flags byte as received, reserved bits
+/// included, and only replaces the RLOC16 (as OpenThread's
+/// `RemoveTemporaryData`); found by the differential tests.
+#[test]
+fn stable_copy_keeps_has_route_flags_byte() {
+    let d = prefix_tlv(&[0x01, 3, 0x12, 0x34, 0x4f]);
+    let mut out = [0u8; 64];
+    let n = NetworkDataView(&d).copy_stable(&mut out).unwrap();
+    assert_eq!(&out[..n], &prefix_tlv(&[0x01, 3, 0xff, 0xfe, 0x4f])[..]);
+}
+
+/// OpenThread drops temporary sub-TLVs while walking a prefix, so a
+/// temporary Context sub-TLV only supplies the context ALOC to the Border
+/// Router entries in front of it.
+#[test]
+fn stable_copy_context_aloc_depends_on_sub_tlv_order() {
+    let context = [0x06, 2, 0x19, 64]; // temporary, ID 9, compress
+    let border_router = [0x05, 4, 0x12, 0x34, 0x08, 0x00]; // stable, DHCP
+
+    let mut out = [0u8; 64];
+    let before = prefix_tlv(&[&context[..], &border_router[..]].concat());
+    let n = NetworkDataView(&before).copy_stable(&mut out).unwrap();
+    assert_eq!(
+        &out[..n],
+        &prefix_tlv(&[0x05, 4, 0xff, 0xfe, 0x08, 0x00])[..]
+    );
+
+    let after = prefix_tlv(&[&border_router[..], &context[..]].concat());
+    let n = NetworkDataView(&after).copy_stable(&mut out).unwrap();
+    assert_eq!(
+        &out[..n],
+        &prefix_tlv(&[0x05, 4, 0xfc, 0x09, 0x08, 0x00])[..]
+    );
+}
