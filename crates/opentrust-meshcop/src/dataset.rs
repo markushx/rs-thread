@@ -90,7 +90,7 @@ fn is_tlv_valid(ty: u8, v: &[u8]) -> bool {
         ty::CHANNEL | ty::WAKEUP_CHANNEL => {
             return ChannelValue::from_bytes(v).is_ok_and(|c| c.is_valid());
         }
-        ty::NETWORK_NAME => return core::str::from_utf8(v).is_ok(),
+        ty::NETWORK_NAME => return NetworkName::is_valid_text(v),
         ty::SECURITY_POLICY => return SecurityPolicy::is_valid_len(v.len()),
         ty::CHANNEL_MASK => return crate::tlv::parse_channel_mask(v).is_ok(),
         _ => 0,

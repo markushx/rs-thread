@@ -315,9 +315,17 @@ impl NetworkName {
         Self::from_bytes(name.as_bytes())
     }
 
-    /// Validate (length, UTF-8) and copy a network name from raw bytes.
+    /// Whether `b` is valid UTF-8 without control characters (ASCII below
+    /// 0x20 and 0x7f), the check OpenThread applies to network names
+    /// (`IsValidUtf8String`); the length is not checked.
+    pub fn is_valid_text(b: &[u8]) -> bool {
+        core::str::from_utf8(b).is_ok_and(|s| !s.chars().any(|c| c.is_ascii_control()))
+    }
+
+    /// Validate (length, UTF-8 without control characters) and copy a
+    /// network name from raw bytes.
     pub fn from_bytes(b: &[u8]) -> Result<Self> {
-        if b.is_empty() || b.len() > Self::MAX_LEN || core::str::from_utf8(b).is_err() {
+        if b.is_empty() || b.len() > Self::MAX_LEN || !Self::is_valid_text(b) {
             return Err(Error::InvalidArgs);
         }
         let mut buf = [0u8; Self::MAX_LEN];
@@ -536,6 +544,24 @@ mod tests {
         assert!(NetworkName::new("").is_err());
         assert!(NetworkName::new("12345678901234567").is_err());
         assert!(NetworkName::from_bytes(&[0xff]).is_err());
+    }
+
+    /// OpenThread rejects control characters in network names
+    /// (`IsValidUtf8String`); found by the differential tests.
+    #[test]
+    fn network_name_rejects_control_characters() {
+        assert!(NetworkName::from_bytes(b"abcd").is_err());
+        assert!(
+            NetworkName::from_bytes(
+                b"ab
+cd"
+            )
+            .is_err()
+        );
+        assert!(NetworkName::from_bytes(b"abcd").is_err());
+        assert!(NetworkName::from_bytes("naïve".as_bytes()).is_ok());
+        assert!(!NetworkName::is_valid_text(b""));
+        assert!(NetworkName::is_valid_text(b""));
     }
 
     /// OpenThread `tests/unit/test_network_name.cpp` `TestNetworkName`.

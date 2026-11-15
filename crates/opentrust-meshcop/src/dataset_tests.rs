@@ -1,3 +1,5 @@
+use std::vec;
+
 use opentrust_core::Result;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{ExtPanId, NetworkKey, NetworkName, Prefix64, Pskc};
@@ -396,4 +398,16 @@ fn security_policy_and_delay_minimum() {
     ds.set_delay_timer_minimal_ms(1000).unwrap();
     assert!(ds.set_delay_timer_minimal_ms(0).is_err());
     assert!(ds.set_delay_timer_minimal_ms(30_000).is_err());
+}
+
+/// A network name with a control character is invalid, like in OpenThread
+/// (`IsValidUtf8String`); found by the differential tests.
+#[test]
+fn network_name_with_control_character_is_invalid() {
+    let mut ok = vec![ty::NETWORK_NAME, 4];
+    ok.extend_from_slice(b"abcd");
+    assert!(Dataset::from_tlvs(&ok).is_ok());
+    let mut bad = vec![ty::NETWORK_NAME, 4];
+    bad.extend_from_slice(b"ab\x0fd");
+    assert!(Dataset::from_tlvs(&bad).is_err());
 }
