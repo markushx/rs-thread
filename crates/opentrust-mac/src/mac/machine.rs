@@ -902,7 +902,14 @@ impl<
         if ie.period < MIN_CSL_IE_PERIOD {
             return;
         }
-        let Some(ts) = ts.or_else(|| self.radio_now_us()) else {
+        // Without a timestamp the frame's SFD is taken to be one CCA and SHR
+        // after the radio time it was handed over at: what the sender
+        // assumes when it puts the phase into the IE (`refresh_soft_csl`; no
+        // air time, as on a simulated medium).
+        let Some(ts) = ts.or_else(|| {
+            self.radio_now_us()
+                .map(|n| n + u64::from(CCA_SAMPLE_INTERVAL + SHR_DURATION))
+        }) else {
             return;
         };
         let c = &mut self.csl_children[i];

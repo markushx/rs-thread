@@ -792,10 +792,19 @@ impl VtRadio {
                     channel,
                     rssi: Some(rssi),
                     lqi: None,
-                    // As OpenThread's simulation radio: the time of the end
-                    // of the ACK, which is also the time its CSL phase
-                    // refers to.
-                    timestamp_us: Some(now_us),
+                    // Frames take no time in the simulation: the ACK's SFD
+                    // is where the sender of a CSL IE assumed it, one
+                    // turnaround and SHR after the frame it acknowledges (an
+                    // OpenThread sender's phase refers to the ACK's own time,
+                    // which this lets a parent transmit later by that much,
+                    // still inside the child's sample window).
+                    timestamp_us: Some(
+                        now_us
+                            + u64::from(
+                                opentrust_mac::mac::TURNAROUND_TIME
+                                    + opentrust_mac::mac::SHR_DURATION,
+                            ),
+                    ),
                     ack_security: None,
                     acked_with_frame_pending: None,
                 };
