@@ -311,7 +311,7 @@ Security-relevant decisions for the review before M4:
   - [x] runs `thread-cert` cases Cert_5_1_*, 5_2_*, 5_3_* with OpenTrust nodes in place of OT nodes (`crates/opentrust-sim/tests/thread_cert.rs`, `OPENTRUST_CERT=1`): 197 of 243 runs pass (the rest: 42 baseline failures with all-OT nodes, 4 OT SEDs attaching to an OpenTrust router), details in `docs/test-status.md`; v1_2_* and pktverify (Linux only) not run
   - [ ] cert failures open: SED attach to an OpenTrust parent, missing CLI commands (`childmax`, `childtimeout`, `releaserouterid`, ...); five cases fail with OpenThread only
   - [x] manages Python venv (`.venv`, created / completed with pip: pexpect, pycryptodome, pyshark 0.4.6, lxml)
-- [ ] Port OT C++ unit-test vectors (`tests/unit/*.cpp`: mac frame, lowpan, mle, crypto, dataset, network data, coap) into Rust `#[test]`s
+- [x] Port OT C++ unit-test vectors (`tests/unit/*.cpp`: mac frame, lowpan, mle, crypto, dataset, network data, coap) into Rust `#[test]`s (inventory and status per test in `docs/ot-unit-test-port.md`; the rest is OT-internal framework, IPv4/NAT64, Spinel/HDLC and platform tests with no OpenTrust counterpart)
 - [ ] Differential tests: same input to `openthread-sys` (FFI) and Rust impl, compare outputs (codecs, crypto, KDF)
 - [ ] OTNS (OpenThread Network Simulator) integration for large-topology/visual testing
 - [ ] Fuzzing (`cargo fuzz`) for all parsers (MAC, 6LoWPAN, MLE TLVs, CoAP, MeshCoP TLVs)

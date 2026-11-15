@@ -611,6 +611,29 @@ mod tests {
         assert!(serial_less(0, 127));
     }
 
+    /// OpenThread `tests/unit/test_serial_number.cpp` `TestSerialNumber<uint8_t>`.
+    #[test]
+    fn test_serial_number_u8() {
+        let max = u8::MAX;
+        let mid = max / 2;
+        let numbers = [0, 1, 20, mid - 1, mid, mid + 1, max - 20, max - 1, max];
+        for n in numbers {
+            let is_greater = |a: u8, b: u8| serial_less(b, a);
+            assert!(!is_greater(n, n));
+            assert!(!serial_less(n, n));
+            assert!(is_greater(n.wrapping_add(1), n));
+            assert!(is_greater(n.wrapping_add(mid - 1), n));
+            assert!(is_greater(n.wrapping_add(mid), n));
+            assert!(!is_greater(n.wrapping_add(mid + 2), n));
+            assert!(!is_greater(n.wrapping_add(max - 1), n));
+            assert!(serial_less(n.wrapping_sub(1), n));
+            assert!(serial_less(n.wrapping_sub(mid - 1), n));
+            assert!(serial_less(n.wrapping_sub(mid), n));
+            assert!(!serial_less(n.wrapping_sub(mid + 2), n));
+            assert!(!serial_less(n.wrapping_sub(max - 1), n));
+        }
+    }
+
     #[test]
     fn s0_option_requires_locator_source() {
         let mut m = Mpl::<35, 4>::new();

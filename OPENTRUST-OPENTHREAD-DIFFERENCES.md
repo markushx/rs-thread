@@ -815,3 +815,7 @@ The OpenTrust node for OpenThread's virtual-time simulation platform differs fro
 - **Settings** are kept in `tmp/<PORT_OFFSET>_<node id>.flash` (own record format, not OT's flash layout). `reset` re-creates the node in the same process; virtual time continues.
 - **Console.** The terminal is not in raw mode, the node echoes the typed line like the OT UART CLI; `exit` ends the process.
 - **Sleepy children of an OpenTrust parent.** The Child ID Response goes out directly to the child's extended address, as long as the child is not "confirmed"; an `ot-cli-ftd` SED has its radio off after the Child ID Request and polls, so it does not attach to an OpenTrust router (see `docs/test-status.md`).
+
+## Unit-test vectors
+
+- **Empty network name.** OT's `NetworkName::Set` accepts an empty name (its `TestNetworkName` sets one); `NetworkName::new` rejects it, as Thread 1.4.1 requires 1 to 16 bytes.

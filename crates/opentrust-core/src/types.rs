@@ -538,6 +538,30 @@ mod tests {
         assert!(NetworkName::from_bytes(&[0xff]).is_err());
     }
 
+    /// OpenThread `tests/unit/test_network_name.cpp` `TestNetworkName`.
+    /// OT also accepts an empty name; OpenTrust requires 1..=16 bytes
+    /// (Thread 1.4.1 section 8.10.1.9).
+    #[test]
+    fn test_network_name() {
+        let long = "0123456789abcdef";
+        assert_eq!(NetworkName::new("network").unwrap().as_str(), "network");
+        assert_eq!(
+            NetworkName::new("network-name").unwrap().as_bytes(),
+            b"network-name"
+        );
+        assert_eq!(NetworkName::new(long).unwrap().as_str(), long);
+        assert!(NetworkName::new("0123456789abcdef0").is_err());
+        // Equality is by content.
+        assert_eq!(
+            NetworkName::new("network").unwrap(),
+            NetworkName::from_bytes(b"network").unwrap()
+        );
+        assert_ne!(
+            NetworkName::new("network").unwrap(),
+            NetworkName::new("network-name").unwrap()
+        );
+    }
+
     #[test]
     fn secrets_redacted() {
         let k = NetworkKey([0xaa; 16]);

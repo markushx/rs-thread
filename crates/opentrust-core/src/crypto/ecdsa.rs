@@ -110,4 +110,62 @@ mod tests {
         vk.verify_prehash(&digest, &sig).unwrap();
         assert!(SoftEcdsaP256.public_key(&SecretKey([0; 32])).is_err());
     }
+
+    fn hex<const N: usize>(s: &str) -> [u8; N] {
+        let mut out = [0u8; N];
+        for (i, b) in out.iter_mut().enumerate() {
+            *b = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap();
+        }
+        out
+    }
+
+    /// OpenThread `tests/unit/test_ecdsa.cpp` `TestEcdsaVector`
+    /// (RFC 6979 A.2.5, NIST P-256 / SHA-256, message "sample").
+    #[test]
+    fn test_ecdsa_vector() {
+        use crate::crypto::backend::Sha256 as _;
+        let key = SecretKey(hex(
+            "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+        ));
+        let expected_pk: [u8; 64] = hex(
+            "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6\
+             7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+        );
+        let expected_sig: [u8; 64] = hex(
+            "efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716\
+             f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8",
+        );
+        assert_eq!(SoftEcdsaP256.public_key(&key).unwrap(), expected_pk);
+
+        let mut sha = crate::crypto::soft::SoftSha256::default();
+        sha.update(b"sample");
+        let digest: [u8; 32] = sha.finalize();
+        let sig = SoftEcdsaP256.sign_digest(&key, &digest).unwrap();
+        assert_eq!(sig, expected_sig);
+
+        let mut sec1 = [0u8; 65];
+        sec1[0] = 4;
+        sec1[1..].copy_from_slice(&expected_pk);
+        let vk = p256::ecdsa::VerifyingKey::from_sec1_bytes(&sec1).unwrap();
+        let sig = p256::ecdsa::Signature::from_slice(&sig).unwrap();
+        vk.verify_prehash(&digest, &sig).unwrap();
+    }
+
+    /// OpenThread `test_ecdsa.cpp` `TestEcdsaKeyGenerationSignAndVerify`:
+    /// a signature must not verify against a different hash.
+    #[test]
+    fn test_ecdsa_key_generation_sign_and_verify() {
+        let key = SecretKey([0x42u8; 32]);
+        let pk = SoftEcdsaP256.public_key(&key).unwrap();
+        let d1 = [1u8; 32];
+        let d2 = [2u8; 32];
+        let sig = SoftEcdsaP256.sign_digest(&key, &d1).unwrap();
+        let mut sec1 = [0u8; 65];
+        sec1[0] = 4;
+        sec1[1..].copy_from_slice(&pk);
+        let vk = p256::ecdsa::VerifyingKey::from_sec1_bytes(&sec1).unwrap();
+        let sig = p256::ecdsa::Signature::from_slice(&sig).unwrap();
+        vk.verify_prehash(&d1, &sig).unwrap();
+        assert!(vk.verify_prehash(&d2, &sig).is_err());
+    }
 }

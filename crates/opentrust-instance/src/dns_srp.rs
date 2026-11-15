@@ -706,3 +706,194 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         true
     }
 }
+
+#[cfg(test)]
+mod ot_vector_tests {
+    extern crate std;
+
+    use std::vec::Vec as StdVec;
+
+    use opentrust_dns::srp::discovery::{anycast_entries, preferred_anycast};
+    use opentrust_mesh::netdata::NetworkDataView;
+
+    use super::adapt;
+
+    const COMM: [u8; 6] = [0x08, 0x04, 0x0b, 0x02, 0x50, 0xb0];
+
+    /// Anycast Service TLV (`0x5c` service data) with one Server sub-TLV
+    /// of RLOC16 `0x5000 + idx`, optionally with a version byte.
+    fn svc(id: u8, seq: u8, idx: u8, version: Option<u8>) -> StdVec<u8> {
+        let mut v = std::vec![
+            0x0b,
+            0x08,
+            0x80 | id,
+            0x02,
+            0x5c,
+            seq,
+            0x0d,
+            0x02,
+            0x50,
+            idx
+        ];
+        if let Some(ver) = version {
+            v[1] = 0x09;
+            v[7] = 0x03;
+            v.push(ver);
+        }
+        v
+    }
+
+    fn cat(parts: &[StdVec<u8>]) -> StdVec<u8> {
+        let mut d = COMM.to_vec();
+        for p in parts {
+            d.extend_from_slice(p);
+        }
+        d
+    }
+
+    /// OpenThread `tests/unit/test_network_data.cpp`
+    /// `TestNetworkDataDsnSrpAnycastSeqNumSelection`.
+    #[test]
+    fn test_network_data_dsn_srp_anycast_seq_num_selection() {
+        let plain = |seqs: &[u8]| -> StdVec<u8> {
+            cat(&seqs
+                .iter()
+                .enumerate()
+                .map(|(i, &s)| svc(i as u8, s, i as u8, None))
+                .collect::<StdVec<_>>())
+        };
+        // (network data, sequence numbers in order, preferred seq, preferred version)
+        let mut tests: StdVec<(StdVec<u8>, StdVec<u8>, u8, u8)> = StdVec::new();
+        for (seqs, pref) in [
+            (&[1u8, 129][..], 129u8),
+            (&[133, 5], 133),
+            (&[1, 2, 255], 2),
+            (&[10, 130, 250], 250),
+            (&[130, 250, 10], 250),
+            (&[250, 10, 130], 250),
+            (&[250, 10, 138], 250),
+            (&[1, 2, 255, 254], 2),
+            (&[1, 2, 255, 254], 2),
+            (&[254, 2, 120, 1], 120),
+            (&[240, 2, 120, 1], 240),
+        ] {
+            tests.push((plain(seqs), seqs.to_vec(), pref, 0));
+        }
+        // 12: second service carries a version byte.
+        tests.push((
+            cat(&[svc(0, 1, 0, None), svc(1, 129, 1, Some(1))]),
+            std::vec![1, 129],
+            129,
+            1,
+        ));
+        // 13: one service with two Server sub-TLVs (version 2).
+        let mut t13 = cat(&[svc(0, 1, 0, None)]);
+        t13.extend_from_slice(&[0x0b, 0x0e, 0x81, 0x02, 0x5c, 0x81]);
+        t13.extend_from_slice(&[0x0d, 0x03, 0x50, 0x01, 0x02, 0x0d, 0x03, 0x50, 0x02, 0x02]);
+        tests.push((t13, std::vec![1, 129, 129], 129, 2));
+        // 14 and 15: one service with three or four Server sub-TLVs.
+        let mut t14 = COMM.to_vec();
+        t14.extend_from_slice(&[0x0b, 0x13, 0x81, 0x02, 0x5c, 0x07]);
+        t14.extend_from_slice(&[0x0d, 0x03, 0x50, 0x00, 0x01]);
+        t14.extend_from_slice(&[0x0d, 0x03, 0x50, 0x01, 0x02]);
+        t14.extend_from_slice(&[0x0d, 0x03, 0x50, 0x02, 0x03]);
+        tests.push((t14, std::vec![7, 7, 7], 7, 1));
+        let mut t15 = COMM.to_vec();
+        t15.extend_from_slice(&[0x0b, 0x17, 0x81, 0x02, 0x5c, 0x03]);
+        t15.extend_from_slice(&[0x0d, 0x03, 0x50, 0x00, 0x01]);
+        t15.extend_from_slice(&[0x0d, 0x03, 0x50, 0x01, 0x02]);
+        t15.extend_from_slice(&[0x0d, 0x02, 0x50, 0x02]);
+        t15.extend_from_slice(&[0x0d, 0x03, 0x50, 0x03, 0x01]);
+        tests.push((t15, std::vec![3, 3, 3, 3], 3, 0));
+
+        for (n, (data, seqs, pref_seq, pref_ver)) in tests.iter().enumerate() {
+            let entries: StdVec<_> = NetworkDataView(data).services().map(adapt).collect();
+            let any: StdVec<_> = anycast_entries(entries.iter().copied(), [0; 8]).collect();
+            assert_eq!(any.len(), seqs.len(), "case {}", n + 1);
+            for (i, a) in any.iter().enumerate() {
+                assert_eq!(a.sequence_number, seqs[i], "case {}", n + 1);
+                assert_eq!(a.rloc16, 0x5000 + i as u16, "case {}", n + 1);
+            }
+            let p = preferred_anycast(&any).unwrap();
+            assert_eq!(p.sequence_number, *pref_seq, "case {}", n + 1);
+            assert_eq!(p.version, *pref_ver, "case {}", n + 1);
+        }
+    }
+
+    /// OpenThread `tests/unit/test_network_data.cpp`
+    /// `TestNetworkDataDsnSrpServices` (anycast and unicast entries).
+    #[test]
+    fn test_network_data_dsn_srp_services() {
+        use core::net::{Ipv6Addr, SocketAddrV6};
+        use opentrust_dns::srp::discovery::{UnicastType, unicast_entries};
+
+        #[rustfmt::skip]
+        let net_data: &[u8] = &[
+            0x0b, 0x01, 0x00,
+            0x0b, 0x0b, 0x80, 0x02, 0x5c, 0x02, 0x0d, 0x01, 0x00, 0x0d, 0x02, 0x28, 0x00,
+            0x0b, 0x09, 0x81, 0x02, 0x5c, 0xff, 0x0d, 0x03, 0x6c, 0x00, 0x05,
+            0x0b, 0x09, 0x82, 0x03, 0x5c, 0x03, 0xaa, 0x0d, 0x02, 0x4c, 0x00,
+            0x0b, 0x36, 0x83, 0x14, 0x5d, 0xfd, 0xde, 0xad, 0x00, 0xbe, 0xef, 0x00, 0x00, 0x2d,
+            0x0e, 0xc6, 0x27, 0x55, 0x56, 0x18, 0xd9, 0x12, 0x34, 0x03, 0x0d, 0x02, 0x00, 0x00,
+            0x0d, 0x14, 0x6c, 0x00, 0xfd, 0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
+            0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0xab, 0xcd, 0x0d, 0x04, 0x28, 0x00, 0x56, 0x78,
+            0x0b, 0x24, 0x84, 0x01, 0x5d, 0x0d, 0x02, 0x00, 0x00, 0x0d, 0x15, 0x4c, 0x00, 0xfd,
+            0x00, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x01, 0x23, 0x45, 0x67, 0x89,
+            0xab, 0x00, 0x0e, 0x01, 0x0d, 0x04, 0x6c, 0x00, 0xcd, 0x12,
+            0x0b, 0x08, 0x84, 0x01, 0x5c, 0x0d, 0x02, 0x14, 0x01, 0x0d,
+            0x0b, 0x07, 0x83, 0x01, 0x5c, 0x0d, 0x02, 0x28, 0x00,
+            0x0b, 0x13, 0x83, 0x02, 0x5c, 0xfe, 0x0d, 0x03, 0x12, 0x00, 0x07, 0x0d, 0x03, 0x12,
+            0x01, 0x06, 0x0d, 0x03, 0x16, 0x00, 0x07,
+        ];
+        let mlp = [0xfd, 0xde, 0xad, 0x00, 0xbe, 0xef, 0x00, 0x00];
+        let entries: StdVec<_> = NetworkDataView(net_data).services().map(adapt).collect();
+
+        // (ALOC low 16 bits, sequence number, version, RLOC16)
+        let anycast_expected = [
+            (0xfc10u16, 0x02u8, 0u8, 0x2800u16),
+            (0xfc11, 0xff, 5, 0x6c00),
+            (0xfc12, 0x03, 0, 0x4c00),
+            (0xfc13, 0xfe, 7, 0x1200),
+            (0xfc13, 0xfe, 6, 0x1201),
+            (0xfc13, 0xfe, 7, 0x1600),
+        ];
+        let any: StdVec<_> = anycast_entries(entries.iter().copied(), mlp).collect();
+        assert_eq!(any.len(), anycast_expected.len());
+        for (a, (aloc, seq, ver, rloc)) in any.iter().zip(anycast_expected) {
+            let o = a.address.octets();
+            assert_eq!(o[..8], mlp);
+            assert_eq!(o[8..14], [0, 0, 0, 0xff, 0xfe, 0]);
+            assert_eq!(u16::from_be_bytes([o[14], o[15]]), aloc);
+            assert_eq!((a.sequence_number, a.version, a.rloc16), (seq, ver, rloc));
+        }
+        assert_eq!(preferred_anycast(&any).unwrap().sequence_number, 0x03);
+        assert_eq!(preferred_anycast(&any).unwrap().address, any[2].address);
+
+        let uni = |ty, exp: &[(&str, u16, u8, u16)]| {
+            let got: StdVec<_> = unicast_entries(entries.iter().copied(), mlp, ty).collect();
+            assert_eq!(got.len(), exp.len());
+            for (g, (addr, port, ver, rloc)) in got.iter().zip(exp) {
+                let a: Ipv6Addr = addr.parse().unwrap();
+                assert_eq!(g.addr, SocketAddrV6::new(a, *port, 0, 0));
+                assert_eq!((g.version, g.rloc16), (*ver, *rloc));
+            }
+        };
+        uni(
+            UnicastType::InServerData,
+            &[
+                ("fd00:aabb:ccdd:eeff:11:2233:4455:6677", 0xabcd, 0, 0x6c00),
+                ("fdde:ad00:beef:0:0:ff:fe00:2800", 0x5678, 0, 0x2800),
+                ("fd00:1234:5678:9abc:def0:123:4567:89ab", 0x0e, 1, 0x4c00),
+                ("fdde:ad00:beef:0:0:ff:fe00:6c00", 0xcd12, 0, 0x6c00),
+            ],
+        );
+        uni(
+            UnicastType::InServiceData,
+            &[
+                ("fdde:ad00:beef:0:2d0e:c627:5556:18d9", 0x1234, 3, 0x0000),
+                ("fdde:ad00:beef:0:2d0e:c627:5556:18d9", 0x1234, 3, 0x6c00),
+                ("fdde:ad00:beef:0:2d0e:c627:5556:18d9", 0x1234, 3, 0x2800),
+            ],
+        );
+    }
+}
