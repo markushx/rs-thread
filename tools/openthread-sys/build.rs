@@ -15,9 +15,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn run(cmd: &mut Command, what: &str) {
-    let status = cmd
-        .status()
-        .unwrap_or_else(|e| panic!("cannot run {what}: {e} (cmake and ninja must be installed)"));
+    let status = cmd.status().unwrap_or_else(|e| {
+        panic!(
+            "cannot run {}: {} (cmake and ninja must be installed)",
+            what, e
+        )
+    });
     assert!(status.success(), "{} failed: {}", what, status);
 }
 
@@ -124,6 +127,12 @@ fn main() {
     }
     println!("cargo:bin_dir={}", bin_dir.display());
 
+    // The differential-test shim (C++ over OpenThread's internal classes) is
+    // compiled with the flags of the core library and linked in front of it.
+    if env::var_os("CARGO_FEATURE_DIFF_SHIM").is_some() {
+        build_diff_shim(&manifest, &build, &out);
+    }
+
     // Link the static libraries of the build.
     for dir in [
         "src/core",
@@ -161,6 +170,48 @@ fn main() {
     println!("cargo:rustc-link-lib=p256m");
 
     gen_bindings(&include, &out);
+}
+
+/// Compiles `shim/diff_shim.cpp` with the compiler flags ninja uses for the
+/// OpenThread core (same defines and include paths, so the internal classes
+/// have the layout of the linked library) and archives it as `libdiffshim.a`.
+fn build_diff_shim(manifest: &Path, build: &Path, out: &Path) {
+    let shim = manifest.join("shim/diff_shim.cpp");
+    println!("cargo:rerun-if-changed={}", shim.display());
+    let cmds = Command::new("ninja")
+        .arg("-C")
+        .arg(build)
+        .args(["-t", "commands", "src/core/libopenthread-ftd.a"])
+        .output()
+        .expect("cannot run ninja -t commands");
+    let cmds = String::from_utf8_lossy(&cmds.stdout).into_owned();
+    let line = cmds
+        .lines()
+        .find(|l| l.contains("mac/mac_frame.cpp"))
+        .expect("no compile command for mac_frame.cpp");
+    // Everything before the dependency-file flags is compiler + flags.
+    let flags = &line[..line.find(" -MD ").expect("unexpected compile command")];
+    let obj = out.join("diff_shim.o");
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "cd '{}' && {} -o '{}' -c '{}'",
+            build.display(),
+            flags,
+            obj.display(),
+            shim.display()
+        ))
+        .status()
+        .expect("cannot run the C++ compiler");
+    assert!(status.success(), "compiling diff_shim.cpp failed");
+    let lib = out.join("libdiffshim.a");
+    let _ = fs::remove_file(&lib);
+    run(
+        Command::new("ar").arg("rcs").arg(&lib).arg(&obj),
+        "ar (diff shim)",
+    );
+    println!("cargo:rustc-link-search=native={}", out.display());
+    println!("cargo:rustc-link-lib=static=diffshim");
 }
 
 fn gen_bindings(include: &Path, out: &Path) {
