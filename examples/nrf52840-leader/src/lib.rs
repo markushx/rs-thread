@@ -23,10 +23,25 @@ pub struct Board {
     /// Button 1 of the DK (P0.11, active low): held at boot it requests a
     /// factory reset, see [`flash::factory_reset_requested`].
     pub button1: Input<'static>,
+    /// Peripherals reserved for a serial console on the DK's VCOM port.
+    pub uart: Uart,
     /// What the BLE stack needs next to the 802.15.4 radio: the MPSL handle
     /// and the PPI channels of the SoftDevice Controller.
     #[cfg(feature = "ble")]
     pub ble: Ble,
+}
+
+/// UARTE0 with the DK's VCOM pins (TX P0.06, RX P0.08) and what the buffered
+/// driver needs: TIMER1, PPI channels 0 and 1 and PPI group 5 (the 802.15.4
+/// driver uses channels 6..=11 and groups 0 and 1, MPSL 19, 30 and 31).
+pub struct Uart {
+    pub uarte: embassy_nrf::Peri<'static, embassy_nrf::peripherals::UARTE0>,
+    pub timer: embassy_nrf::Peri<'static, embassy_nrf::peripherals::TIMER1>,
+    pub ppi_ch0: embassy_nrf::Peri<'static, embassy_nrf::peripherals::PPI_CH0>,
+    pub ppi_ch1: embassy_nrf::Peri<'static, embassy_nrf::peripherals::PPI_CH1>,
+    pub ppi_group: embassy_nrf::Peri<'static, embassy_nrf::peripherals::PPI_GROUP5>,
+    pub rxd: embassy_nrf::Peri<'static, embassy_nrf::peripherals::P0_08>,
+    pub txd: embassy_nrf::Peri<'static, embassy_nrf::peripherals::P0_06>,
 }
 
 /// The MPSL instance (already running on the executor) and the peripherals
@@ -103,6 +118,15 @@ pub fn init(_spawner: &Spawner) -> Board {
         radio: NrfRadio::new(HwRadio::new(p.RADIO, Irqs)),
         flash: opentrust_nrf::take_flash(p.NVMC),
         button1: Input::new(p.P0_11, Pull::Up),
+        uart: Uart {
+            uarte: p.UARTE0,
+            timer: p.TIMER1,
+            ppi_ch0: p.PPI_CH0,
+            ppi_ch1: p.PPI_CH1,
+            ppi_group: p.PPI_GROUP5,
+            rxd: p.P0_08,
+            txd: p.P0_06,
+        },
     }
 }
 
@@ -136,12 +160,21 @@ pub fn init(spawner: &Spawner) -> Board {
         radio: NrfRadio::new(p.RADIO, p.EGU0, p.TIMER2, p.RTC2, mpsl),
         flash: opentrust_nrf::take_flash(mpsl, p.NVMC),
         button1: Input::new(p.P0_11, Pull::Up),
+        uart: Uart {
+            uarte: p.UARTE0,
+            timer: p.TIMER1,
+            ppi_ch0: p.PPI_CH0,
+            ppi_ch1: p.PPI_CH1,
+            ppi_group: p.PPI_GROUP5,
+            rxd: p.P0_08,
+            txd: p.P0_06,
+        },
         #[cfg(feature = "ble")]
         ble: Ble {
             mpsl,
             sdc: nrf_sdc::Peripherals::new(
-                p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23,
-                p.PPI_CH24, p.PPI_CH25, p.PPI_CH26, p.PPI_CH27, p.PPI_CH28, p.PPI_CH29,
+                p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23, p.PPI_CH24,
+                p.PPI_CH25, p.PPI_CH26, p.PPI_CH27, p.PPI_CH28, p.PPI_CH29,
             ),
         },
     }

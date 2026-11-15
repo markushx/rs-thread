@@ -1137,6 +1137,7 @@ dependencies = [
  "embedded-storage-async",
  "nrf-mpsl",
  "nrf-sdc",
+ "opentrust-cli",
  "opentrust-core",
  "opentrust-embassy",
  "opentrust-flash",
@@ -1170,6 +1171,22 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "opentrust-cli"
+version = "0.1.0"
+dependencies = [
+ "heapless",
+ "opentrust-core",
+ "opentrust-dns",
+ "opentrust-instance",
+ "opentrust-mesh",
+ "opentrust-meshcop",
+ "opentrust-mle",
+ "opentrust-net",
+ "opentrust-platform",
+ "rand_core 0.10.1",
+]
 
 [[package]]
 name = "opentrust-coap"

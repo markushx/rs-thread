@@ -25,6 +25,23 @@ leader = []
 # MPSL handle (see `Board::ble`). Needs `radio-nrf802154`.
 ble = ["radio-nrf802154", "dep:nrf-sdc", "dep:nrf-mpsl"]
 
+# CLI firmware (`cli` binary): the OpenThread-compatible CLI over the DK's VCOM
+# UART. `cli-all` builds every command group; pick single groups for size.
+cli = ["dep:opentrust-cli"]
+cli-dataset = ["cli", "opentrust-cli/dataset"]
+cli-scan = ["cli", "opentrust-cli/scan"]
+cli-ping = ["cli", "opentrust-cli/ping"]
+cli-tables = ["cli", "opentrust-cli/tables"]
+cli-netdata = ["cli", "opentrust-cli/netdata"]
+cli-srp = ["cli", "opentrust-cli/srp"]
+cli-dns = ["cli", "opentrust-cli/dns"]
+cli-udp = ["cli", "opentrust-cli/udp"]
+cli-commissioning = ["cli", "opentrust-cli/commissioning"]
+cli-all = [
+    "cli-dataset", "cli-scan", "cli-ping", "cli-tables", "cli-netdata", "cli-srp", "cli-dns",
+    "cli-udp", "cli-commissioning",
+]
+
 # Test aid: behave as if Button 1 were held at boot (factory reset on every start).
 test-factory-reset = []
 
@@ -34,6 +51,7 @@ opentrust-platform = { path = "../../crates/opentrust-platform", features = ["de
 opentrust-instance = { path = "../../crates/opentrust-instance", default-features = false, features = ["ftd", "defmt"] }
 opentrust-embassy = { path = "../../crates/opentrust-embassy", default-features = false, features = ["ftd", "defmt"] }
 opentrust-flash = { path = "../../crates/opentrust-flash", features = ["defmt"] }
+opentrust-cli = { path = "../../crates/opentrust-cli", default-features = false, features = ["ftd"], optional = true }
 opentrust-nrf = { path = "../../crates/opentrust-nrf", default-features = false, features = ["defmt"] }
 
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
@@ -52,6 +70,11 @@ panic-probe = { version = "1", features = ["print-defmt"] }
 static_cell = "2"
 nrf-sdc = { version = "0.4", default-features = false, features = ["nrf52840", "peripheral"], optional = true }
 nrf-mpsl = { version = "0.4", default-features = false, features = ["nrf52840"], optional = true }
+
+[[bin]]
+name = "cli"
+path = "src/bin/cli.rs"
+required-features = ["cli"]
 
 [profile.release]
 opt-level = "s"
