@@ -277,7 +277,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// A data poll from a sleepy child: release its next frame.
     #[cfg(feature = "ftd")]
-    fn handle_poll(&mut self, _now: Instant, src: Address) {
+    fn handle_poll(&mut self, now: Instant, src: Address) {
+        match src {
+            Address::Short(s) => self.mle.child_polled(Some(Rloc16(s.0)), None, now),
+            Address::Extended(e) => self.mle.child_polled(None, Some(&e), now),
+            Address::None => {}
+        }
         let mut notes = FwdNotes::default();
         let _ = with_routing!(self, |r| {
             let mut sink = Sink {
@@ -657,7 +662,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             };
             busy = true;
             let len = tx.len;
-            self.send_ip6_mpl(now, &out[..len]);
+            self.send_ip6_mpl(now, &out[..len], tx.retransmission);
         }
         busy
     }
@@ -737,8 +742,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.send_ip6_with(now, dg, security.into(), false)
     }
 
-    fn send_ip6_mpl(&mut self, now: Instant, dg: &[u8]) {
-        let _ = self.send_ip6_with(now, dg, LinkSecurity::Network, true);
+    fn send_ip6_mpl(&mut self, now: Instant, dg: &[u8], retransmission: bool) {
+        let _ = self.send_ip6_with(now, dg, LinkSecurity::Network, retransmission);
     }
 
     fn send_ip6_with(

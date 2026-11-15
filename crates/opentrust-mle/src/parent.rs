@@ -353,6 +353,29 @@ impl<const C: usize> Mle<C> {
         }
     }
 
+    /// A data poll from the child at `rloc16` (or at `ext` while it has no
+    /// RLOC16 confirmed yet) arrived: the child is alive (OT
+    /// `DataPollHandler::HandleDataPoll` `SetLastHeard`).
+    pub fn child_polled(
+        &mut self,
+        rloc16: Option<Rloc16>,
+        ext: Option<&opentrust_core::types::ExtAddress>,
+        now: Instant,
+    ) {
+        let c = match (rloc16, ext) {
+            (Some(r), _) => self
+                .children
+                .find_by_rloc_mut(r, StateFilter::AnyExceptInvalid),
+            (None, Some(e)) => self
+                .children
+                .find_by_ext_mut(e, StateFilter::AnyExceptInvalid),
+            (None, None) => None,
+        };
+        if let Some(c) = c {
+            c.neighbor.last_heard = now;
+        }
+    }
+
     /// Something other than a supervision message was queued for the child
     /// (resets its supervision counter; OT
     /// `ChildSupervisor::UpdateOnSend`).

@@ -238,11 +238,69 @@ fn ot_sleepy_child_attaches_to_opentrust_leader() {
     let a1 = mesh_local(sim, 1);
     let a2 = mesh_local(sim, 2);
     assert!(pings(sim, 2, &a1), "ping {a1} from the sleepy child");
-    sim.send(1, &format!("ping {a2} 8 1 1 64 8"));
-    sim.run(10.0);
+    // Fragmented datagrams are released poll by poll.
+    for size in [8, 100, 400, 800, 1232] {
+        sim.send(1, &format!("ping {a2} {size} 1 1 64 8"));
+        sim.run(10.0);
+        let out = sim.drain(1);
+        assert!(
+            out.iter().any(|l| l.contains("1 packets received")),
+            "ping of {size} bytes: {out:?}"
+        );
+    }
+}
+
+/// An OpenThread leader pings a sleepy OpenThread child of an OpenTrust
+/// router with datagrams up to the IPv6 minimum MTU (forwarded, fragmented
+/// and queued indirectly).
+#[test]
+fn ot_leader_pings_ot_sleepy_child_of_opentrust_router_with_large_datagrams() {
+    let Some(mut e) = env("big-rev", &[(1, false), (2, true), (3, false)]) else {
+        return;
+    };
+    form_and_join(&mut e, 1, 2);
+    let sim = &mut e.sim;
+    let tlv = ok(sim, 1, "dataset active -x")[0].clone();
+    let ext1 = ok(sim, 1, "extaddr")[0].clone();
+    let ext2 = ok(sim, 2, "extaddr")[0].clone();
+    let ext3 = ok(sim, 3, "extaddr")[0].clone();
+    ok(sim, 3, &format!("macfilter addr add {ext2}"));
+    ok(sim, 3, "macfilter addr allowlist");
+    ok(sim, 1, &format!("macfilter addr add {ext2}"));
+    ok(sim, 1, "macfilter addr allowlist");
+    ok(sim, 2, &format!("macfilter addr add {ext1}"));
+    ok(sim, 2, &format!("macfilter addr add {ext3}"));
+    ok(sim, 2, "macfilter addr allowlist");
+    ok(sim, 3, "mode -");
+    ok(sim, 3, "childtimeout 6");
+    ok(sim, 3, &format!("dataset set active {tlv}"));
+    ok(sim, 3, "ifconfig up");
+    ok(sim, 3, "thread start");
+    sim.run(30.0);
+    assert_eq!(state(sim, 3), "child");
+    let a3 = ok(sim, 3, "ipaddr mleid")[0].clone();
+    // The child's polls keep it alive although its timeout is short.
+    sim.run(20.0);
+    let l1 = mesh_local(sim, 1);
+    assert!(pings(sim, 3, &l1), "ping the leader from the sleepy child");
+    // The realm-local all Thread nodes multicast reaches the sleepy child
+    // (fragmented, queued for its polls) and the router.
+    let g: Vec<&str> = a3.split(':').take(4).collect();
+    let mcast = format!("ff33:40:{}:{}:{}:{}:0:1", g[0], g[1], g[2], g[3]);
+    sim.send(1, &format!("ping {mcast} 256 1 1 64 8"));
+    sim.run(12.0);
     let out = sim.drain(1);
     assert!(
-        out.iter().any(|l| l.contains("1 packets received")),
-        "ping of the sleepy child: {out:?}"
+        out.iter().any(|l| l.contains("2 packets received")),
+        "multicast ping: {out:?}"
     );
+    for size in [8, 100, 400, 800, 1232] {
+        sim.send(1, &format!("ping {a3} {size} 1 1 64 5"));
+        sim.run(8.0);
+        let out = sim.drain(1);
+        assert!(
+            out.iter().any(|l| l.contains("1 packets received")),
+            "ping of {size} bytes: {out:?}"
+        );
+    }
 }
