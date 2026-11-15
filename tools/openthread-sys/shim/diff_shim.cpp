@@ -29,6 +29,7 @@
 #include "thread/key_manager.hpp"
 #include "thread/lowpan.hpp"
 #include "thread/mle.hpp"
+#include "thread/mle_tlvs.hpp"
 #include "thread/network_data_leader.hpp"
 
 using namespace ot;
@@ -741,6 +742,106 @@ int diff_netdata(const uint8_t *tlvs, uint16_t len, int mode, uint8_t *out, uint
         n += snprintf(o + n, cap - n, " stable=%d\n", cx.mStable);
     }
     return n;
+}
+
+// ---------------------------------------------------------------------------
+// MLE TLVs
+// ---------------------------------------------------------------------------
+
+// `Tlv::FindTlvValueOffsetRange`: the value of the first TLV of `type` in
+// `stream` (a message holding just the TLVs). Returns the OT error (0 found,
+// 23 not found, 6 parse).
+int diff_mle_find(const uint8_t *stream, uint16_t len, uint8_t type, uint8_t *out, uint16_t *out_len)
+{
+    Message    *message = Inst().Get<MessagePool>().Allocate(Message::kTypeIp6);
+    OffsetRange range;
+    Error       error;
+
+    if (message == nullptr)
+    {
+        return -1;
+    }
+    message->AppendBytes(stream, len);
+    error = Tlv::FindTlvValueOffsetRange(*message, type, range);
+    if (error == kErrorNone)
+    {
+        message->ReadBytes(range.GetOffset(), out, range.GetLength());
+        *out_len = range.GetLength();
+    }
+    message->Free();
+    return static_cast<int>(error);
+}
+
+// Typed reads of fixed-size unsigned TLVs (`Tlv::Find<UintTlvInfo>`): the
+// error of the read and, on success, the value.
+int diff_mle_uint(const uint8_t *stream, uint16_t len, uint8_t type, uint32_t *value)
+{
+    Message *message = Inst().Get<MessagePool>().Allocate(Message::kTypeIp6);
+    Error    error   = kErrorInvalidArgs;
+    uint8_t  v8      = 0;
+    uint16_t v16     = 0;
+    uint32_t v32     = 0;
+
+    if (message == nullptr)
+    {
+        return -1;
+    }
+    message->AppendBytes(stream, len);
+    switch (type)
+    {
+    case Mle::Tlv::kSourceAddress:
+        error = Tlv::Find<Mle::SourceAddressTlv>(*message, v16);
+        *value = v16;
+        break;
+    case Mle::Tlv::kMode:
+        error = Tlv::Find<Mle::ModeTlv>(*message, v8);
+        *value = v8;
+        break;
+    case Mle::Tlv::kTimeout:
+        error = Tlv::Find<Mle::TimeoutTlv>(*message, v32);
+        *value = v32;
+        break;
+    case Mle::Tlv::kLinkFrameCounter:
+        error = Tlv::Find<Mle::LinkFrameCounterTlv>(*message, v32);
+        *value = v32;
+        break;
+    case Mle::Tlv::kMleFrameCounter:
+        error = Tlv::Find<Mle::MleFrameCounterTlv>(*message, v32);
+        *value = v32;
+        break;
+    case Mle::Tlv::kAddress16:
+        error = Tlv::Find<Mle::Address16Tlv>(*message, v16);
+        *value = v16;
+        break;
+    case Mle::Tlv::kLinkMargin:
+        error = Tlv::Find<Mle::LinkMarginTlv>(*message, v8);
+        *value = v8;
+        break;
+    case Mle::Tlv::kVersion:
+        error = Tlv::Find<Mle::VersionTlv>(*message, v16);
+        *value = v16;
+        break;
+    case Mle::Tlv::kPanId:
+        error = Tlv::Find<Mle::PanIdTlv>(*message, v16);
+        *value = v16;
+        break;
+    case Mle::Tlv::kSupervisionInterval:
+        error = Tlv::Find<Mle::SupervisionIntervalTlv>(*message, v16);
+        *value = v16;
+        break;
+    case Mle::Tlv::kCslTimeout:
+        error = Tlv::Find<Mle::CslTimeoutTlv>(*message, v32);
+        *value = v32;
+        break;
+    case Mle::Tlv::kXtalAccuracy:
+        error = Tlv::Find<Mle::XtalAccuracyTlv>(*message, v16);
+        *value = v16;
+        break;
+    default:
+        break;
+    }
+    message->Free();
+    return static_cast<int>(error);
 }
 
 // Secures a built frame in place with `TxFrame::ProcessTransmitAesCcm`.

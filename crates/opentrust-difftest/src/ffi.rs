@@ -76,6 +76,8 @@ unsafe extern "C" {
     fn diff_mac_secure(key: *const u8, ext: *const u8, psdu: *mut u8, len: u16) -> i32;
     fn diff_dataset_roundtrip(tlvs: *const u8, len: u8, out: *mut u8, out_len: *mut u8) -> i32;
     fn diff_netdata(tlvs: *const u8, len: u16, mode: i32, out: *mut u8, cap: u16) -> i32;
+    fn diff_mle_find(stream: *const u8, len: u16, ty: u8, out: *mut u8, out_len: *mut u16) -> i32;
+    fn diff_mle_uint(stream: *const u8, len: u16, ty: u8, value: *mut u32) -> i32;
     fn diff_mac_parse(psdu: *const u8, len: u16, info: *mut MacInfo);
 }
 
@@ -430,6 +432,33 @@ impl Ot {
             out.truncate(n as usize);
             out
         })
+    }
+
+    /// `Tlv::FindTlvValueOffsetRange`: `Ok(value)` or `Err(ot_error)`.
+    pub fn mle_find(&self, stream: &[u8], ty: u8) -> Result<Vec<u8>, i32> {
+        let mut out = vec![0u8; 2048];
+        let mut n = 0u16;
+        let e = unsafe {
+            diff_mle_find(
+                stream.as_ptr(),
+                stream.len() as u16,
+                ty,
+                out.as_mut_ptr(),
+                &mut n,
+            )
+        };
+        if e != 0 {
+            return Err(e);
+        }
+        out.truncate(n as usize);
+        Ok(out)
+    }
+
+    /// Typed read of a fixed-size unsigned MLE TLV.
+    pub fn mle_uint(&self, stream: &[u8], ty: u8) -> Result<u32, i32> {
+        let mut v = 0u32;
+        let e = unsafe { diff_mle_uint(stream.as_ptr(), stream.len() as u16, ty, &mut v) };
+        if e == 0 { Ok(v) } else { Err(e) }
     }
 
     pub fn mac_parse(&self, psdu: &[u8]) -> MacInfo {
