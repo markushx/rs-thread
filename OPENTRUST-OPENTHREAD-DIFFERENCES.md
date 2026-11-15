@@ -813,3 +813,7 @@ The OpenTrust node for OpenThread's virtual-time simulation platform differs fro
 - **Settings** are kept in `tmp/<PORT_OFFSET>_<node id>.flash` (own record format, not OT's flash layout). `reset` re-creates the node in the same process; virtual time continues.
 - **Console.** The terminal is not in raw mode, the node echoes the typed line like the OT UART CLI; `exit` ends the process.
 - **Sleepy children of an OpenTrust parent.** The Child ID Response goes out directly to the child's extended address, as long as the child is not "confirmed"; an `ot-cli-ftd` SED has its radio off after the Child ID Request and polls, so it does not attach to an OpenTrust router (see `docs/test-status.md`).
+
+## Matter light (`examples/nrf52840-light`)
+
+- **Early acknowledgement of CASE Sigma1 and Sigma3.** The responder acknowledges both messages at once (standalone MRP ack, then a 30 ms pause so the transport and the Thread driver send it) before the crypto starts. rs-matter 95e4110 has this as a TODO (`MRP_STANDALONE_ACK_TIMEOUT_MS`) and acknowledges only with the reply; on the Cortex-M4 (software P-256, no executor yield during the crypto) the reply came 1.3 to 1.5 s later and chip-tool (MRP 500/300 ms) retransmitted Sigma1 once or twice and Sigma3 up to three times. The Matter SDK acknowledges after 200 ms if no reply is ready; this stack acknowledges unconditionally (one extra 26 byte frame per handshake). Implemented as a patched copy of `rs-matter-sc` in `third_party/rs-matter-sc` (see its `README.OPENTRUST.md`), taken in through `[patch]`.

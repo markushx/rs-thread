@@ -80,6 +80,28 @@ mod tests {
         assert_eq!(kv.load(7, &mut buf).unwrap(), None);
     }
 
+    /// A handler key in the vendor range (the OnOff cluster of the light
+    /// keeps its state there) survives alongside the stack's own keys.
+    #[test]
+    fn vendor_key_round_trip() {
+        use rs_matter::persist::VENDOR_KEYS_START;
+
+        let shared = Shared::<256, 4>::new();
+        let key = VENDOR_KEYS_START + 0x10;
+        let mut kv = FlashKv::new(&shared);
+        kv.store(3, b"fabrics", &mut []).unwrap();
+        kv.store(key, &[1, 2, 3], &mut []).unwrap();
+        kv.store(key, &[4, 5, 6, 7], &mut []).unwrap();
+        // A second handle over the same image sees the latest value.
+        let mut other = FlashKv::new(&shared);
+        let mut buf = [0u8; 16];
+        assert_eq!(
+            other.load(key, &mut buf).unwrap(),
+            Some(&[4u8, 5, 6, 7][..])
+        );
+        assert_eq!(other.load(3, &mut buf).unwrap(), Some(&b"fabrics"[..]));
+    }
+
     #[test]
     fn small_buffer_and_full_image_are_errors() {
         let shared = Shared::<32, 4>::new();

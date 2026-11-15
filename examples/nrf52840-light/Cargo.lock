@@ -3340,7 +3340,6 @@ dependencies = [
 [[package]]
 name = "rs-matter-sc"
 version = "0.4.1"
-source = "git+https://github.com/project-chip/rs-matter?rev=95e41108f0a0e6ac896f0e7be3f4eecb951ed10a#95e41108f0a0e6ac896f0e7be3f4eecb951ed10a"
 dependencies = [
  "defmt 1.2.0",
  "num",
