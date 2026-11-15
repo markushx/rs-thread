@@ -233,7 +233,8 @@ where
             self.done(NetworkCommissioningStatusEnum::Success);
             return Ok(());
         }
-        if !(same && self.ot.role() != Role::Disabled) {
+        let running = same && self.ot.role() != Role::Disabled;
+        if !running {
             self.ot.thread_stop();
             if let Err(e) = self
                 .ot
@@ -251,8 +252,16 @@ where
                 Ok(())
             }
             Either::Second(_) => {
-                // Give the radio back; a later `connect` starts again.
-                self.ot.thread_stop();
+                // A node that already ran this dataset keeps going: a
+                // restored router needs up to half a minute of Link
+                // Requests before it even starts a full attach (the stored
+                // parent may be gone, or the border router renewed its
+                // mesh-local prefix and PSKc), and a restart here would
+                // begin that restore anew every time. A start made by this
+                // call gives the radio back; a later `connect` starts again.
+                if !running {
+                    self.ot.thread_stop();
+                }
                 self.done(NetworkCommissioningStatusEnum::OtherConnectionFailure);
                 Err(NetCtlError::OtherConnectionFailure)
             }

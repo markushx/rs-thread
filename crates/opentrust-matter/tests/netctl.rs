@@ -218,3 +218,52 @@ fn connect_to_the_running_dataset_does_not_restart_thread() {
         limit(),
     );
 }
+
+/// A timed-out `connect` with the dataset the node runs leaves Thread
+/// running: the attach (or the restore of the stored role) goes on and the
+/// next `connect` finds the node attached.
+#[test]
+fn connect_timeout_with_the_running_dataset_keeps_attaching() {
+    let clks = [clock(), clock()];
+    let air = Air::new(2);
+    let pend = [Cell::new(None), Cell::new(None)];
+    let res0: Res<'_> = Res::new(instance(1), &clks[0]);
+    let res1: Res<'_> = Res::new(instance(2), &clks[1]);
+    let ots = [Ot::new(&res0), Ot::new(&res1)];
+    let ds = make_dataset(ots[0]);
+    let tasks = vec![
+        run_task(ots[0], &air, 0, &clks[0], &pend[0]),
+        run_task(ots[1], &air, 1, &clks[1], &pend[1]),
+    ];
+    drive(
+        &[&clks[0], &clks[1]],
+        &[&pend[0], &pend[1]],
+        tasks,
+        async {
+            // Nobody to attach to yet.
+            start_with(ots[1], &ds, false);
+            let ctl = ThreadNetCtl::new(ots[1]).with_connect_timeout(5);
+            let r = ctl
+                .connect(&WirelessCreds::Thread {
+                    dataset_tlv: ds.as_bytes(),
+                })
+                .await;
+            assert!(
+                matches!(r, Err(NetCtlError::OtherConnectionFailure)),
+                "{r:?}"
+            );
+            assert_ne!(ots[1].role(), Role::Disabled);
+
+            start_with(ots[0], &ds, true);
+            wait_role(ots[0], Role::Leader).await;
+            let ctl = ThreadNetCtl::new(ots[1]).with_connect_timeout(60);
+            ctl.connect(&WirelessCreds::Thread {
+                dataset_tlv: ds.as_bytes(),
+            })
+            .await
+            .unwrap();
+            assert!(matches!(ots[1].role(), Role::Child | Role::Router));
+        },
+        limit(),
+    );
+}
