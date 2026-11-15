@@ -365,6 +365,7 @@ impl<const C: usize> Mle<C> {
             return;
         }
         if self.has_acceptable_parent_candidate(env) && self.send_child_id_request(env).is_ok() {
+            opentrust_core::info!("MLE tx: Child ID Request");
             self.attach.state = AttachState::ChildIdRequest;
             self.attach.deadline = Some(now.saturating_add(CHILD_ID_RESPONSE_TIMEOUT));
             return;
@@ -530,6 +531,7 @@ impl<const C: usize> Mle<C> {
         };
         let mode = self.cfg.mode;
         let challenge = self.attach.challenge;
+        opentrust_core::info!("MLE tx: Parent Request, scan mask {}", scan);
         self.send(
             env,
             ipv6::LINK_LOCAL_ALL_ROUTERS,
@@ -661,6 +663,7 @@ impl<const C: usize> Mle<C> {
                 AttachMode::BetterParent | AttachMode::SelectedParent => true,
             };
             if !fits {
+                opentrust_core::info!("MLE rx: Parent Response ignored (attach mode)");
                 return Ok(RxClass::Authoritative);
             }
         }

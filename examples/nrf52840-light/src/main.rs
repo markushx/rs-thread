@@ -229,16 +229,34 @@ fn stack_high_water() -> usize {
     top - p as usize
 }
 
-/// EUI-64 from the factory-programmed device ID (locally administered,
-/// unicast).
-fn ext_address() -> ExtAddress {
-    let ficr = embassy_nrf::pac::FICR;
-    let lo = ficr.deviceid(0).read();
-    let hi = ficr.deviceid(1).read();
+/// KV key of the persisted MAC extended address.
+const EXT_ADDRESS_KEY: u16 = rs_matter::persist::VENDOR_KEYS_START + 0x11;
+
+/// The MAC extended address: random, generated when none is stored (first
+/// start, after a factory reset) and kept in the KV store afterwards.
+///
+/// A fixed address derived from the device ID would stay the same across a
+/// factory reset, while the MLE and link frame counters restart at zero; a
+/// peer that still holds the device as a neighbor then drops its frames as
+/// replays (OpenThread picks a random extended address as well).
+fn ext_address(rng: &mut impl rand_core::Rng) -> ExtAddress {
+    let stored = KV_IMAGE.with(|i| {
+        let mut a = [0u8; 8];
+        match i.get(EXT_ADDRESS_KEY, 0, &mut a) {
+            Ok(8) => Some(a),
+            _ => None,
+        }
+    });
+    if let Some(a) = stored {
+        return ExtAddress(a);
+    }
     let mut a = [0u8; 8];
-    a[..4].copy_from_slice(&hi.to_be_bytes());
-    a[4..].copy_from_slice(&lo.to_be_bytes());
+    rng.fill_bytes(&mut a);
+    // Locally administered, unicast.
     a[0] = (a[0] | 0x02) & !0x01;
+    if KV_IMAGE.with(|i| i.set(EXT_ADDRESS_KEY, &a)).is_err() {
+        defmt::warn!("cannot store the extended address");
+    }
     ExtAddress(a)
 }
 
@@ -253,7 +271,7 @@ async fn main(spawner: Spawner) {
         unsafe { HEAP.init(core::ptr::addr_of_mut!(HEAP_MEM) as usize, HEAP_SIZE) }
     }
     let Board {
-        rng,
+        mut rng,
         rng2,
         led1,
         mut radio,
@@ -287,7 +305,7 @@ async fn main(spawner: Spawner) {
         }
     });
     let caps = radio.init().await.unwrap();
-    let ext = ext_address();
+    let ext = ext_address(&mut rng);
     info!("ext address {:x}", ext.0);
 
     // Thread: built in place in static memory.
