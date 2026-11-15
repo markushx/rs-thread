@@ -723,7 +723,18 @@ mod ot_vector_tests {
     /// Anycast Service TLV (`0x5c` service data) with one Server sub-TLV
     /// of RLOC16 `0x5000 + idx`, optionally with a version byte.
     fn svc(id: u8, seq: u8, idx: u8, version: Option<u8>) -> StdVec<u8> {
-        let mut v = std::vec![0x0b, 0x08, 0x80 | id, 0x02, 0x5c, seq, 0x0d, 0x02, 0x50, idx];
+        let mut v = std::vec![
+            0x0b,
+            0x08,
+            0x80 | id,
+            0x02,
+            0x5c,
+            seq,
+            0x0d,
+            0x02,
+            0x50,
+            idx
+        ];
         if let Some(ver) = version {
             v[1] = 0x09;
             v[7] = 0x03;

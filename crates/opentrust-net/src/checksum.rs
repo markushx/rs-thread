@@ -239,4 +239,49 @@ mod tests {
         assert_eq!(update(&SRC, &DST, PROTO_UDP, &mut p), Err(Error::Parse));
         assert_eq!(update(&SRC, &DST, 6, &mut p), Err(Error::InvalidArgs));
     }
+
+    fn message_checksum_case(src: &str, dst: &str, proto: u8, min: usize) {
+        let src: Ipv6Addr = src.parse().unwrap();
+        let dst: Ipv6Addr = dst.parse().unwrap();
+        let mut seed = 0x1234_5678u32;
+        let mut next = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 16) as u8
+        };
+        for size in min..=3 * 128 + 24 {
+            let mut m: std::vec::Vec<u8> = (0..size).map(|_| next()).collect();
+            let off = checksum_offset(proto).unwrap();
+            m[off] = 0;
+            m[off + 1] = 0;
+            update(&src, &dst, proto, &mut m).unwrap();
+            assert!(m[off] != 0 || m[off + 1] != 0);
+            assert!(verify(&src, &dst, proto, &m));
+            // Corrupt one byte: the checksum must no longer be accepted.
+            let at = usize::from(next()) % size;
+            m[at] ^= 0x01 << (next() % 8);
+            assert!(!verify(&src, &dst, proto, &m));
+        }
+    }
+
+    /// OpenThread `tests/unit/test_checksum.cpp` `TestUdpMessageChecksum`.
+    #[test]
+    fn test_udp_message_checksum() {
+        message_checksum_case(
+            "fd00:1122:3344:5566:7788:99aa:bbcc:ddee",
+            "fd01:2345:6789:abcd:ef01:2345:6789:abcd",
+            PROTO_UDP,
+            8,
+        );
+    }
+
+    /// OpenThread `test_checksum.cpp` `TestIcmp6MessageChecksum`.
+    #[test]
+    fn test_icmp6_message_checksum() {
+        message_checksum_case(
+            "fd00:feef:dccd:baab:9889:7667:5444:3223",
+            "fd01:abab:beef:cafe:1234:5678:9abc:0",
+            PROTO_ICMP6,
+            4,
+        );
+    }
 }

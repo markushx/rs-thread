@@ -293,3 +293,50 @@ fn test_preference() {
         assert_eq!(preference_from_bits(0x2 | hi), 0);
     }
 }
+
+/// OpenThread `tests/unit/test_ip_address.cpp` `TestIp6Prefix` (the
+/// matching and containment part; OT's ordering and `IsLinkLocal()` style
+/// helpers have no counterpart).
+#[test]
+fn test_ip6_prefix() {
+    use core::net::Ipv6Addr;
+    let prefixes: [[u8; 16]; 3] = [
+        [
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
+            0xcd, 0xef,
+        ],
+        [
+            0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55,
+            0xaa, 0x55,
+        ],
+        [0xff; 16],
+    ];
+    for bytes in prefixes {
+        let a1 = Ipv6Addr::from(bytes);
+        let mut b2 = bytes;
+        b2[0] ^= 0x80;
+        let a2 = Ipv6Addr::from(b2);
+        for len in 1..=128u8 {
+            let p = NetPrefix::from_addr(&a1, len).unwrap();
+            assert_eq!(p.len(), len);
+            assert!(p.contains(&a1));
+            assert!(!p.contains(&a2));
+            for sub_len in 1..=len {
+                let sub = NetPrefix::from_addr(&a1, sub_len).unwrap();
+                // OT `prefix.ContainsPrefix(sub)` is `sub.contains_prefix(&prefix)`
+                // here (the receiver is the shorter prefix).
+                assert!(sub.contains_prefix(&p));
+                assert_eq!(p == sub, sub_len == len);
+                if sub_len < len {
+                    assert!(!p.contains_prefix(&sub));
+                }
+            }
+            for bit in 0..len {
+                let mut b = bytes;
+                b[usize::from(bit / 8)] ^= 0x80 >> (bit & 7);
+                let p2 = NetPrefix::from_addr(&Ipv6Addr::from(b), len).unwrap();
+                assert_ne!(p, p2);
+            }
+        }
+    }
+}
