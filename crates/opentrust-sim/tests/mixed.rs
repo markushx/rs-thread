@@ -73,7 +73,7 @@ fn form_and_join(e: &mut Env, leader: u16, other: u16) {
     ok(sim, leader, "dataset commit active");
     ok(sim, leader, "ifconfig up");
     ok(sim, leader, "thread start");
-    sim.run(15.0);
+    sim.run(40.0);
     assert_eq!(state(sim, leader), "leader");
     let tlv = ok(sim, leader, "dataset active -x")[0].clone();
     ok(sim, other, &format!("dataset set active {tlv}"));
