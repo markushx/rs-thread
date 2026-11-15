@@ -70,6 +70,10 @@ embassy-time-driver = { version = "0.2", default-features = false }
 embassy-time-queue-utils = { version = "0.3", default-features = false }
 critical-section = "1.1"
 
+# rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.OPENTRUST.md).
+[patch."https://github.com/project-chip/rs-matter"]
+rs-matter-sc = { path = "third_party/rs-matter-sc" }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_debug_implementations = "warn"

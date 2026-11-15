@@ -58,6 +58,10 @@ rand_core = { version = "0.10", default-features = false }
 rand_core09 = { package = "rand_core", version = "0.9", default-features = false, optional = true }
 nrf-sdc = { version = "0.4", default-features = false, features = ["nrf52840", "peripheral", "defmt"], optional = true }
 
+# rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.OPENTRUST.md).
+[patch."https://github.com/project-chip/rs-matter"]
+rs-matter-sc = { path = "../../third_party/rs-matter-sc" }
+
 [profile.release]
 opt-level = "s"
 lto = "fat"
