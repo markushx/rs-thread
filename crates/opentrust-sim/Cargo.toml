@@ -50,5 +50,9 @@ opentrust-dtls = { workspace = true }
 p256 = { workspace = true, features = ["ecdsa"] }
 sha2 = { workspace = true }
 
+[[test]]
+name = "thread_cert"
+harness = false
+
 [lints]
 workspace = true

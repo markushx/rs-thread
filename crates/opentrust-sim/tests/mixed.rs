@@ -27,8 +27,8 @@ fn env(name: &str, kinds: &[(u16, bool)]) -> Option<Env> {
         eprintln!("skipping {name}: opentrust-cli-vt not available");
         None
     })?;
-    let offset = 100 + (std::process::id() % 1000) as u16 + NEXT.fetch_add(1, Ordering::SeqCst) * 7;
-    let offset = offset % 1500;
+    let offset = (std::process::id() % 250) as u16 + NEXT.fetch_add(1, Ordering::SeqCst) * 7;
+    let offset = 1 + offset % 250;
     let mut sim = VtSim::new(offset).expect("simulator socket");
     let dir = std::env::temp_dir().join(format!("opentrust-mixed-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
