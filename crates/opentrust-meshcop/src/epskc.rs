@@ -186,7 +186,7 @@ const P: [[u8; 10]; 8] = [
     [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
     [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
     [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
-    [7, 0, 4, 2, 9, 5, 3, 1, 8, 6],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
 ];
 const INV: [u8; 10] = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9];
 
@@ -239,6 +239,37 @@ mod tests {
             Duration::from_secs(5)
         );
         assert_eq!(effective_timeout(Duration::from_secs(3600)), MAX_TIMEOUT);
+    }
+
+    /// OpenThread `tests/unit/test_checksum.cpp` `TestVerhoeffChecksum`.
+    #[test]
+    fn test_verhoeff_checksum() {
+        let examples = [
+            "307318421",
+            "487300178",
+            "123455672",
+            "0",
+            "15",
+            "999999994",
+            "000000001",
+            "100000000",
+            "2363",
+        ];
+        for ex in examples {
+            let b = ex.as_bytes();
+            assert!(verhoeff_is_valid(b), "{ex}");
+            let (body, last) = b.split_at(b.len() - 1);
+            assert_eq!(verhoeff_check_digit(body), Some(last[0]), "{ex}");
+            let mut bad = b.to_vec();
+            let n = bad.len() - 1;
+            bad[n] = if last[0] == b'0' { b'9' } else { last[0] - 1 };
+            assert!(!verhoeff_is_valid(&bad), "{ex}");
+        }
+        // Invalid formats are rejected (OT: `kErrorInvalidArgs`).
+        for bad in ["307 318421", "307318421 ", " 307318421", "ABCDE"] {
+            assert!(!verhoeff_is_valid(bad.as_bytes()), "{bad}");
+            assert_eq!(verhoeff_check_digit(bad.as_bytes()), None, "{bad}");
+        }
     }
 
     #[test]
