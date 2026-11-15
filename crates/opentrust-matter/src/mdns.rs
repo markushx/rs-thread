@@ -60,6 +60,10 @@ const MAX_NAME: usize = 128;
 /// Delay before a failed resolve / browse is retried while rs-matter still
 /// waits for it.
 const RETRY_MS: u64 = 1000;
+/// Longest wait between attempts to register a service the SRP client still
+/// holds (doubling from [`RETRY_MS`]): the client may hold it for long, for
+/// instance while updates to the server go unanswered.
+const PENDING_RETRY_MAX_MS: u64 = 32_000;
 /// How often the SRP client is checked for a failed update once the host is
 /// registered.
 const FAILURE_POLL_MS: u64 = 5000;
@@ -365,6 +369,7 @@ where
         let guard = RemoveOnDrop(self);
 
         let advertise = async {
+            let mut pending_wait = RETRY_MS;
             loop {
                 guard.0.handle_failure(mac);
                 let pending = guard.0.sync_services(matter)?;
@@ -372,12 +377,17 @@ where
                 let registered =
                     ot.with(|i, _| i.srp_host_state() == opentrust_instance::ItemState::Registered);
                 let wait = if pending {
-                    RETRY_MS
+                    let w = pending_wait;
+                    pending_wait = (pending_wait * 2).min(PENDING_RETRY_MAX_MS);
+                    w
                 } else if registered {
                     FAILURE_POLL_MS
                 } else {
                     REGISTERING_POLL_MS
                 };
+                if !pending {
+                    pending_wait = RETRY_MS;
+                }
                 select(
                     matter.transport().wait_mdns(),
                     Timer::after(Duration::from_millis(wait)),
