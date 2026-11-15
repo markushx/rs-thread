@@ -538,6 +538,16 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
             match resolver.resolve(now, dst, true, &MleResolverEnv(mle), events) {
                 Ok(Resolution::Resolved(rloc)) => rloc,
                 Ok(Resolution::QueryPending) => return Err(RouteError::AddressQuery),
+                // The query failed a moment ago (e.g. its source is not
+                // mesh-local at the parent, after a Dataset with another
+                // mesh-local prefix but the same timestamp): the parent
+                // resolves for its child, as it does for an MTD.
+                Err(Error::Drop) if mle.role() == Role::Child => {
+                    let p = mle.parent().ok_or(RouteError::Drop)?;
+                    return Ok(Route::Direct {
+                        dst: MacDest::Short(p.router.neighbor.rloc16),
+                    });
+                }
                 Err(_) => return Err(RouteError::NoRoute),
             }
         } else {

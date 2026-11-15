@@ -1,8 +1,10 @@
 mod common;
 
+use core::net::{Ipv6Addr, SocketAddrV6};
+
 use common::*;
 use opentrust_core::types::{Prefix64, Pskc};
-use opentrust_instance::{Dataset, Role};
+use opentrust_instance::{Dataset, Event, Role, UdpSendOpts};
 use opentrust_sim::{Kind, Network};
 
 /// The dataset of a restarted border router that ran `dataset init new`
@@ -68,4 +70,75 @@ fn restored_router_attaches_to_leader_with_renewed_dataset() {
         net.node(1).role()
     );
     assert_eq!(net.node(1).partition_id(), net.node(2).partition_id());
+}
+
+/// With a mesh-local prefix that differs from the parent's, the Address
+/// Queries of an FTD child are dropped by the leader (their source is not
+/// mesh-local there). Datagrams to on-mesh addresses then go through the
+/// parent, as for an MTD child.
+#[test]
+fn child_with_a_renewed_prefix_reaches_on_mesh_addresses_via_its_parent() {
+    use opentrust_instance::{BrFlags, NetPrefix, OnMeshPrefixConfig};
+    let mut net = run(Kind::Router, false);
+    let mut p = [0u8; 8];
+    p[..4].copy_from_slice(&[0xfd, 0x11, 0x00, 0x69]);
+    net.with(2, |n, _| {
+        n.add_on_mesh_prefix(OnMeshPrefixConfig {
+            prefix: NetPrefix::new(&p, 64).unwrap(),
+            flags: BrFlags::default()
+                .with(BrFlags::ON_MESH, true)
+                .with(BrFlags::SLAAC, true)
+                .with(BrFlags::PREFERRED, true)
+                .with(BrFlags::DEFAULT_ROUTE, true),
+            stable: true,
+        })
+        .unwrap();
+    });
+    assert!(net.run_until(secs(60), |n| role(n, 1) == Role::Child));
+    let omr = |net: &mut Network, i: usize| {
+        net.node(i)
+            .unicast_addresses()
+            .map(|u| u.addr)
+            .find(|a| a.octets()[..4] == [0xfd, 0x11, 0x00, 0x69])
+    };
+    assert!(net.run_until(secs(120), |n| omr(n, 1).is_some() && omr(n, 2).is_some()));
+    let dst = omr(&mut net, 2).unwrap();
+    // A datagram from the child to the leader's OMR address (the reverse
+    // direction needs the leader to resolve the child, which an FTD child
+    // with another mesh-local prefix does not answer either).
+    let port = 4321;
+    let rx = net.node(2).udp_open().unwrap();
+    net.node(2)
+        .udp_bind(rx, SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0))
+        .unwrap();
+    let tx = net.node(1).udp_open().unwrap();
+    let mut got = false;
+    for _ in 0..8 {
+        if role(&mut net, 1) != Role::Child {
+            break;
+        }
+        net.with(1, |n, now| {
+            n.udp_send_to(
+                tx,
+                SocketAddrV6::new(dst, port, 0, 0),
+                b"hello",
+                &UdpSendOpts::default(),
+                now,
+            )
+            .unwrap();
+        });
+        if net.run_until(secs(20), |n| {
+            n.nodes[2]
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::UdpReadable(_)))
+        }) {
+            got = true;
+            break;
+        }
+    }
+    assert!(got, "no datagram at the leader");
+    let mut buf = [0u8; 16];
+    let r = net.node(2).udp_recv(rx, &mut buf).unwrap().unwrap();
+    assert_eq!(&buf[..r.len], b"hello");
 }
