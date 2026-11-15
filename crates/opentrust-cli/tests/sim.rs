@@ -280,7 +280,10 @@ fn form_join_ping_and_tables() {
 
     // router <id> for the neighbor router (by RLOC16) and for an unused ID
     let ri = h.cmd(0, "router 0x0c00");
-    assert!(ri.starts_with("Alloc: 1\nRouter ID: 3\nRloc: 0c00\n"), "{ri}");
+    assert!(
+        ri.starts_with("Alloc: 1\nRouter ID: 3\nRloc: 0c00\n"),
+        "{ri}"
+    );
     assert!(ri.contains("Link: 1\nExt Addr: 0200000000000002\n"), "{ri}");
     assert_eq!(h.cmd(0, "router 40"), "Alloc: 0\nDone\n");
 
