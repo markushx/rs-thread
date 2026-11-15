@@ -39,6 +39,19 @@ Packet verification (pktverify, tshark) is not run: `thread_cert.py` refuses it 
 | Cert_5_3_10_AddressQuery | FAIL | 2 | 1,3,4,5 |
 | Cert_5_3_11_AddressQueryTimeoutIntervals | pass | 1,2,3 |  |
 
+## Thread 1.2 (CSL, SSED), `v1_2_*` cases
+
+Run with `OPENTRUST_CERT_CASES=v1_2_LowPower_5_3_01_SSEDAttachment,v1_2_test_csl_transmission` and `OPENTRUST_CERT_CONFIGS=ot,each,all`.
+
+| case | all OT (baseline) | OpenTrust as node n: pass | OpenTrust as node n: fail |
+|---|---|---|---|
+| v1_2_LowPower_5_3_01_SSEDAttachment (1 leader, 2 router, 3 SSED) | pass | 1,2,3, all | |
+| v1_2_test_csl_transmission (1 leader, 2 SSED) | pass | 1, all | 2 |
+
+Node 2 of `v1_2_test_csl_transmission` (OpenTrust SSED, OpenThread leader) passes every step up to the last one: after the leader was away for more than the child timeout and returns, the SSED sends no Child Update Request within 5 s.
+
+End-to-end CSL tests in `crates/opentrust-sim/tests/csl.rs` (virtual time, mixed OpenThread / OpenTrust): OpenTrust SSED under an OpenThread parent, OpenThread SSED under an OpenTrust parent, both OpenTrust. Each: attach with `csl period 500000`, the parent reports `CSL Synchronized: 1` (OpenThread parent), 4 x 2 pings with round trips between 42 and 444 ms (all inside one 500 ms period, they follow the phase between pings), no data polls of the child for them, fragmented 128 byte pings both ways, CSL channel 12 and back, `csl period 0` (child unreachable afterwards). Sample: OpenTrust child under OpenThread parent `[193, 192, 393, 392, 92, 92, 294, 292]` ms, polls 1 to 1.
+
 ## Failures and reasons
 
 - **Baseline failures (all OpenThread nodes fail too): 5.2.05, 5.3.07, 5.3.08, 5.3.09, 5.3.10.** Not OpenTrust problems; the cause in the reference setup is not investigated. Their OpenTrust columns are meaningless.
@@ -47,4 +60,4 @@ Packet verification (pktverify, tshark) is not run: `thread_cert.py` refuses it 
 
 ## Host tests
 
-`cargo test --workspace --exclude openthread-sys`: 969 pass. The mixed OpenThread / OpenTrust network tests (`crates/opentrust-sim/tests/mixed.rs`: OT leader with OpenTrust router and the reverse, router tables, pings both ways) run when `ot-cli-ftd` is built and are skipped otherwise.
+`cargo test --workspace --exclude openthread-sys`: 980 pass (the CSL work added the virtual radio tests in `opentrust_sim::vt`, the MAC `csl_child_sample` test and the five tests of `opentrust-sim/tests/csl.rs`). The mixed OpenThread / OpenTrust network tests (`crates/opentrust-sim/tests/mixed.rs`: OT leader with OpenTrust router and the reverse, router tables, pings both ways) run when `ot-cli-ftd` is built and are skipped otherwise.
