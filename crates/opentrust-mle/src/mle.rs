@@ -544,7 +544,19 @@ impl<const C: usize> Mle<C> {
         payload: &[u8],
         scratch: &mut [u8],
     ) -> Result<Command> {
-        let rx = MleRx::parse(env.keys(), meta, link, payload, scratch)?;
+        let rx = match MleRx::parse(env.keys(), meta, link, payload, scratch) {
+            Ok(rx) => rx,
+            Err(e) => {
+                let o = meta.peer.ip().octets();
+                let iid: [u8; 8] = [o[8], o[9], o[10], o[11], o[12], o[13], o[14], o[15]];
+                opentrust_core::warn!(
+                    "MLE rx: parse/security failed: {:?} (peer iid {:x})",
+                    e,
+                    iid
+                );
+                return Err(e);
+            }
+        };
         // Discovery Responses are accepted while disabled (a scanner is
         // not attached).
         if self.role == Role::Disabled && rx.meta.security.is_some() {
@@ -557,6 +569,34 @@ impl<const C: usize> Mle<C> {
     /// decryption): neighbor lookup, replay protection, dispatch by command,
     /// key sequence adoption. Unsecured Discovery messages are ignored here.
     pub fn handle_rx<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: Instant,
+        rx: &MleRx<'_>,
+    ) -> Result<Command> {
+        let r = self.handle_rx_inner(env, now, rx);
+        let attach_msg = matches!(
+            rx.command,
+            Command::ParentResponse | Command::ChildIdResponse
+        );
+        match &r {
+            Err(e) => opentrust_core::warn!(
+                "MLE rx: {:?} from {:x} dropped: {:?}",
+                rx.command,
+                rx.meta.sender_ext_address().0,
+                e
+            ),
+            Ok(_) if attach_msg => opentrust_core::info!(
+                "MLE rx: {:?} from {:x} handled",
+                rx.command,
+                rx.meta.sender_ext_address().0
+            ),
+            Ok(_) => {}
+        }
+        r
+    }
+
+    fn handle_rx_inner<E: MleEnv>(
         &mut self,
         env: &mut E,
         now: Instant,
