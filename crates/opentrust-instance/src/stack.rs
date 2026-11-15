@@ -451,7 +451,11 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             dscp: 0,
             ecn: 0,
             multicast_loop: false,
-            link_security: opts.link_security,
+            // A CSL receiver secures its MLE messages on the link too, so
+            // that the parent can learn the CSL phase from their CSL IE
+            // (OT `MeshForwarder::UpdateIp6Route`: SetLinkSecurityEnabled
+            // for MLE with CSL enabled).
+            link_security: opts.link_security || self.mac.csl_period() != 0,
         };
         self.mle_out.push(
             info,

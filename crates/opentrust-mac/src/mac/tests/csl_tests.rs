@@ -775,3 +775,37 @@ fn csl_tx_window_follows_resynchronization_after_drift() {
     sync_child(&mut m, 1_700_000, 625);
     assert!(m.csl_child(child).unwrap().synchronized);
 }
+
+#[test]
+fn csl_child_sample_tracks_an_unknown_child_from_its_ie() {
+    set_radio(1_000_000);
+    let mut m = parent_mac(true);
+    let child = Address::Extended(CHILD_EXT);
+    assert!(m.csl_child(child).is_none());
+    let ie = crate::frame::CslIe {
+        phase: 1000,
+        period: PERIOD,
+        rendezvous_time: None,
+    };
+    // A poll from a child the upper layer has not announced: the upper layer
+    // hands over its CSL IE, the MAC tracks the child from then on.
+    m.csl_child_sample(child, 0, ie, Some(250_000), t(0))
+        .unwrap();
+    let c = *m.csl_child(child).unwrap();
+    assert!(c.synchronized);
+    assert_eq!(
+        (c.period, c.phase, c.last_rx_timestamp_us),
+        (PERIOD, 1000, 250_000)
+    );
+    // Again: only the phase moves, nothing is tracked twice.
+    let ie2 = crate::frame::CslIe { phase: 1200, ..ie };
+    m.csl_child_sample(child, 0, ie2, Some(750_000), t(1))
+        .unwrap();
+    assert_eq!(m.csl_children().len(), 1);
+    assert_eq!(m.csl_child(child).unwrap().phase, 1200);
+    // A period below the minimum does not synchronize a new child.
+    let other = Address::Extended(ExtAddress([9; 8]));
+    let bad = crate::frame::CslIe { period: 1, ..ie };
+    m.csl_child_sample(other, 0, bad, Some(1), t(2)).unwrap();
+    assert!(!m.csl_child(other).unwrap().synchronized);
+}

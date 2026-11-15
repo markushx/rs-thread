@@ -54,7 +54,7 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
         let csl = csl_period != 0 && f.dst != MacDest::Broadcast;
         let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::Data)
-            .version(if csl {
+            .version(if csl || f.csl {
                 FrameVersion::V2015
             } else {
                 FrameVersion::V2006
@@ -104,7 +104,9 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
         // A frame for a sleepy child waits in the MAC for the child's poll
         // (the source match table answers the poll with Frame Pending);
         // without this the frame would be sent directly to a sleeping radio.
-        if f.indirect && !f.csl && f.dst != MacDest::Broadcast {
+        // (A frame for a CSL synchronized child waits there as well: the MAC
+        // sends it in the child's next sample window.)
+        if f.indirect && f.dst != MacDest::Broadcast {
             if f.payload.is_empty() {
                 // An empty answer to a poll (nothing queued, or a
                 // supervision message): the MAC sends its own empty frame
@@ -220,7 +222,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             match ev {
                 MacEvent::Received(rx) => self.handle_frame(now, rx),
                 #[cfg(feature = "ftd")]
-                MacEvent::DataPollReceived { src, .. } => self.handle_poll(now, src),
+                MacEvent::DataPollReceived { src, csl, .. } => self.handle_poll(now, src, csl),
                 #[cfg(feature = "ftd")]
                 MacEvent::CslChildOutOfSync(Address::Short(s)) => {
                     self.mle.child_csl_desynchronized(Rloc16(s.0));
@@ -277,7 +279,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// A data poll from a sleepy child: release its next frame.
     #[cfg(feature = "ftd")]
-    fn handle_poll(&mut self, now: Instant, src: Address) {
+    fn handle_poll(&mut self, now: Instant, src: Address, csl: Option<(CslIe, Option<u64>)>) {
+        // A poll with a CSL IE synchronizes the child (OT `Mac::ProcessCsl`).
+        #[cfg(feature = "ftd")]
+        if let (Some((ie, ts)), Address::Short(s)) = (csl, src)
+            && self.mle.child_csl_synchronized(Rloc16(s.0), now)
+        {
+            let ch = self.mle.child_csl_channel(Rloc16(s.0)).unwrap_or(0);
+            let _ = self.core.mac.csl_child_sample(src, ch, ie, ts, now);
+        }
+        #[cfg(not(feature = "ftd"))]
+        let _ = csl;
         match src {
             Address::Short(s) => self.mle.child_polled(Some(Rloc16(s.0)), None, now),
             Address::Extended(e) => self.mle.child_polled(None, Some(&e), now),
@@ -391,10 +403,16 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         // `Mac::ProcessCsl`).
         #[cfg(feature = "ftd")]
         if link_security
-            && f.csl_ie().is_some()
+            && let Some(ie) = f.csl_ie()
             && let Address::Short(s) = src
             && self.mle.child_csl_synchronized(Rloc16(s.0), now)
         {
+            // The MAC starts tracking the child with this frame.
+            let ch = self.mle.child_csl_channel(Rloc16(s.0)).unwrap_or(0);
+            let _ = self
+                .core
+                .mac
+                .csl_child_sample(src, ch, ie, rx.timestamp_us, now);
             self.csl_flush_children();
         }
         // Any secure frame from the parent is a sign of life.

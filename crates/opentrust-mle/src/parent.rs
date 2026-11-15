@@ -249,6 +249,13 @@ impl<const C: usize> Mle<C> {
         }
     }
 
+    /// The CSL channel a child announced (0 = the PAN channel).
+    pub fn child_csl_channel(&mut self, child: Rloc16) -> Option<u8> {
+        self.children
+            .find_by_rloc_mut(child, StateFilter::AnyExceptInvalid)
+            .map(|c| c.csl_channel)
+    }
+
     /// The MAC lost the child's CSL synchronization (frames to it failed in
     /// its windows): data polls serve it again until it sends a CSL IE.
     pub fn child_csl_desynchronized(&mut self, child: Rloc16) {

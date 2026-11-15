@@ -10,7 +10,7 @@ use opentrust_platform::radio::{
 };
 
 use super::link_metrics::EnhAckProbingValues;
-use crate::frame::{Address, FCS_LEN, Frame, ThreadBeaconPayload};
+use crate::frame::{Address, CslIe, FCS_LEN, Frame, ThreadBeaconPayload};
 use crate::frame_security::RxSecurityInfo;
 
 /// Maximum MAC frame length without FCS (`aMaxPHYPacketSize` - 2).
@@ -133,6 +133,10 @@ pub enum Event {
         src: Address,
         /// Whether its ACK had Frame Pending set.
         frame_pending: bool,
+        /// The CSL IE of the poll (a secured 2015 frame) and the radio
+        /// timestamp of the frame, for a child that has not been tracked
+        /// as a CSL child yet ([`Mac::csl_child_sample`](super::Mac::csl_child_sample)).
+        csl: Option<(CslIe, Option<u64>)>,
     },
     /// A beacon was received during an active scan.
     ActiveScanResult(ScanResult),

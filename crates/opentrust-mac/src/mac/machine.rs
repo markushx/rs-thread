@@ -847,6 +847,34 @@ impl<
         CSL_REQUEST_AHEAD + bus
     }
 
+    /// Start tracking the sender of a received frame or poll as a CSL child
+    /// and take its CSL IE (the first frame of a child that is not tracked
+    /// yet reached the MAC before the upper layer knew it sends CSL IEs).
+    /// The upper layer calls it for a secured 2015 frame with a CSL IE from
+    /// one of its children, with `channel` the child's CSL channel (0 = the
+    /// PAN channel). `ts` is the frame's radio timestamp (`None`: the radio
+    /// clock now). Only the IE is applied for a child that is tracked
+    /// already; fails like [`csl_add_child`](Self::csl_add_child).
+    pub fn csl_child_sample(
+        &mut self,
+        src: Address,
+        channel: u8,
+        ie: CslIe,
+        ts: Option<u64>,
+        now: Instant,
+    ) -> Result<()> {
+        if !self
+            .csl_children
+            .iter()
+            .any(|c| self.neighbors.same_device(c.addr, src))
+        {
+            self.csl_add_child(src)?;
+            self.csl_set_child_channel(src, channel)?;
+        }
+        self.csl_apply_ie(src, ie, ts, now);
+        Ok(())
+    }
+
     /// The CSL IE of a received frame or ACK from a tracked child
     /// (OpenThread `Mac::ProcessCsl`).
     fn csl_update_child(&mut self, f: &Frame<'_>, src: Address, ts: Option<u64>, now: Instant) {
@@ -859,6 +887,11 @@ impl<
         let Some(ie) = f.csl_ie() else {
             return;
         };
+        self.csl_apply_ie(src, ie, ts, now);
+    }
+
+    /// Take the CSL IE `ie` of a frame from `src`, if it is a tracked child.
+    fn csl_apply_ie(&mut self, src: Address, ie: CslIe, ts: Option<u64>, now: Instant) {
         let Some(i) = self
             .csl_children
             .iter()
@@ -2732,9 +2765,16 @@ impl<
                     }
                     Some(MacCommand::DataRequest) => {
                         self.counters.rx_data_poll += 1;
+                        let csl = Frame::parse(&buf).ok().and_then(|f| {
+                            (f.version() == FrameVersion::V2015 && f.security_enabled())
+                                .then(|| f.csl_ie())
+                                .flatten()
+                                .map(|ie| (ie, info.timestamp_us))
+                        });
                         self.push_event(Event::DataPollReceived {
                             src: meta.src,
                             frame_pending: acked_fp,
+                            csl,
                         });
                         if acked_fp && !self.poll_requests.iter().any(|a| *a == meta.src) {
                             let _ = self.poll_requests.push_back(meta.src);
