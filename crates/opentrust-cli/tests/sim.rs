@@ -299,6 +299,9 @@ fn udp_between_nodes() {
     assert_eq!(h.cmd(1, "ifconfig up"), "Done\n");
     assert_eq!(h.cmd(1, "thread start"), "Done\n");
     h.wait_state(1, "router", 300);
+    // A new router has no usable route to the leader until the leader's
+    // advertisement reports the link back (as in OpenThread).
+    h.run(60);
 
     assert_eq!(h.cmd(0, "udp send ::1 1 hi"), "Error 13: InvalidState\n");
     assert_eq!(h.cmd(0, "udp open"), "Done\n");
@@ -308,10 +311,8 @@ fn udp_between_nodes() {
     assert_eq!(h.cmd(1, "udp bind :: 4321"), "Done\n");
     let mleid0 = line_value(&h.cmd(0, "ipaddr mleid"));
     let mleid1 = line_value(&h.cmd(1, "ipaddr mleid"));
-    // Resolve the address first: a datagram sent while the address query
-    // runs is not held back.
-    assert_eq!(h.cmd(1, &format!("ping {mleid0}")), "");
-    h.wait_for(1, "Done", 30);
+    // The first datagram goes out while the address query still runs: it
+    // is held until the answer arrives.
     assert_eq!(h.cmd(1, &format!("udp send {mleid0} 1234 hello")), "Done\n");
     let o = h.wait_for(0, "hello", 30);
     assert_eq!(o, format!("5 bytes from {mleid1} 4321 hello\n"));

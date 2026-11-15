@@ -129,7 +129,12 @@ where
                 out!(self.o, "| {:2} ", r.router_id);
                 out!(self.o, "| 0x{:04x} ", r.rloc16.0);
                 out!(self.o, "| {:8} ", r.next_hop.unwrap_or(63));
-                out!(self.o, "| {:9} ", r.cost);
+                // OpenThread keeps the cost 0 while there is no next hop.
+                out!(
+                    self.o,
+                    "| {:9} ",
+                    if r.next_hop.is_some() { r.cost } else { 0 }
+                );
                 out!(self.o, "| {:5} ", r.link_quality_in);
                 out!(self.o, "| {:6} ", r.link_quality_out);
                 out!(self.o, "| {:3} ", r.age_secs);

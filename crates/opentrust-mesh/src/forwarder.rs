@@ -1018,7 +1018,10 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
                 continue;
             }
             let result = self.send_datagram(now, data, h.security, r, resolver, events, sink);
-            if result == SendResult::Dropped(DropReason::NoRoute) {
+            // A datagram of this device is only dropped (OT answers with a
+            // destination unreachable for forwarded datagrams only).
+            let local = hdr_of(data).is_some_and(|x| r.netif.has_unicast(&x.src));
+            if result == SendResult::Dropped(DropReason::NoRoute) && !local {
                 sink.dest_unreachable(&data[..data.len().min(Ipv6Header::LEN)]);
             }
         }

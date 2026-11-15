@@ -178,8 +178,11 @@ impl Cli {
         ctx.event(event);
     }
 
-    /// Run the timers of the interpreter (ping interval and timeout). Call
-    /// it whenever [`next_deadline`](Self::next_deadline) is reached.
+    /// Run the timers of the interpreter (ping interval and timeout) and
+    /// print datagrams waiting on the `udp` socket. Call it whenever
+    /// [`next_deadline`](Self::next_deadline) is reached, and regularly
+    /// (every 100 ms is fine) when UDP readiness events are not forwarded to
+    /// [`handle_event`](Self::handle_event).
     pub fn poll<S, C, Rn, W>(&mut self, inst: &mut Instance<S, C, Rn>, now: Instant, out: &mut W)
     where
         S: SettingsStore,
@@ -326,5 +329,11 @@ where
     fn poll_timers(&mut self) {
         #[cfg(feature = "ping")]
         self.ping_poll();
+        // Drivers that do not forward `Event::UdpReadable` (the embassy
+        // wrapper keeps UDP readiness out of its event queue) rely on this.
+        #[cfg(feature = "udp")]
+        if let Some(s) = self.st.udp {
+            self.udp_readable(s);
+        }
     }
 }

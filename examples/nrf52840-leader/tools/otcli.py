@@ -1,7 +1,7 @@
 # Drive an OpenThread CLI on a serial port (115200 8N1) without pyserial.
 # Usage:  python3 -I tools/otcli.py <port> <cmd> [<cmd>...]
 # Each command is sent as a line; the output up to the "Done"/"Error" line is
-# printed. A command of the form `sleep:<s>` waits. The shared test dataset
+# printed. A command of the form `sleep:<s>` waits, `drain:<s>` prints the output that arrives meanwhile. The shared test dataset
 # hex string is DATASET_HEX in src/lib.rs.
 import os, sys, termios, time, select
 
@@ -45,6 +45,14 @@ def run(port, cmds, timeout=10):
         for c in cmds:
             if c.startswith('sleep:'):
                 time.sleep(float(c[6:]))
+                continue
+            if c.startswith('drain:'):
+                # Print asynchronous output (UDP receive, scan results, ...).
+                end = time.time() + float(c[6:])
+                while time.time() < end:
+                    r, _, _ = select.select([fd], [], [], 0.2)
+                    if r:
+                        print(os.read(fd, 4096).decode(errors='replace').rstrip())
                 continue
             os.write(fd, c.encode() + b'\n')
             # `ping` prints its summary line first, then Done.

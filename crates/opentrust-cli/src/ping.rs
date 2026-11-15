@@ -246,7 +246,7 @@ where
             let avg = 1000 * u64::from(p.total_rtt) / u64::from(p.received);
             out!(
                 self.o,
-                " Round-trip min/avg/max = {}/{}.{}/{} ms.",
+                " Round-trip min/avg/max = {}/{}.{:03}/{} ms.",
                 p.min_rtt,
                 avg / 1000,
                 avg % 1000,
