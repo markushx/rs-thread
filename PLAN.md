@@ -354,6 +354,7 @@ Security-relevant decisions for the review before M4:
 - [ ] Footprint budgets (flash/RAM per role) and power measurements for SED/SSED
 - [x] Hardware-in-loop interop with an OT RCP / `ot-br-posix` border router (manual, on a Mac with an nRF52840 Dongle RCP; `docs/thread-border-router.md`): the light registers over SRP, is commissioned on-network and over BLE, and is controlled by chip-tool through the BR
   - [ ] Automate it (scripted BR + chip-tool run)
+  - [ ] Commissioning through the OTBR: `otbr-agent` on macOS exits without a log line or crash report right after `ot-ctl commissioner start` ("petitioning"); joiner test of the OpenTrust CLI DK against the OTBR commissioner blocked (needs `otbr-agent` in the foreground with a higher log level)
 
 ## Phase 13 – Certification readiness & docs
 
