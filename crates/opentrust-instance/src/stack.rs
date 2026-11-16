@@ -603,8 +603,6 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         ext: &ExtAddress,
         v: &opentrust_mle::link_metrics::MetricsValues,
     ) {
-        #[cfg(feature = "link-metrics-manager")]
-        self.lmm.on_enh_ack(ext, v, self.now);
         self.push_event(crate::Event::EnhAckLinkMetrics {
             rloc16,
             ext: *ext,
@@ -612,6 +610,15 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             link_margin: v.metrics.link_margin.then_some(v.link_margin),
             rssi: v.metrics.rssi.then_some(v.rssi),
         });
+    }
+
+    fn track_enh_ack_probing(
+        &mut self,
+        flags: opentrust_mac::mac::LinkMetricsFlags,
+        rloc16: Rloc16,
+        ext: &ExtAddress,
+    ) {
+        let _ = self.mac.track_enh_ack_probing(rloc16.into(), *ext, flags);
     }
 
     fn configure_enh_ack_probing(

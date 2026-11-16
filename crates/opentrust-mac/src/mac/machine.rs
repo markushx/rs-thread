@@ -1105,6 +1105,12 @@ impl<
         self.probe_initiator.configure(short, ext, flags)
     }
 
+    /// Initiator side: is Enhanced-ACK probing configured at `peer`? Frames
+    /// to it are then sent as Frame Version 2015 (they get enhanced ACKs).
+    pub fn enh_ack_probing_tracked(&self, peer: Address) -> bool {
+        self.probe_initiator.find(peer).is_some()
+    }
+
     /// Initiator side: stop tracking all subjects.
     pub fn reset_tracked_enh_ack_probing(&mut self) {
         self.probe_initiator.clear();

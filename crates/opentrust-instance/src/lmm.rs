@@ -7,7 +7,7 @@ use heapless::Vec;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{ExtAddress, ipv6};
 use opentrust_core::{Error, Result};
-use opentrust_mle::link_metrics::{EnhAckFlags, Metrics, MetricsValues, Status};
+use opentrust_mle::link_metrics::{EnhAckFlags, Metrics, Status};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
@@ -81,7 +81,13 @@ impl LinkMetricsManager {
     }
 
     /// Metrics from an Enhanced ACK (OT `HandleEnhAckIe`).
-    pub(crate) fn on_enh_ack(&mut self, ext: &ExtAddress, v: &MetricsValues, now: Instant) {
+    pub(crate) fn on_enh_ack(
+        &mut self,
+        ext: &ExtAddress,
+        link_margin: Option<u8>,
+        rssi: Option<i8>,
+        now: Instant,
+    ) {
         if !self.running {
             return;
         }
@@ -92,9 +98,9 @@ impl LinkMetricsManager {
             return;
         }
         s.last_update = now;
-        if v.metrics.rssi && v.metrics.link_margin {
-            s.rssi = v.rssi;
-            s.link_margin = v.link_margin;
+        if let (Some(rssi), Some(margin)) = (rssi, link_margin) {
+            s.rssi = rssi;
+            s.link_margin = margin;
         }
     }
 }

@@ -54,11 +54,13 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
         let csl = csl_period != 0 && f.dst != MacDest::Broadcast;
         let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::Data)
-            .version(if csl || f.csl {
-                FrameVersion::V2015
-            } else {
-                FrameVersion::V2006
-            })
+            .version(
+                if csl || f.csl || self.mac.enh_ack_probing_tracked(mac_address(f.dst)) {
+                    FrameVersion::V2015
+                } else {
+                    FrameVersion::V2006
+                },
+            )
             .sequence(0)
             // Another destination PAN (Discovery Response to a scanner) keeps
             // our own PAN ID as the source PAN ID (OT `SetSource` /
@@ -236,6 +238,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 }
                 MacEvent::EnhAckLinkMetrics { neighbor, values } => {
                     let ext = self.neighbor_ext(neighbor);
+                    #[cfg(feature = "link-metrics-manager")]
+                    self.core
+                        .lmm
+                        .on_enh_ack(&ext, values.link_margin, values.rssi, now);
                     self.core.push_event(Event::EnhAckLinkMetrics {
                         rloc16: match neighbor {
                             Address::Short(s) => Rloc16(s.0),

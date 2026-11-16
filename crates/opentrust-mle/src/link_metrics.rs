@@ -95,6 +95,13 @@ impl Metrics {
                 n += 1;
             }
         }
+        // Reference device: mark the Type/Average Enum as reserved, to test a
+        // Subject's handling of invalid Type IDs (OT `TypeId::MarkAsReserved`).
+        if self.reserved {
+            for id in &mut out[..n] {
+                *id = (*id & !(7 << 3)) | (2 << 3);
+            }
+        }
         n
     }
 
