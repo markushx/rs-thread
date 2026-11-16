@@ -65,7 +65,6 @@ fn main() {
             "-DOT_DNS_CLIENT=ON",
             "-DOT_DNS_DSO=OFF",
             "-DOT_ECDSA=ON",
-            "-DOT_LOG_OUTPUT=PLATFORM_DEFINED",
             "-DOT_COAP=ON",
             "-DOT_COAP_BLOCK=ON",
             "-DOT_COAP_OBSERVE=ON",
@@ -101,6 +100,14 @@ fn main() {
             "-DOT_COMMISSIONER=ON",
             "-DOT_JOINER=ON",
         ]);
+    // The thread-cert cases read the `[THCI]` certification log lines from the
+    // CLI output (OpenThread's default for a reference device build): the CLI
+    // application provides `otPlatLog`. Without the CLI the platform does.
+    conf.arg(if cfg!(feature = "cli") {
+        "-DOT_LOG_OUTPUT=APP"
+    } else {
+        "-DOT_LOG_OUTPUT=PLATFORM_DEFINED"
+    });
     conf.arg(format!("-DOT_MTD={}", if mtd { "ON" } else { "OFF" }));
     conf.arg("-S").arg(&src).arg("-B").arg(&build);
     run(&mut conf, "cmake configure");
