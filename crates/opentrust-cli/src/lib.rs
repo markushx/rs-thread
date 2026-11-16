@@ -17,7 +17,7 @@
 //! ```
 //!
 //! Command groups are cargo features (`dataset`, `scan`, `ping`, `tables`,
-//! `netdata`, `srp`, `dns`, `udp`, `diag`, `commissioning`; `ftd` for the router
+//! `netdata`, `srp`, `dns`, `udp`, `diag`, `linkmetrics`, `commissioning`; `ftd` for the router
 //! commands) so that firmware only pays for what it ships. A command of a
 //! disabled group, or one that OpenTrust does not implement, answers
 //! `Error 35: InvalidCommand` like OpenThread does for an unknown command.
@@ -37,6 +37,8 @@ mod diag;
 mod dns;
 #[cfg(feature = "joiner")]
 mod joiner;
+#[cfg(feature = "linkmetrics")]
+mod linkmetrics;
 mod net;
 #[cfg(feature = "netdata")]
 mod netdata;
@@ -80,6 +82,8 @@ pub(crate) struct State {
     pub scan: Option<scan::Kind>,
     #[cfg(feature = "diag")]
     pub diag: Option<diag::Pending>,
+    #[cfg(feature = "linkmetrics")]
+    pub linkmetrics: linkmetrics::Pending,
     #[cfg(feature = "dns")]
     pub dns: Option<dns::Pending>,
     #[cfg(feature = "udp")]
@@ -125,6 +129,8 @@ impl Cli {
                 scan: None,
                 #[cfg(feature = "diag")]
                 diag: None,
+                #[cfg(feature = "linkmetrics")]
+                linkmetrics: linkmetrics::Pending::default(),
                 #[cfg(feature = "dns")]
                 dns: None,
                 #[cfg(feature = "udp")]
@@ -341,6 +347,8 @@ where
             "udp" => self.udp(a),
             #[cfg(feature = "diag")]
             "networkdiagnostic" => self.networkdiagnostic(a),
+            #[cfg(feature = "linkmetrics")]
+            "linkmetrics" => self.linkmetrics(a),
             #[cfg(feature = "commissioning")]
             "commissioner" => self.commissioner(a),
             #[cfg(feature = "joiner")]
@@ -362,6 +370,10 @@ where
             | Event::DiscoverDone => self.scan_event(ev),
             #[cfg(feature = "diag")]
             Event::DiagAnswer => self.diag_answers(),
+            #[cfg(feature = "linkmetrics")]
+            Event::LinkMetricsReport { .. }
+            | Event::LinkMetricsManagement { .. }
+            | Event::EnhAckLinkMetrics { .. } => self.linkmetrics_event(ev),
             #[cfg(feature = "udp")]
             Event::UdpReadable(s) => self.udp_readable(*s),
             #[cfg(feature = "dns")]

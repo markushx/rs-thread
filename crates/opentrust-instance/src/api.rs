@@ -698,6 +698,78 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         Ok(())
     }
 
+    /// Ask the neighbor `dst` (link-local address) for a Link Metrics
+    /// Report (OT `otLinkMetricsQuery`): a single probe of `metrics` for
+    /// `series_id` 0, else the report of that Forward Tracking Series. The
+    /// answer is [`Event::LinkMetricsReport`](crate::Event::LinkMetricsReport).
+    pub fn link_metrics_query(
+        &mut self,
+        dst: &core::net::Ipv6Addr,
+        series_id: u8,
+        metrics: Option<&opentrust_mle::link_metrics::Metrics>,
+        now: Instant,
+    ) -> Result<()> {
+        self.core.now = now;
+        let r = self
+            .mle
+            .link_metrics_query(&mut self.core, dst, series_id, metrics);
+        self.poll(now);
+        r
+    }
+
+    /// Register (`metrics` given) or clear a Forward Tracking Series on the
+    /// neighbor `dst` (OT `otLinkMetricsConfigForwardTrackingSeries`); the
+    /// answer is [`Event::LinkMetricsManagement`](crate::Event::LinkMetricsManagement).
+    pub fn link_metrics_forward_series(
+        &mut self,
+        dst: &core::net::Ipv6Addr,
+        series_id: u8,
+        flags: &opentrust_mle::link_metrics::SeriesFlags,
+        metrics: Option<&opentrust_mle::link_metrics::Metrics>,
+        now: Instant,
+    ) -> Result<()> {
+        self.core.now = now;
+        let r =
+            self.mle
+                .link_metrics_forward_series(&mut self.core, dst, series_id, flags, metrics);
+        self.poll(now);
+        r
+    }
+
+    /// Configure Enhanced-ACK based probing on the neighbor `dst` (OT
+    /// `otLinkMetricsConfigEnhAckProbing`).
+    pub fn link_metrics_enh_ack(
+        &mut self,
+        dst: &core::net::Ipv6Addr,
+        flags: opentrust_mle::link_metrics::EnhAckFlags,
+        metrics: Option<&opentrust_mle::link_metrics::Metrics>,
+        now: Instant,
+    ) -> Result<()> {
+        self.core.now = now;
+        let r = self
+            .mle
+            .link_metrics_enh_ack(&mut self.core, dst, flags, metrics);
+        self.poll(now);
+        r
+    }
+
+    /// Send a Link Probe of `len` bytes for series `series_id` (OT
+    /// `otLinkMetricsSendLinkProbe`).
+    pub fn link_metrics_probe(
+        &mut self,
+        dst: &core::net::Ipv6Addr,
+        series_id: u8,
+        len: u8,
+        now: Instant,
+    ) -> Result<()> {
+        self.core.now = now;
+        let r = self
+            .mle
+            .link_metrics_probe(&mut self.core, dst, series_id, len);
+        self.poll(now);
+        r
+    }
+
     /// Whether this device may be a router: the configuration, the device
     /// type and the Security Policy (OT `otThreadIsRouterEligible`).
     pub fn is_router_eligible(&self) -> bool {

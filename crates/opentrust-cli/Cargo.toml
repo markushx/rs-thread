@@ -13,7 +13,7 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "commissioning", "scan-servers"]
+default = ["ftd", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "commissioning", "scan-servers"]
 # Router-capable build (router table, router thresholds, leader weight).
 ftd = ["opentrust-instance/ftd", "opentrust-mle/ftd"]
 # The `dataset` command group.
@@ -34,6 +34,8 @@ dns = []
 udp = []
 # `networkdiagnostic`.
 diag = []
+# `linkmetrics` (Thread 1.2 Link Metrics Initiator).
+linkmetrics = []
 # `commissioner`, `joiner`.
 commissioning = ["ftd", "joiner", "opentrust-instance/commissioner"]
 # `joiner` (also on the MTD build).
@@ -48,7 +50,7 @@ sim = ["sim-mtd", "opentrust-sim/ftd", "ftd", "commissioning"]
 cert-log = ["dep:log", "opentrust-meshcop/cert-log"]
 # Host binary `opentrust-cli-vt-mtd`: a minimal thread device (no router, no
 # commissioner, no Border Agent) on the virtual-time simulation platform.
-sim-mtd = ["dep:opentrust-sim", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "joiner", "scan-servers", "cert-log"]
+sim-mtd = ["dep:opentrust-sim", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "joiner", "scan-servers", "cert-log"]
 defmt = ["dep:defmt", "opentrust-core/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 

@@ -564,6 +564,30 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         self.mac.csl_child_desync(Address::Short(rloc16.into()));
     }
 
+    fn link_metrics_report(
+        &mut self,
+        from: &Ipv6Addr,
+        values: Option<&opentrust_mle::link_metrics::MetricsValues>,
+        status: opentrust_mle::link_metrics::Status,
+    ) {
+        self.push_event(crate::Event::LinkMetricsReport {
+            from: *from,
+            values: values.copied(),
+            status: status as u8,
+        });
+    }
+
+    fn link_metrics_management_response(
+        &mut self,
+        from: &Ipv6Addr,
+        status: opentrust_mle::link_metrics::Status,
+    ) {
+        self.push_event(crate::Event::LinkMetricsManagement {
+            from: *from,
+            status: status as u8,
+        });
+    }
+
     fn enh_ack_probing_report(
         &mut self,
         rloc16: Rloc16,

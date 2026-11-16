@@ -249,6 +249,24 @@ pub enum Event {
         /// RSSI in dBm.
         rssi: Option<i8>,
     },
+    /// A Link Metrics Report arrived (OT `otLinkMetricsReportCallback`):
+    /// the values, or only the Subject's status.
+    LinkMetricsReport {
+        /// Sender (link-local address).
+        from: core::net::Ipv6Addr,
+        /// The metric values; `None` if the Subject answered with `status`.
+        values: Option<opentrust_mle::link_metrics::MetricsValues>,
+        /// Link Metrics Status value.
+        status: u8,
+    },
+    /// A Link Metrics Management Response arrived (OT
+    /// `otLinkMetricsMgmtResponseCallback`).
+    LinkMetricsManagement {
+        /// Sender (link-local address).
+        from: core::net::Ipv6Addr,
+        /// Link Metrics Status value.
+        status: u8,
+    },
     /// A graceful detach finished ([`Instance::detach_gracefully`]); Thread
     /// is stopped.
     DetachedGracefully,

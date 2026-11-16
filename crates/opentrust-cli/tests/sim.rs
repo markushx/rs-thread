@@ -602,3 +602,57 @@ fn security_policy_change_downgrades_routers() {
     h.run(150);
     assert_eq!(h.cmd(0, "state"), "detached\nDone\n");
 }
+
+#[test]
+fn linkmetrics_single_probe() {
+    let mut h = H::new(&[Kind::Router, Kind::Router], 31);
+    h.net.medium.connect(0, 1, -60);
+    assert_eq!(h.cmd(0, "dataset init new"), "Done\n");
+    assert_eq!(h.cmd(0, "dataset commit active"), "Done\n");
+    assert_eq!(h.cmd(0, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(0, "thread start"), "Done\n");
+    h.wait_state(0, "leader", 60);
+    let tlvs = line_value(&h.cmd(0, "dataset active -x"));
+    assert_eq!(h.cmd(1, &format!("dataset set active {tlvs}")), "Done\n");
+    assert_eq!(h.cmd(1, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    h.wait_state(1, "router", 300);
+    h.run(30);
+
+    assert_eq!(
+        h.cmd(1, "linkmetrics request ::1 single x"),
+        "Error 7: InvalidArgs\n"
+    );
+    assert_eq!(h.cmd(1, "linkmetrics bogus"), "Error 35: InvalidCommand\n");
+    let ll = line_value(&h.cmd(0, "ipaddr linklocal"));
+    assert_eq!(
+        h.cmd(1, &format!("linkmetrics request {ll} single pqmr")),
+        ""
+    );
+    let o = h.wait_for(1, "Done", 10);
+    assert!(
+        o.starts_with(&format!("Received Link Metrics Report from: {ll}\n")),
+        "{o}"
+    );
+    assert!(o.contains("\n - PDU Counter: "), "{o}");
+    assert!(o.contains("(Count/Summation)\n - LQI: "), "{o}");
+    assert!(
+        o.contains("(Exponential Moving Average)\n - Margin: "),
+        "{o}"
+    );
+    assert!(o.contains(" (dBm) (Exponential Moving Average)\n"), "{o}");
+    assert!(o.ends_with("Done\n"), "{o}");
+
+    // A forward tracking series.
+    assert_eq!(
+        h.cmd(1, &format!("linkmetrics config {ll} forward 1 dr pqmr")),
+        ""
+    );
+    let o = h.wait_for(1, "Done", 10);
+    assert!(
+        o.contains(&format!(
+            "Received Link Metrics Management Response from: {ll}\nStatus: Success\n"
+        )),
+        "{o}"
+    );
+}
