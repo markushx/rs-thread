@@ -516,3 +516,57 @@ fn sleepy_child_with_short_timeout_attaches() {
     }
     println!("attached after {t} s");
 }
+
+#[test]
+fn networkdiagnostic_get_and_reset() {
+    let mut h = H::new(&[Kind::Router, Kind::Router], 13);
+    h.net.medium.connect(0, 1, -60);
+    assert_eq!(h.cmd(0, "dataset init new"), "Done\n");
+    assert_eq!(h.cmd(0, "dataset commit active"), "Done\n");
+    assert_eq!(h.cmd(0, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(0, "thread start"), "Done\n");
+    h.wait_state(0, "leader", 60);
+    let tlvs = line_value(&h.cmd(0, "dataset active -x"));
+    assert_eq!(h.cmd(1, &format!("dataset set active {tlvs}")), "Done\n");
+    assert_eq!(h.cmd(1, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    h.wait_state(1, "router", 300);
+    h.run(30);
+
+    assert_eq!(h.cmd(1, "networkdiagnostic get"), "Error 7: InvalidArgs\n");
+    assert_eq!(
+        h.cmd(1, "networkdiagnostic bogus ::1"),
+        "Error 35: InvalidCommand\n"
+    );
+    let rloc = line_value(&h.cmd(0, "ipaddr rloc"));
+    let rloc16 = line_value(&h.cmd(0, "rloc16"));
+    let ext = line_value(&h.cmd(0, "extaddr"));
+    // Ext Address, Rloc16, Mode, Leader Data, MAC counters.
+    assert_eq!(
+        h.cmd(1, &format!("networkdiagnostic get {rloc} 0 1 2 6 9")),
+        ""
+    );
+    let o = h.wait_for(1, "Done", 10);
+    assert!(
+        o.contains(&format!("DIAG_GET.rsp/ans from {rloc}: 0008")),
+        "{o}"
+    );
+    assert!(o.contains(&format!("\nExt Address: {ext}\n")), "{o}");
+    assert!(o.contains(&format!("\nRloc16: 0x{rloc16}\n")), "{o}");
+    assert!(
+        o.contains("\nMode:\n    RxOnWhenIdle: 1\n    DeviceType: 1\n    NetworkData: 1\n"),
+        "{o}"
+    );
+    assert!(o.contains("\nLeader Data:\n    PartitionId: 0x"), "{o}");
+    assert!(
+        o.contains("\nMAC Counters:\n    IfInUnknownProtos: "),
+        "{o}"
+    );
+    assert!(o.ends_with("Done\n"), "{o}");
+
+    // Reset the MAC counters of node 0: `Done` right away.
+    assert_eq!(
+        h.cmd(1, &format!("networkdiagnostic reset {rloc} 9")),
+        "Done\n"
+    );
+}
