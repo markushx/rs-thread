@@ -271,10 +271,19 @@ impl core::fmt::Debug for NrfRadio<'_> {
 }
 
 impl<'d> NrfRadio<'d> {
+    /// The MAC arms its window timer this far ahead of a timed receive
+    /// window: [`MIN_RECEIVE_AT_LEAD_US`](Self::MIN_RECEIVE_AT_LEAD_US) plus
+    /// the time the stack needs from the timer to the driver call (executor
+    /// wake-up, the CSL parameters handed over first, logging). A window that
+    /// reaches the driver later than its minimum lead is moved back, and the
+    /// window is only a few hundred microseconds wider than the parent's
+    /// frame start, so a move of more than about 200 us loses the frame.
+    pub const RECEIVE_AT_LEAD_US: u32 = 5000;
+
     /// A timed receive window must be handed to the driver this far ahead of
     /// its start: the driver reserves a timeslot for it and refuses a window
     /// that starts within about a millisecond.
-    pub const RECEIVE_AT_LEAD_US: u32 = 3000;
+    pub const MIN_RECEIVE_AT_LEAD_US: u32 = 3000;
 
     /// Default clock accuracy reported to a CSL parent: the 32.768 kHz
     /// crystal MPSL is configured with by [`init_mpsl`].
@@ -409,10 +418,10 @@ impl Radio for NrfRadio<'_> {
         // that a window still running is not aborted.
         self.window_channel = channel;
 
-        // The driver wants the start `RECEIVE_AT_LEAD_US` ahead of its clock:
+        // The driver wants the start `MIN_RECEIVE_AT_LEAD_US` ahead of its clock:
         // trim a window whose start is nearer (the first one after CSL was
         // switched on starts "now") rather than lose it.
-        const MIN_LEAD_US: u64 = NrfRadio::RECEIVE_AT_LEAD_US as u64;
+        const MIN_LEAD_US: u64 = NrfRadio::MIN_RECEIVE_AT_LEAD_US as u64;
         let now = self.hw.now_us();
         let end_us = start_us + u64::from(duration_us);
         let start_us = start_us.max(now + MIN_LEAD_US);
@@ -420,10 +429,18 @@ impl Radio for NrfRadio<'_> {
             opentrust_core::debug!("timed receive window missed");
             return Err(RadioErrorKind::RxFailed);
         }
-        if !self
+        let ok = self
             .hw
-            .receive_at(start_us, (end_us - start_us) as u32, channel)
-        {
+            .receive_at(start_us, (end_us - start_us) as u32, channel);
+        opentrust_core::trace!(
+            "nrf: receive_at start {} (in {}) dur {} ok {} pending {}",
+            start_us,
+            start_us as i64 - now as i64,
+            end_us - start_us,
+            ok,
+            self.hw.has_pending_window()
+        );
+        if !ok {
             return Err(RadioErrorKind::RxFailed);
         }
         // `receive` only drains the queue until the next `set_sleep` /
@@ -448,6 +465,15 @@ impl Radio for NrfRadio<'_> {
     async fn set_csl(&mut self, csl: &CslConfig) -> Result<(), Self::Error> {
         let peer_changed =
             self.csl.short_addr != csl.short_addr || self.csl.ext_addr != csl.ext_addr;
+        opentrust_core::trace!(
+            "nrf: set_csl period {} (was {}) sample {} now {} pending {} timed_rx {}",
+            csl.period,
+            self.csl.period,
+            csl.sample_time_us,
+            self.hw.now_us() as u32,
+            self.hw.has_pending_window(),
+            self.timed_rx
+        );
 
         // The parent learns this node's receive schedule from the CSL IE in the
         // enhanced ACKs: inject it for exactly the current parent.

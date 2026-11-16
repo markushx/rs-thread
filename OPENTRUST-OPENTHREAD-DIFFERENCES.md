@@ -856,10 +856,10 @@ Where OpenThread's output is lossy, malformed or undefined for an input, OpenTru
 
 | Item | OpenThread | OpenTrust | Reason | Impact |
 |---|---|---|---|---|
-| Timed receive lead | `otPlatRadioReceiveAt` is called when the CSL timer fires, `kCslReceiveTimeAhead` (about 0.3 ms) before the window; the platform handles it | `RadioCaps::receive_at_lead_us`: the MAC arms the CSL window timer that much earlier; the Nordic backend asks for 3000 us and trims a window that starts sooner (the first one after CSL was switched on) | the nrf-802154 driver refuses `receive_at` less than about 1 ms ahead (MPSL timeslot reservation) | none; the window itself is where OpenThread's is |
+| Timed receive lead | `otPlatRadioReceiveAt` is called when the CSL timer fires, `kCslReceiveTimeAhead` (about 0.3 ms) before the window; the platform handles it | `RadioCaps::receive_at_lead_us`: the MAC arms the CSL window timer that much earlier; the Nordic backend asks for 5000 us (3000 us is the driver's minimum, the rest covers the time from the timer to the driver call) and still trims a window that starts sooner (the first one after CSL was switched on); with 3000 us every window started 0.4 to 0.9 ms late and the parent's frames were missed | the nrf-802154 driver refuses `receive_at` less than about 1 ms ahead (MPSL timeslot reservation) | none; the window itself is where OpenThread's is |
 | Enhanced ACK CSL IE | `otPlatRadioEnableCsl` + the platform's ACK generator | the Nordic driver's ACK IE writer (`set_csl_period`, `set_csl_anchor_time`, `set_csl_ie_peer`); the MAC pushes the sample time again every period (`RadioAction::SetCsl`) | same API as OpenThread's nRF platform | none |
 | Window width | `GetCslWindowEdges` | same formula; parent accuracy from the Child ID Response, worst case before | equal | none |
-| Period change of a running CSL link | works | the parent does not hit the windows afterwards, a fresh `csl period` after the attach works | not diagnosed | open |
+| Period change of a running CSL link | works | works (500 -> 100 -> 200 -> 1000 -> 500 ms, 50 of 50 pings each); it failed together with every CSL link before the lead was raised | see the timed receive lead | none |
 
 ## Matter light (`examples/nrf52840-light`)
 
