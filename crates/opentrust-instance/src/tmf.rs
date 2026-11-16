@@ -250,6 +250,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                     let _ = self.bbrg.ntf_inbox.push_back(v);
                 }
             }
+            #[cfg(feature = "ftd")]
+            Uri::DuaRegistrationRequest | Uri::Mlr => {
+                self.handle_bbr_request(uri, req, rsp);
+            }
             Uri::AnycastLocate => {
                 anycast::handle_anycast_locate(iid, self.mle.rloc16(), req, rsp);
             }
@@ -348,6 +352,50 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                 {
                     let _ = rsp.respond(code, &body);
                 }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ftd")]
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> NodeHandler<'_, S, C, R> {
+    /// `/n/dr` and `/n/mr` at the Backbone Router (OT
+    /// `Manager::HandleDuaRegistration`, `HandleMulticastListenerRegistration`).
+    fn handle_bbr_request(&mut self, uri: Uri, req: &Request<'_>, rsp: &mut dyn Responder) {
+        use opentrust_mesh::bbr_server::{BbrContext, Reply};
+        if !self.bbrg.server.is_enabled() || req.msg.ty() != opentrust_coap::message::Type::Con {
+            return;
+        }
+        let ctx = BbrContext {
+            attached: self.mle.role().is_attached(),
+            is_leader: self.mle.role() == opentrust_mle::Role::Leader,
+            rloc16: self.mle.rloc16().0,
+            leader: &self.bbrg.bbr,
+        };
+        let payload = req.msg.payload();
+        let reply = if uri == Uri::Mlr {
+            let session = self.core.netdata.view().commissioning_data().and_then(|d| {
+                opentrust_meshcop::tlv::Tlvs(d)
+                    .commissioner_session_id()
+                    .ok()
+            });
+            self.bbrg
+                .server
+                .handle_mlr_request(payload, self.now, session, &ctx)
+        } else {
+            let mut i = [0u8; 8];
+            i.copy_from_slice(&req.ctx.peer.addr.octets()[8..]);
+            let peer = opentrust_core::types::Iid(i);
+            let rloc = if peer.is_rloc() { peer.locator() } else { None };
+            self.bbrg.server.handle_dua_request(payload, rloc, &ctx)
+        };
+        match reply {
+            Reply::Drop => {}
+            Reply::Payload(p) => {
+                let _ = rsp.respond(Code::CHANGED, &p);
+            }
+            Reply::Empty(c) => {
+                let _ = rsp.respond(Code::new(c >> 5, c & 0x1f), &[]);
             }
         }
     }

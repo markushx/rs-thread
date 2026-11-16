@@ -38,6 +38,7 @@ impl Legacy {
 }
 
 pub(crate) const COMMANDS: &[&str] = &[
+    "bbr",
     "channel",
     "child",
     "childmax",
@@ -50,6 +51,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "detach",
     "discover",
     "dns",
+    "dua",
     "eidcache",
     "eui64",
     "extaddr",
@@ -135,6 +137,7 @@ where
                 "joiner" => cfg!(feature = "joiner"),
                 "dataset" => cfg!(feature = "dataset"),
                 "discover" | "scan" => cfg!(feature = "scan"),
+                "bbr" | "dua" => cfg!(feature = "bbr"),
                 "dns" => cfg!(feature = "dns"),
                 "netdata" | "prefix" | "route" => cfg!(feature = "netdata"),
                 "ping" => cfg!(feature = "ping"),

@@ -39,6 +39,8 @@
 extern crate std;
 
 pub mod address;
+#[cfg(feature = "ftd")]
+pub mod bbr_server;
 pub mod dua;
 pub mod forwarder;
 pub mod indirect;
@@ -53,6 +55,8 @@ pub mod trel;
 
 #[cfg(all(test, feature = "ftd"))]
 mod address_tests;
+#[cfg(all(test, feature = "ftd"))]
+mod bbr_server_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod bbr_sim;
 #[cfg(all(test, feature = "ftd"))]

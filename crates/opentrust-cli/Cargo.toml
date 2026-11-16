@@ -13,7 +13,7 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "commissioning", "scan-servers"]
+default = ["ftd", "bbr", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "commissioning", "scan-servers"]
 # Router-capable build (router table, router thresholds, leader weight).
 ftd = ["opentrust-instance/ftd", "opentrust-mle/ftd"]
 # The `dataset` command group.
@@ -34,6 +34,8 @@ dns = []
 udp = []
 # `networkdiagnostic`.
 diag = []
+# `bbr`, `dua` (Thread 1.2 Backbone Router role and Domain Unicast Address commands).
+bbr = []
 # `linkmetrics` (Thread 1.2 Link Metrics Initiator).
 linkmetrics = []
 # `commissioner`, `joiner`.
@@ -44,13 +46,13 @@ joiner = []
 # requests (also on the MTD build).
 scan-servers = ["opentrust-instance/scan-servers"]
 # Host binary `opentrust-cli-sim`: simulated nodes behind OT-style prompts.
-sim = ["sim-mtd", "opentrust-sim/ftd", "ftd", "commissioning"]
+sim = ["sim-mtd", "bbr", "opentrust-sim/ftd", "ftd", "commissioning"]
 # The `[THCI]` commissioning trace lines of OpenThread's reference device
 # build on the CLI output (read by the thread-cert scripts).
 cert-log = ["dep:log", "opentrust-meshcop/cert-log"]
 # Host binary `opentrust-cli-vt-mtd`: a minimal thread device (no router, no
 # commissioner, no Border Agent) on the virtual-time simulation platform.
-sim-mtd = ["dep:opentrust-sim", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "joiner", "scan-servers", "cert-log"]
+sim-mtd = ["dep:opentrust-sim", "bbr", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "joiner", "scan-servers", "cert-log"]
 defmt = ["dep:defmt", "opentrust-core/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 

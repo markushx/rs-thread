@@ -402,6 +402,13 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             attached.then_some(rloc.0),
             self.glue.commissioner_aloc,
         );
+        #[cfg(feature = "ftd")]
+        if attached
+            && self.bbrg.server.is_primary()
+            && !want.contains(&opentrust_mesh::bbr_server::ALOC16_PRIMARY_BBR)
+        {
+            let _ = want.push(opentrust_mesh::bbr_server::ALOC16_PRIMARY_BBR);
+        }
         for a in dhcp_alocs {
             if !want.contains(&a) {
                 let _ = want.push(a);

@@ -23,6 +23,8 @@
 //! `Error 35: InvalidCommand` like OpenThread does for an unknown command.
 
 mod basic;
+#[cfg(feature = "bbr")]
+mod bbr;
 #[cfg(feature = "cert-log")]
 extern crate std;
 #[cfg(feature = "cert-log")]
@@ -307,6 +309,10 @@ where
             "mode" => self.mode(a),
             "ipaddr" => self.ipaddr(a),
             "ipmaddr" => self.ipmaddr(a),
+            #[cfg(feature = "bbr")]
+            "bbr" => self.bbr(a),
+            #[cfg(feature = "bbr")]
+            "dua" => self.dua(a),
             "factoryreset" => {
                 self.i.factory_reset();
                 self.st.reset = true;
