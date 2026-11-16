@@ -52,6 +52,14 @@ pub(crate) fn register_uris(agent: &mut TmfAgent) {
     ] {
         let _ = agent.register(u);
     }
+    #[cfg(feature = "scan-servers")]
+    for u in [Uri::EnergyScan, Uri::PanIdQuery, Uri::AnnounceBegin] {
+        let _ = agent.register(u);
+    }
+    #[cfg(feature = "commissioner")]
+    for u in [Uri::EnergyReport, Uri::PanIdConflict] {
+        let _ = agent.register(u);
+    }
     // Relay of Joiner DTLS records: the Joiner Router takes `/c/tx`, the
     // Commissioner / Border Agent `/c/rx`.
     #[cfg(feature = "ftd")]
@@ -98,6 +106,8 @@ struct Deferred {
     duplicate_dua: bool,
     reset_counters: bool,
     diag_event: bool,
+    #[cfg(feature = "commissioner")]
+    scan_event: Option<crate::Event>,
     diag_answer: Option<(core::net::Ipv6Addr, crate::diag::Out)>,
     relay: Option<crate::cm_comm::Relay>,
 }
@@ -123,6 +133,8 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     resolver: &'a mut AddressResolver<8>,
     bbrg: &'a mut crate::bbr::BbrGlue,
     diag_in: &'a mut heapless::Deque<Vec<u8, { crate::diag::MAX_RESPONSE }>, 2>,
+    #[cfg(any(feature = "scan-servers", feature = "commissioner"))]
+    scan: &'a mut crate::scan::ScanState,
     ext: Option<crate::TmfExtension>,
     now: Instant,
     out: Deferred,
@@ -279,6 +291,30 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                     rsp,
                 );
             }
+            #[cfg(feature = "scan-servers")]
+            Uri::EnergyScan => self.scan.srv.energy.handle_request(now, req, rsp),
+            #[cfg(feature = "scan-servers")]
+            Uri::PanIdQuery => self.scan.srv.panid.handle_request(now, req, rsp),
+            #[cfg(feature = "scan-servers")]
+            Uri::AnnounceBegin => self.scan.srv.announce.handle_request(now, req, rsp),
+            #[cfg(feature = "commissioner")]
+            Uri::EnergyReport => {
+                if let Some(r) = opentrust_meshcop::scan::parse_energy_report(req, rsp)
+                    && let Ok(list) = Vec::from_slice(r.energy_list)
+                {
+                    self.scan.energy_report = Some((r.channel_mask, list));
+                    self.out.scan_event = Some(crate::Event::EnergyReport);
+                }
+            }
+            #[cfg(feature = "commissioner")]
+            Uri::PanIdConflict => {
+                if let Some(c) = opentrust_meshcop::scan::parse_pan_id_conflict(req, rsp) {
+                    self.out.scan_event = Some(crate::Event::PanIdConflict {
+                        pan_id: c.pan_id,
+                        channel_mask: c.channel_mask,
+                    });
+                }
+            }
             Uri::DatasetChanged => {
                 let _ = rsp.respond(Code::CHANGED, &[]);
                 self.defer_relay(uri, req);
@@ -309,6 +345,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             resolver: &mut self.resolver,
             bbrg: &mut self.bbrg,
             diag_in: &mut self.diag_in,
+            #[cfg(any(feature = "scan-servers", feature = "commissioner"))]
+            scan: &mut self.scan,
             ext: self.tmf_ext,
             now,
             out: Deferred::default(),
@@ -392,6 +430,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         if out.diag_event {
             self.core.push_event(crate::Event::DiagAnswer);
+        }
+        #[cfg(feature = "commissioner")]
+        if let Some(e) = out.scan_event {
+            self.core.push_event(e);
         }
         if out.reset_counters {
             self.core.mac.reset_counters();

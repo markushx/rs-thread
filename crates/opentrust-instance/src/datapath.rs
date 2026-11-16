@@ -241,14 +241,34 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     });
                 }
                 MacEvent::ActiveScanResult(r) => {
+                    #[cfg(feature = "scan-servers")]
+                    if self.beacon_to_server(now, Some((r.pan_id.0, r.channel))) {
+                        continue;
+                    }
                     self.core.push_event(Event::ActiveScanResult(r));
                 }
-                MacEvent::ActiveScanDone => self.core.push_event(Event::ActiveScanDone),
+                MacEvent::ActiveScanDone => {
+                    #[cfg(feature = "scan-servers")]
+                    if self.beacon_to_server(now, None) {
+                        continue;
+                    }
+                    self.core.push_event(Event::ActiveScanDone);
+                }
                 MacEvent::EnergyScanResult { channel, max_rssi } => {
+                    #[cfg(feature = "scan-servers")]
+                    if self.energy_result_to_server(now, Some(max_rssi)) {
+                        continue;
+                    }
                     self.core
                         .push_event(Event::EnergyScanResult { channel, max_rssi });
                 }
-                MacEvent::EnergyScanDone => self.core.push_event(Event::EnergyScanDone),
+                MacEvent::EnergyScanDone => {
+                    #[cfg(feature = "scan-servers")]
+                    if self.energy_result_to_server(now, None) {
+                        continue;
+                    }
+                    self.core.push_event(Event::EnergyScanDone);
+                }
                 MacEvent::DataPollSent(res) => {
                     let acked = match res {
                         Ok(_) => Some(true),

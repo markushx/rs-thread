@@ -13,11 +13,15 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "commissioner", "border-agent"]
+default = ["ftd", "commissioner", "border-agent", "scan-servers"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
 commissioner = ["ftd", "opentrust-meshcop/commissioner"]
 border-agent = ["commissioner", "opentrust-meshcop/border-agent"]
 tcat = ["opentrust-meshcop/tcat"]
+# The device side of the Commissioner's Announce Begin, Energy Scan and PAN ID
+# Query requests (`/c/ab`, `/c/es`, `/c/pq`; OT `AnnounceBeginServer`,
+# `EnergyScanServer`, `PanIdQueryServer`).
+scan-servers = []
 srp-services-8 = []
 srp-services-12 = []
 trel = ["opentrust-mesh/trel"]

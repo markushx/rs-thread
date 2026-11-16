@@ -154,9 +154,11 @@ impl<const C: usize> Mle<C> {
             env.active_timestamp()
         };
         let pan = env.pan_id();
+        // The frame goes to the broadcast PAN ID: the receivers on `channel`
+        // are on other PANs (OT `MeshForwarder::UpdateIp6Route`).
         let opts = TxOptions {
             channel: Some(channel),
-            pan_id: None,
+            pan_id: Some(opentrust_core::types::PanId::BROADCAST.0),
             link_security: true,
         };
         self.send_with(

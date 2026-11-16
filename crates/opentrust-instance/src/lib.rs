@@ -281,6 +281,18 @@ pub enum Event {
     },
     /// The energy scan finished.
     EnergyScanDone,
+    /// An Energy Report arrived for the Commissioner's Energy Scan query
+    /// ([`Instance::take_energy_report`]).
+    #[cfg(feature = "commissioner")]
+    EnergyReport,
+    /// A PAN ID Conflict report arrived for the Commissioner's PAN ID query.
+    #[cfg(feature = "commissioner")]
+    PanIdConflict {
+        /// The PAN ID that was queried.
+        pan_id: u16,
+        /// The channels the PAN ID was heard on.
+        channel_mask: u32,
+    },
     /// A Network Data Publisher entry changed state.
     Publisher(PublisherEvent),
     /// The SRP client selected or lost a server, registered, or failed.
@@ -645,6 +657,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.dhcp6.next_deadline(),
             self.bbrg.next_deadline(),
             self.cm.next_deadline(),
+            self.scan_servers_deadline(),
         ]
         .into_iter()
         .flatten()
@@ -653,6 +666,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             d = Some(self.core.now);
         }
         d
+    }
+
+    #[cfg(feature = "scan-servers")]
+    fn scan_servers_deadline(&self) -> Option<Instant> {
+        self.scan.srv.next_deadline()
+    }
+
+    #[cfg(not(feature = "scan-servers"))]
+    #[allow(clippy::unused_self)]
+    fn scan_servers_deadline(&self) -> Option<Instant> {
+        None
     }
 
     #[cfg(feature = "ftd")]

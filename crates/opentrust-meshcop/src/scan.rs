@@ -226,6 +226,14 @@ impl EnergyScanServer {
         }
     }
 
+    /// The MAC could not start the scan (busy): try again after the report
+    /// delay. (OT ignores the error and stalls the request.)
+    pub fn scan_failed(&mut self, now: Instant) {
+        if self.active {
+            self.deadline = Some(now.saturating_add(REPORT_DELAY));
+        }
+    }
+
     /// The report payload (Channel Mask and Energy List TLVs) and the
     /// requester to send it to. Ends the request.
     pub fn report(&mut self, out: &mut [u8]) -> Result<(Ipv6Addr, usize)> {
@@ -337,6 +345,12 @@ impl PanIdQueryServer {
     /// When [`poll`](Self::poll) next has work.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.deadline
+    }
+
+    /// The MAC could not start the scan (busy): try again after the report
+    /// delay. (OT ignores the error and drops the request.)
+    pub fn scan_failed(&mut self, now: Instant) {
+        self.deadline = Some(now.saturating_add(REPORT_DELAY));
     }
 
     /// A beacon `(pan_id, channel)` of the scan, or `None` at the end of

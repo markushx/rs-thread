@@ -11,7 +11,9 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, hex, ln, parse_hex, parse_hex_exact, parse_u16, parse_u32};
+use crate::util::{
+    Args, E, R, hex, ln, out, parse_hex, parse_hex_exact, parse_ip6, parse_u8, parse_u16, parse_u32,
+};
 
 /// Commissioner ID sent in the petition (OT default).
 const COMMISSIONER_ID: &str = "OpenThread Commissioner";
@@ -142,6 +144,33 @@ where
                     .commissioner_mgmt_set(w.written(), self.now)
                     .map_err(E::from)
             }
+            "announce" => {
+                let mask = parse_u32(a.get(2))?;
+                let count = parse_u8(a.get(3))?;
+                let period = parse_u16(a.get(4))?;
+                let dst = parse_ip6(a.get(5))?;
+                self.i
+                    .commissioner_announce_begin(mask, count, period, dst, self.now)
+                    .map_err(E::from)
+            }
+            "energy" => {
+                let mask = parse_u32(a.get(2))?;
+                let count = parse_u8(a.get(3))?;
+                let period = parse_u16(a.get(4))?;
+                let duration = parse_u16(a.get(5))?;
+                let dst = parse_ip6(a.get(6))?;
+                self.i
+                    .commissioner_energy_scan(mask, count, period, duration, dst, self.now)
+                    .map_err(E::from)
+            }
+            "panid" => {
+                let pan_id = parse_u16(a.get(2))?;
+                let mask = parse_u32(a.get(3))?;
+                let dst = parse_ip6(a.get(4))?;
+                self.i
+                    .commissioner_pan_id_query(pan_id, mask, dst, self.now)
+                    .map_err(E::from)
+            }
             "stop" => {
                 self.i.commissioner_stop(self.now);
                 Ok(())
@@ -190,6 +219,22 @@ where
             },
             _ => Err(E::INVALID_COMMAND),
         }
+    }
+
+    /// `Energy: <mask> <rssi> ...` (OT `Commissioner::HandleEnergyReport`).
+    pub(crate) fn energy_report(&mut self) {
+        while let Some((mask, list)) = self.i.take_energy_report() {
+            out!(self.o, "Energy: {mask:08x} ");
+            for b in &list {
+                out!(self.o, "{} ", *b as i8);
+            }
+            ln!(self.o);
+        }
+    }
+
+    /// `Conflict: <panid>, <mask>` (OT `Commissioner::HandlePanIdConflict`).
+    pub(crate) fn pan_id_conflict(&mut self, pan_id: u16, mask: u32) {
+        ln!(self.o, "Conflict: {pan_id:04x}, {mask:08x}");
     }
 
     pub(crate) fn commissioner_event(&mut self, e: &CommissionerEvent) {

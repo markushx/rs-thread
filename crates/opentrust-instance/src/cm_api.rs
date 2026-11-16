@@ -278,6 +278,129 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.cm.comm.session_id()
     }
 
+    /// Send an Energy Scan query (`/c/es`) to `dst` (a unicast or multicast
+    /// address; OT `otCommissionerEnergyScan`). The reports arrive as
+    /// [`Event::EnergyReport`](crate::Event::EnergyReport) and
+    /// [`take_energy_report`](Self::take_energy_report).
+    /// [`Error::InvalidState`] unless the Commissioner is active.
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_energy_scan(
+        &mut self,
+        channel_mask: u32,
+        count: u8,
+        period: u16,
+        scan_duration: u16,
+        dst: core::net::Ipv6Addr,
+        now: Instant,
+    ) -> Result<()> {
+        self.core.now = now;
+        self.commissioner_active()?;
+        let own = self.mle.rloc16();
+        let mlp = self.core.cfg.cur.mesh_local_prefix;
+        opentrust_meshcop::scan::send_energy_scan_query(
+            &mut self.agent,
+            now,
+            &mut self.prng,
+            &mut self.sink,
+            &mlp,
+            own,
+            dst,
+            self.cm.comm.session_id(),
+            channel_mask,
+            count,
+            period,
+            scan_duration,
+        )?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// Send a PAN ID Query (`/c/pq`) to `dst` (OT `otCommissionerPanIdQuery`);
+    /// conflicts arrive as [`Event::PanIdConflict`](crate::Event::PanIdConflict).
+    /// [`Error::InvalidState`] unless the Commissioner is active.
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_pan_id_query(
+        &mut self,
+        pan_id: u16,
+        channel_mask: u32,
+        dst: core::net::Ipv6Addr,
+        now: Instant,
+    ) -> Result<()> {
+        self.core.now = now;
+        self.commissioner_active()?;
+        let own = self.mle.rloc16();
+        let mlp = self.core.cfg.cur.mesh_local_prefix;
+        opentrust_meshcop::scan::send_pan_id_query(
+            &mut self.agent,
+            now,
+            &mut self.prng,
+            &mut self.sink,
+            &mlp,
+            own,
+            dst,
+            self.cm.comm.session_id(),
+            pan_id,
+            channel_mask,
+        )?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// Send an Announce Begin request (`/c/ab`) to `dst` (OT
+    /// `otCommissionerAnnounceBegin`): the receiver sends MLE Announces on
+    /// the channels of `channel_mask`, `count` times, `period` ms apart.
+    /// [`Error::InvalidState`] unless the Commissioner is active.
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_announce_begin(
+        &mut self,
+        channel_mask: u32,
+        count: u8,
+        period: u16,
+        dst: core::net::Ipv6Addr,
+        now: Instant,
+    ) -> Result<()> {
+        self.core.now = now;
+        self.commissioner_active()?;
+        let own = self.mle.rloc16();
+        let mlp = self.core.cfg.cur.mesh_local_prefix;
+        opentrust_meshcop::scan::send_announce_begin(
+            &mut self.agent,
+            now,
+            &mut self.prng,
+            &mut self.sink,
+            &mlp,
+            own,
+            dst,
+            self.cm.comm.session_id(),
+            channel_mask,
+            count,
+            period,
+        )?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// The last Energy Report received (channel mask and the energy list in
+    /// dBm as signed bytes), if any.
+    #[cfg(feature = "commissioner")]
+    pub fn take_energy_report(
+        &mut self,
+    ) -> Option<(
+        u32,
+        heapless::Vec<u8, { opentrust_meshcop::scan::MAX_ENERGY_RESULTS }>,
+    )> {
+        self.scan.energy_report.take()
+    }
+
+    #[cfg(feature = "commissioner")]
+    fn commissioner_active(&self) -> Result<()> {
+        if self.cm.comm.state() == opentrust_meshcop::commissioner::CommissionerState::Active {
+            Ok(())
+        } else {
+            Err(Error::InvalidState)
+        }
+    }
+
     /// Admit a Joiner (any, an EUI-64 or a discerner) with `pskd` for
     /// `timeout` (OT `otCommissionerAddJoiner`); the Steering Data is
     /// updated at the Leader. Only while active.

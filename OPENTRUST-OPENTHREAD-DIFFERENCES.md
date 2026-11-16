@@ -899,3 +899,22 @@ Where OpenThread's output is lossy, malformed or undefined for an input, OpenTru
 | Leader and the Commissioner Session ID of MGMT_ACTIVE_SET / MGMT_PENDING_SET | `FindCommissioningSessionId` reads the Commissioning Data of the Network Data | Same (an earlier version never filled the Session ID, so every set from a Commissioner was rejected) | Bug fix | A Commissioner of either implementation can now set datasets at an OpenTrust Leader |
 | `commissioner id`, `commissioner provisioningurl` | Get / set before `commissioner start` | Same | | none |
 | `joiner` on the MTD build | `ot-cli-mtd` has `joiner` | `opentrust-cli-vt-mtd` (feature `joiner`) has it | | none |
+
+## Commissioner scan requests (Energy Scan, PAN ID Query, Announce Begin)
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Device side `/c/es`, `/c/pq`, `/c/ab` | Always built | Feature `scan-servers` of `opentrust-instance` (on by default, on in the CLI builds, off in the nRF52840 light example) | Flash size of constrained firmware | A device without it does not answer the Commissioner's requests |
+| MAC busy when the Energy Scan / PAN ID Query server starts its scan (a user scan runs) | `IgnoreError(Mac::EnergyScan(...))` / `ActiveScan`: the request stalls and is never reported | The server tries again after 500 ms | A stalled request holds the server for ever | none |
+| Reports at the Commissioner | Callbacks of `otCommissionerEnergyScan` / `otCommissionerPanIdQuery` | `Event::EnergyReport` + `Instance::take_energy_report`, `Event::PanIdConflict` | No callbacks in the `Instance` API | none |
+| MLE Announce frame | Destination PAN ID is the broadcast PAN ID, the radio returns to the PAN channel | Same (an earlier version used the own PAN ID, so devices on another PAN dropped it: `Cert_9_2_12`) | Bug fix | An OpenTrust device now moves OpenThread devices with an Announce |
+
+## Datasets, key switch and reattach (Cert_9_2_08, 9_2_09, 9_2_11, 9_2_18)
+
+| Area | OpenThread | OpenTrust | Reason | Interop |
+|------|------------|-----------|--------|---------|
+| Restoring a held Pending Dataset | `DatasetManager::Read` subtracts the time since the last save (`mLocalUpdateTime`) from the stored delay; a reattach continues the delay | Same for a dataset in memory (it restarted the full stored delay on every detach); after a reset the stored delay is the one of the last checkpoint (`Datasets::checkpoint_pending_delay`, OpenTrust only) | Bug fix | A merged partition received the Pending Dataset with a large delay and applied it late |
+| Network key change | `KeyManager::ResetFrameCounters` resets the incoming key sequence and frame counters of the parent, routers and children | Same (`Mle::reset_frame_counters`); it was missing, so neighbors dropped the frames of the new key as replays | Bug fix (security) | The key switch of an OpenThread Commissioner no longer cuts the link to OpenTrust devices |
+| `Mle::Restore` device mode | Takes the stored mode with the FTD bit on an FTD build | Same; the FTD bit used to come from the configuration | Bug fix | A device set to `mode -` stays a minimal device across a reset |
+| Restore with a stored RLOC16 | `Start(kNormalAttach)` sets `kReattachStart` in every case | Same (the restore path did not) | Bug fix | A device that was off while the Pending Dataset moved the network follows it |
+| Child ID Response of a router attaching to a better partition | `SetStateDetached()` first, then the Route TLV is processed as a child | Same (the router role was still set and the Route TLV detached it again) | Bug fix | Partitions with an OpenTrust router merge |

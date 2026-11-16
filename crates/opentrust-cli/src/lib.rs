@@ -355,6 +355,13 @@ where
             Event::JoinerResult(r) => self.joiner_result(*r),
             #[cfg(feature = "commissioning")]
             Event::Commissioner(e) => self.commissioner_event(e),
+            #[cfg(feature = "commissioning")]
+            Event::EnergyReport => self.energy_report(),
+            #[cfg(feature = "commissioning")]
+            Event::PanIdConflict {
+                pan_id,
+                channel_mask,
+            } => self.pan_id_conflict(*pan_id, *channel_mask),
             Event::DetachedGracefully => self.detach_done(),
             _ => {}
         }

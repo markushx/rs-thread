@@ -37,3 +37,15 @@ from a security point of view. Each entry is a candidate for a later review
 - **Options for later:** a build/runtime option for the strict behaviour (no KEK
   on `Reject`, Joiner stops on `Reject`); ask the Thread Group whether the
   Joiner should discard JOIN_ENT after `Reject`.
+
+## Energy Scan and PAN ID Query servers stall when the MAC is busy
+
+- **OpenThread:** `EnergyScanServer::HandleTimer` and `PanIdQueryServer::HandleTimer`
+  call `Mac::EnergyScan` / `Mac::ActiveScan` and ignore the error. If another
+  scan runs (for example `scan` on the CLI), no result callback ever arrives, the
+  timer is not restarted and the request is never answered; the Commissioner
+  waits for a report that does not come.
+- **OpenTrust:** the server tries again after 500 ms
+  (`EnergyScanServer::scan_failed`, `PanIdQueryServer::scan_failed`).
+- **Options for later:** answer the request with an empty list after a number of
+  retries.

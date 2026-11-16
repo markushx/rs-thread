@@ -8,6 +8,8 @@
 //! while the Joiner is running.
 
 use opentrust_core::time::{Duration, Instant};
+#[cfg(feature = "scan-servers")]
+use opentrust_core::types::Rloc16;
 use opentrust_core::{Error, Result};
 use opentrust_meshcop::discovery::{DiscoverScanner, ScanStep, build_request_tlv};
 use opentrust_meshcop::joiner::JoinerState;
@@ -15,6 +17,10 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::{Event, Instance, InstanceCrypto};
+
+/// Listening time per channel of an active scan (OT default).
+#[cfg(feature = "scan-servers")]
+const ACTIVE_SCAN_DURATION: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Default)]
 pub(crate) struct ScanState {
@@ -28,6 +34,53 @@ pub(crate) struct ScanState {
     beacon_for: Option<(bool, bool, bool, bool)>,
     /// Put the Thread beacon payload into beacons (off by default).
     pub(crate) beacon_payload: bool,
+    /// The servers of the Commissioner's scan requests.
+    #[cfg(feature = "scan-servers")]
+    pub(crate) srv: ScanServers,
+    /// The last Energy Report received as Commissioner.
+    #[cfg(feature = "commissioner")]
+    pub(crate) energy_report: Option<(
+        u32,
+        heapless::Vec<u8, { opentrust_meshcop::scan::MAX_ENERGY_RESULTS }>,
+    )>,
+}
+
+/// Which request the MAC scan in progress belongs to.
+#[cfg(feature = "scan-servers")]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanOwner {
+    /// The application (events as [`Event`]s) or no scan.
+    #[default]
+    User,
+    /// The Energy Scan server.
+    Energy,
+    /// The PAN ID Query server.
+    PanId,
+}
+
+/// `/c/es`, `/c/pq` and `/c/ab` (OT `EnergyScanServer`, `PanIdQueryServer`,
+/// `AnnounceBeginServer`).
+#[cfg(feature = "scan-servers")]
+#[derive(Debug, Default)]
+pub(crate) struct ScanServers {
+    pub(crate) energy: opentrust_meshcop::scan::EnergyScanServer,
+    pub(crate) panid: opentrust_meshcop::scan::PanIdQueryServer,
+    pub(crate) announce: opentrust_meshcop::scan::AnnounceBeginServer,
+    pub(crate) owner: ScanOwner,
+}
+
+#[cfg(feature = "scan-servers")]
+impl ScanServers {
+    pub(crate) fn next_deadline(&self) -> Option<Instant> {
+        [
+            self.energy.next_deadline(),
+            self.panid.next_deadline(),
+            self.announce.next_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+    }
 }
 
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
@@ -155,10 +208,123 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.mac.set_beacon_payload(payload);
     }
 
+    /// A MAC energy scan result or its end. `true` if the Energy Scan
+    /// server owns the scan (the result is not an [`Event`] then).
+    #[cfg(feature = "scan-servers")]
+    pub(crate) fn energy_result_to_server(&mut self, now: Instant, rssi: Option<i8>) -> bool {
+        if self.scan.srv.owner != ScanOwner::Energy {
+            return false;
+        }
+        if rssi.is_none() {
+            self.scan.srv.owner = ScanOwner::User;
+        }
+        self.scan.srv.energy.scan_result(now, rssi);
+        true
+    }
+
+    /// A MAC beacon of the active scan or its end (`None`). `true` if the
+    /// PAN ID Query server owns the scan.
+    #[cfg(feature = "scan-servers")]
+    pub(crate) fn beacon_to_server(&mut self, now: Instant, beacon: Option<(u16, u8)>) -> bool {
+        if self.scan.srv.owner != ScanOwner::PanId {
+            return false;
+        }
+        if beacon.is_none() {
+            self.scan.srv.owner = ScanOwner::User;
+        }
+        if self.scan.srv.panid.scan_result(beacon) {
+            let mut buf = [0u8; 16];
+            if let Ok((dst, n)) = self.scan.srv.panid.conflict(&mut buf) {
+                let own = self.mle.rloc16();
+                if own != Rloc16::INVALID {
+                    let mlp = self.core.cfg.cur.mesh_local_prefix;
+                    let _ = opentrust_meshcop::scan::send_pan_id_conflict(
+                        &mut self.agent,
+                        now,
+                        &mut self.prng,
+                        &mut self.sink,
+                        &mlp,
+                        own,
+                        dst,
+                        &buf[..n],
+                    );
+                }
+            }
+        }
+        true
+    }
+
+    /// Run the three servers.
+    #[cfg(feature = "scan-servers")]
+    fn service_scan_servers(&mut self, now: Instant) -> bool {
+        use opentrust_meshcop::scan::{EnergyAction, PanIdAction};
+        let mut busy = false;
+        match self.scan.srv.energy.poll(now) {
+            Some(EnergyAction::Scan {
+                channel,
+                duration_ms,
+            }) => {
+                busy = true;
+                let started = self.core.mac.energy_scan(
+                    1u32 << channel,
+                    Duration::from_millis(u64::from(duration_ms)),
+                );
+                if started.is_ok() {
+                    self.scan.srv.owner = ScanOwner::Energy;
+                } else {
+                    self.scan.srv.energy.scan_failed(now);
+                }
+            }
+            Some(EnergyAction::Report) => {
+                busy = true;
+                let mut buf = [0u8; 300];
+                if let Ok((dst, n)) = self.scan.srv.energy.report(&mut buf) {
+                    let own = self.mle.rloc16();
+                    if own != Rloc16::INVALID {
+                        let mlp = self.core.cfg.cur.mesh_local_prefix;
+                        let _ = opentrust_meshcop::scan::send_energy_report(
+                            &mut self.agent,
+                            now,
+                            &mut self.prng,
+                            &mut self.sink,
+                            &mlp,
+                            own,
+                            dst,
+                            &buf[..n],
+                        );
+                    }
+                }
+            }
+            None => {}
+        }
+        if let Some(PanIdAction::ActiveScan { channel_mask }) = self.scan.srv.panid.poll(now) {
+            busy = true;
+            if self
+                .core
+                .mac
+                .active_scan(channel_mask, ACTIVE_SCAN_DURATION)
+                .is_ok()
+            {
+                self.scan.srv.owner = ScanOwner::PanId;
+            } else {
+                self.scan.srv.panid.scan_failed(now);
+            }
+        }
+        if let Some(channel) = self.scan.srv.announce.poll(now) {
+            busy = true;
+            let _ = self.mle.send_announce(&mut self.core, channel, false, None);
+        }
+        busy
+    }
+
     #[inline(never)]
     pub(crate) fn service_scan(&mut self, now: Instant) -> bool {
         self.update_beacon(now);
         let mut busy = false;
+        #[cfg(feature = "scan-servers")]
+        {
+            busy |= self.service_scan_servers(now);
+        }
         while let Some((info, tlvs)) = self.core.scan_rx.pop_front() {
             busy = true;
             if let Some(r) = self.scan.disc.handle_response(&info, &tlvs) {
