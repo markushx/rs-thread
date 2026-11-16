@@ -139,6 +139,40 @@ impl<const C: usize> Mle<C> {
     /// starts fresh with [`start`](Self::start)); [`Error::InvalidState`] for
     /// a record of another Thread version or a role that is not attached.
     pub fn restore<E: MleEnv>(&mut self, env: &mut E, now: Instant) -> Result<Restored> {
+        self.restore_inner(env, now, true)
+    }
+
+    /// [`restore`](Self::restore) for a device that already took the stored
+    /// device mode with [`restore_device_mode`](Self::restore_device_mode)
+    /// at boot and may have been given another mode since (OT restores at
+    /// instance initialisation, a later `mode` command wins).
+    pub fn restore_keeping_mode<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: Instant,
+    ) -> Result<Restored> {
+        self.restore_inner(env, now, false)
+    }
+
+    /// Take the device mode from the stored network information bits (OT
+    /// `Mle::Restore` at boot): the stored mode, including the FTD bit (a
+    /// device configured with `mode -` stays a minimal device across a
+    /// reset); an MTD build clears the FTD bit.
+    pub fn restore_device_mode(&mut self, bits: u8) {
+        let stored = DeviceMode::from_bits(bits);
+        self.cfg.mode = DeviceMode::new(
+            stored.rx_on_when_idle(),
+            cfg!(feature = "ftd") && stored.full_thread_device(),
+            stored.full_network_data(),
+        );
+    }
+
+    fn restore_inner<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: Instant,
+        adopt_mode: bool,
+    ) -> Result<Restored> {
         if self.role != Role::Disabled {
             return Err(Error::Already);
         }
@@ -152,15 +186,9 @@ impl<const C: usize> Mle<C> {
         let role = Role::from_u8(info.role)
             .filter(|r| r.is_attached())
             .ok_or(Error::InvalidState)?;
-        // OT `Mle::Restore`: the stored mode, including the FTD bit (a device
-        // configured with `mode -` stays a minimal device across a reset);
-        // an MTD build clears the FTD bit.
-        let stored = DeviceMode::from_bits(info.device_mode);
-        self.cfg.mode = DeviceMode::new(
-            stored.rx_on_when_idle(),
-            cfg!(feature = "ftd") && stored.full_thread_device(),
-            stored.full_network_data(),
-        );
+        if adopt_mode {
+            self.restore_device_mode(info.device_mode);
+        }
         env.apply_restored_identity(&info.ext_address, &info.ml_iid);
         // OT `Mle::Start(kNormalAttach)`: a failed restore (no answer from
         // the parent or routers) continues with the stored Active Dataset

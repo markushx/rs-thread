@@ -427,7 +427,8 @@ Security-relevant decisions for the review before M4:
   - [ ] Test-plan gaps found by `docs/test-plan-status.md` (OpenThread `thread-cert` scripts, simulation only):
     - [ ] 9.2.8, 9.2.9, 9.2.11 to 9.2.14, 9.2.18 fail with OpenTrust nodes (being fixed)
     - [ ] 5.7.1 to 5.7.3: the OpenTrust DUT does not answer Network Diagnostic Get (no diagnostic server / `networkdiagnostic` CLI)
-    - [ ] 6.2.2 (OpenTrust as Router 1 after the merge) and 6.5.2 (SED child stays detached after reset, also MTD build)
+    - [ ] 6.2.2 (OpenTrust as Router 1 after the merge)
+    - [x] 6.5.2 (the DUT reported a random extended address after a reset, so the script allow-listed the wrong one at the leader; the stored identity is now restored when the instance is created, also for the MTD build)
     - [ ] LowPower 7.1.1, 7.1.2, 7.2.1 and the link-metrics functional tests: `linkmetrics` CLI / enhanced-ack probing / forward tracking
     - [ ] BBR / DUA / MLR (Thread 1.2): needs a sim `ot-cli-ftd` with `OT_BACKBONE_ROUTER` to get a baseline; MATN, BBR 5.11.1 and the `border_router` scripts need an OTBR / backbone harness
     - [ ] OpenThread functional tests that fail with all-OpenTrust nodes: SRP (CLI), DNS-SD, diag, history, radio filter, anycast locator, child supervision, detach, route table (list in the status file)

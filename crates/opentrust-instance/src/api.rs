@@ -81,6 +81,28 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.start_inner(now, false)
     }
 
+    /// OT `Mle::Restore` at instance initialisation: a stored network
+    /// information record (of this Thread version, with an attached role and
+    /// a valid RLOC16) gives the extended address and the Mesh Local IID back
+    /// right after a reset, before Thread is started. A device that reports
+    /// its extended address before it starts (a test harness, a commissioner
+    /// that allow-lists it) then sees the identity its network knows.
+    pub(crate) fn restore_boot_identity(&mut self) {
+        use opentrust_mle::env::MleEnv as _;
+        let Some(info) = self.core.load_network_info() else {
+            return;
+        };
+        let attached = Role::from_u8(info.role).is_some_and(|r| r.is_attached());
+        if info.version == opentrust_mle::consts::THREAD_VERSION
+            && attached
+            && info.rloc16 != Rloc16::INVALID
+        {
+            self.core
+                .apply_restored_identity(&info.ext_address, &info.ml_iid);
+            self.mle.restore_device_mode(info.device_mode);
+        }
+    }
+
     /// Set the extended address (OT `otLinkSetExtendedAddress`) and with it
     /// the link-local address. [`Error::InvalidState`] while Thread is
     /// started.
@@ -150,7 +172,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let restored = if lead {
             Err(Error::NotFound)
         } else {
-            self.mle.restore(&mut self.core, now)
+            // The device mode was restored at creation; a `mode` set since
+            // then stays.
+            self.mle.restore_keeping_mode(&mut self.core, now)
         };
         match restored {
             Ok(Restored::Router { role, .. }) => {

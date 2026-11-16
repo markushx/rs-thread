@@ -35,7 +35,7 @@ harness are in [test-status.md](test-status.md).
 | section | cases | pass | partial | fail | baseline-fail | not run | runs passed / run |
 |---|---|---|---|---|---|---|---|
 | 5.x | 50 | 47 | 3 | 0 | 0 | 0 | 425/431 |
-| 6.x | 18 | 16 | 2 | 0 | 0 | 0 | 88/92 |
+| 6.x | 18 | 17 | 1 | 0 | 0 | 0 | 90/92 |
 | 7.x | 8 | 8 | 0 | 0 | 0 | 0 | 49/49 |
 | 8.x | 7 | 7 | 0 | 0 | 0 | 0 | 31/31 |
 | 9.x | 19 | 12 | 6 | 1 | 0 | 0 | 78/103 |
@@ -119,7 +119,7 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 6.4.1 | Link Local | `Cert_6_4_01_LinkLocal` | pass | 4/4 | n2 pass | fail / pass |  |
 | 6.4.2 | Realm Local | `Cert_6_4_02_RealmLocal` | pass | 5/5 | n3 pass | fail / fail |  |
 | 6.5.1 | Child Reset Reattach | `Cert_6_5_01_ChildResetReattach` | pass | 4/4 | n2 pass | pass / fail |  |
-| 6.5.2 | Child Reset Reattach | `Cert_6_5_02_ChildResetReattach` | partial | 3/5 | n3 FAIL | pass / fail | fails: n3, all; stable, also with the MTD build: the SED child stays `detached` after the reset (node 3) |
+| 6.5.2 | Child Reset Reattach | `Cert_6_5_02_ChildResetReattach` | pass | 5/5 | n3 pass | pass / fail | fixed: the stored extended address is restored when the instance is created (before `thread start`), as OpenThread does; the script reads it after the reset to allow-list the DUT at the leader |
 | 6.5.3 | Child Reset Synchronize | `Cert_6_5_03_ChildResetSynchronize` | pass | 4/4 | n2 pass | fail / pass |  |
 | 6.6.1 | Key Increment | `Cert_6_6_01_KeyIncrement` | pass | 4/4 | n2 pass | pass / fail |  |
 | 6.6.2 | Key Increment Roll Over | `Cert_6_6_02_KeyIncrementRollOver` | pass | 4/4 | n2 pass | pass / fail |  |

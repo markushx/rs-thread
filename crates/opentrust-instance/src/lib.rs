@@ -563,7 +563,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).scan), scan::ScanState::default);
             addr_of_mut!((*p).ip6_enabled).write(false);
             addr_of_mut!((*p).started).write(false);
-            &mut *p
+            let inst = &mut *p;
+            inst.restore_boot_identity();
+            inst
         }
     }
 
@@ -913,6 +915,27 @@ mod tests {
             i.poll(t);
         }
         assert!(seen);
+    }
+
+    #[test]
+    fn identity_is_restored_at_creation() {
+        let mut i = instance();
+        let now = Instant::from_secs(10);
+        let ds = i.create_dataset(15).unwrap();
+        i.set_active_dataset(&ds, now).unwrap();
+        i.ip6_set_enabled(true);
+        i.become_leader(now).unwrap();
+        i.poll(now);
+        let (ext, ml_eid) = (i.ext_address(), i.ml_eid());
+        let settings = i.into_settings();
+        // After a reset the instance starts with another (random) address
+        // and takes the stored one before Thread starts.
+        let cfg = Config::router(ExtAddress([2, 0, 0, 0, 0, 0, 0, 9]), RadioCaps::default());
+        let i2 = Instance::new(cfg, settings, SoftCrypto, MacRng::new(7));
+        assert_eq!(i2.role(), Role::Disabled);
+        assert_eq!(i2.ext_address(), ext);
+        // The prefix comes with the dataset at start; the IID is restored.
+        assert_eq!(i2.ml_eid().octets()[8..], ml_eid.octets()[8..]);
     }
 
     #[test]
