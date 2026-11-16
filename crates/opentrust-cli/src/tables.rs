@@ -11,7 +11,9 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, hex, ln, out, parse_u16, table_header};
+#[cfg(feature = "ftd")]
+use crate::util::parse_u16;
+use crate::util::{Args, E, R, hex, ln, out, table_header};
 
 /// Thread version reported for neighbors (Thread 1.4).
 const NEIGHBOR_VERSION: u8 = 5;

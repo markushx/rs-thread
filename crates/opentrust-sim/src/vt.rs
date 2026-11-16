@@ -310,9 +310,13 @@ pub fn node_ext_address(node_id: u16) -> ExtAddress {
     ExtAddress([0x1a, 0xb4, 0x31, 0x00, 0x00, 0x00, h[0], h[1]])
 }
 
-/// A new FTD node (router capable, rx-on-when-idle).
+/// A new node: an FTD (router capable, rx-on-when-idle) with the `ftd`
+/// feature, else a minimal thread device (rx-on-when-idle, no routing).
 pub fn new_instance(node_id: u16, settings: FileSettings, seed: u64) -> Box<VtInstance> {
+    #[cfg(feature = "ftd")]
     let cfg = Config::router(node_ext_address(node_id), caps());
+    #[cfg(not(feature = "ftd"))]
+    let cfg = Config::end_device(node_ext_address(node_id), caps());
     Box::new(Instance::new(
         cfg,
         settings,

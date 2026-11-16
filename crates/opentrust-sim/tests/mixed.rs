@@ -6,59 +6,10 @@
 
 #![allow(clippy::std_instead_of_core)]
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU16, Ordering};
+mod vt_common;
 
-use opentrust_sim::vtsim::{VtSim, opentrust_cli_vt, ot_cli_ftd};
-
-static NEXT: AtomicU16 = AtomicU16::new(0);
-
-struct Env {
-    sim: VtSim,
-    dir: PathBuf,
-}
-
-fn env(name: &str, kinds: &[(u16, bool)]) -> Option<Env> {
-    let ot = ot_cli_ftd().or_else(|| {
-        eprintln!("skipping {name}: no ot-cli-ftd (cargo build -p openthread-sys)");
-        None
-    })?;
-    let rust = opentrust_cli_vt().or_else(|| {
-        eprintln!("skipping {name}: opentrust-cli-vt not available");
-        None
-    })?;
-    let offset = (std::process::id() % 250) as u16 + NEXT.fetch_add(1, Ordering::SeqCst) * 7;
-    let offset = 1 + offset % 250;
-    let mut sim = VtSim::new(offset).expect("simulator socket");
-    let dir = std::env::temp_dir().join(format!("opentrust-mixed-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    for &(id, is_rust) in kinds {
-        let exe = if is_rust { &rust } else { &ot };
-        sim.spawn(id, exe, &dir.join(format!("n{id}")))
-            .expect("spawn node");
-    }
-    Some(Env { sim, dir })
-}
-
-impl Drop for Env {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
-fn ok(sim: &mut VtSim, id: u16, cmd: &str) -> Vec<String> {
-    let out = sim.cmd(id, cmd);
-    assert_eq!(
-        out.last().map(String::as_str),
-        Some("Done"),
-        "node {id}: {cmd}: {out:?}"
-    );
-    out
-}
-
-fn state(sim: &mut VtSim, id: u16) -> String {
-    sim.cmd(id, "state").first().cloned().unwrap_or_default()
-}
+use opentrust_sim::vtsim::VtSim;
+use vt_common::{Env, env, mesh_local, ok, state};
 
 fn pings(sim: &mut VtSim, from: u16, to: &str) -> bool {
     sim.send(from, &format!("ping {to}"));
@@ -89,15 +40,6 @@ fn form_and_join(e: &mut Env, leader: u16, other: u16) {
         "router",
         "node {other} did not become a router"
     );
-}
-
-fn mesh_local(sim: &mut VtSim, id: u16) -> String {
-    let out = ok(sim, id, "ipaddr");
-    // The ML-EID is the address that is neither a link-local, nor an RLOC / ALOC.
-    out.iter()
-        .find(|l| !l.starts_with("fe80") && !l.contains("ff:fe00") && l.starts_with("fd"))
-        .cloned()
-        .expect("mesh-local address")
 }
 
 fn router_ids(sim: &mut VtSim, id: u16) -> usize {

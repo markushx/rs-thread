@@ -11,8 +11,10 @@
 //!   (default: `Cert_5_1_`, `Cert_5_2_`, `Cert_5_3_`).
 //! - `OPENTRUST_CERT_CONFIGS`: which nodes are OpenTrust, comma-separated:
 //!   `ot` (all OpenThread, the baseline), `each` (one run per node of the
-//!   case with only that node OpenTrust), `all` (all OpenTrust). Default
-//!   `ot,each`.
+//!   case with only that node OpenTrust), `all` (all OpenTrust), `mtd:3`
+//!   or `mtd:3+4` (those nodes run `opentrust-cli-vt-mtd`, the build without
+//!   router, commissioner and Border Agent; OpenThread for the others).
+//!   Default `ot,each`.
 //! - `OPENTRUST_CERT_TIMEOUT`: seconds per run (default 300).
 //! - `OPENTRUST_CERT_ALLOW_FAIL=1`: report failures but exit 0.
 //! - `OPENTRUST_CERT_REPORT=<file>`: write the result table (markdown) there.
@@ -31,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use opentrust_sim::vtsim::{opentrust_cli_vt, ot_cli_ftd};
+use opentrust_sim::vtsim::{opentrust_cli_vt, opentrust_cli_vt_mtd, ot_cli_ftd};
 
 /// Packet verification with `tshark`: `OPENTRUST_CERT_PKTVERIFY=1`.
 fn pktverify() -> bool {
@@ -153,6 +155,7 @@ struct Setup {
     cert_dir: PathBuf,
     ot: PathBuf,
     rust: PathBuf,
+    mtd: Option<PathBuf>,
     work: PathBuf,
     timeout: Duration,
 }
@@ -164,11 +167,13 @@ enum Outcome {
     Timeout,
 }
 
-/// Run one case; `rust_nodes` are the node IDs run by OpenTrust.
+/// Run one case; `rust_nodes` are the node IDs run by OpenTrust, `mtd_nodes`
+/// those run by its MTD build (`opentrust-cli-vt-mtd`).
 fn run_case(
     s: &Setup,
     case: &str,
     rust_nodes: &[u32],
+    mtd_nodes: &[u32],
     offset: u32,
     tag: &str,
 ) -> (Outcome, String) {
@@ -179,7 +184,7 @@ fn run_case(
     let wrapper = dir.join("ot-cli-ftd");
     std::fs::write(
         &wrapper,
-        "#!/bin/sh\ncase \",$OPENTRUST_NODES,\" in\n  *\",$1,\"*) exec \"$OPENTRUST_CLI_VT\" \"$1\" ;;\n  *) exec \"$OT_CLI_FTD\" \"$1\" ;;\nesac\n",
+        "#!/bin/sh\ncase \",$OPENTRUST_MTD_NODES,\" in\n  *\",$1,\"*) exec \"$OPENTRUST_CLI_VT_MTD\" \"$1\" ;;\nesac\ncase \",$OPENTRUST_NODES,\" in\n  *\",$1,\"*) exec \"$OPENTRUST_CLI_VT\" \"$1\" ;;\n  *) exec \"$OT_CLI_FTD\" \"$1\" ;;\nesac\n",
     )
     .unwrap();
     #[cfg(unix)]
@@ -190,6 +195,7 @@ fn run_case(
         std::fs::set_permissions(&wrapper, p).unwrap();
     }
     let nodes: Vec<String> = rust_nodes.iter().map(u32::to_string).collect();
+    let mtd: Vec<String> = mtd_nodes.iter().map(u32::to_string).collect();
     let mut child = Command::new(&s.py)
         .arg(s.cert_dir.join(format!("{case}.py")))
         .current_dir(&dir)
@@ -199,6 +205,8 @@ fn run_case(
         .env("OT_CLI_FTD", &s.ot)
         .env("OPENTRUST_CLI_VT", &s.rust)
         .env("OPENTRUST_NODES", nodes.join(","))
+        .env("OPENTRUST_CLI_VT_MTD", s.mtd.as_deref().unwrap_or(&s.rust))
+        .env("OPENTRUST_MTD_NODES", mtd.join(","))
         .env("THREAD_VERSION", "1.4")
         .env("VIRTUAL_TIME", "1")
         .env("PORT_OFFSET", offset.to_string())
@@ -272,12 +280,14 @@ fn main() {
     let Some(rust) = opentrust_cli_vt() else {
         return skip("cannot build opentrust-cli-vt");
     };
+    let mtd = opentrust_cli_vt_mtd();
     let work = std::env::temp_dir().join(format!("opentrust-cert-{}", std::process::id()));
     let setup = Setup {
         py,
         cert_dir: cert_dir.clone(),
         ot,
         rust,
+        mtd,
         work: work.clone(),
         timeout: Duration::from_secs(
             std::env::var("OPENTRUST_CERT_TIMEOUT")
@@ -310,23 +320,30 @@ fn main() {
     let mut offset = 1 + std::process::id() % 250;
     for case in &cases {
         let nodes = topology(&setup.py, &cert_dir, case);
-        let mut runs: Vec<(String, Vec<u32>)> = Vec::new();
+        let mut runs: Vec<(String, Vec<u32>, Vec<u32>)> = Vec::new();
         for c in &configs {
             match c.as_str() {
-                "ot" => runs.push(("all OT".into(), vec![])),
-                "all" => runs.push(("all OpenTrust".into(), nodes.clone())),
+                "ot" => runs.push(("all OT".into(), vec![], vec![])),
+                "all" => runs.push(("all OpenTrust".into(), nodes.clone(), vec![])),
                 "each" => {
                     for &n in &nodes {
-                        runs.push((format!("node {n} OpenTrust"), vec![n]));
+                        runs.push((format!("node {n} OpenTrust"), vec![n], vec![]));
+                    }
+                }
+                // `mtd:3` or `mtd:3+4`: those nodes run the MTD build.
+                m if m.starts_with("mtd:") => {
+                    let ids: Vec<u32> = m[4..].split('+').filter_map(|v| v.parse().ok()).collect();
+                    if ids.iter().all(|i| nodes.contains(i)) {
+                        runs.push((format!("node {} OpenTrust MTD", &m[4..]), vec![], ids));
                     }
                 }
                 _ => {}
             }
         }
-        for (label, rust_nodes) in runs {
+        for (label, rust_nodes, mtd_nodes) in runs {
             offset = 1 + offset % 250;
             let tag = label.replace(' ', "-");
-            let (o, reason) = run_case(&setup, case, &rust_nodes, offset, &tag);
+            let (o, reason) = run_case(&setup, case, &rust_nodes, &mtd_nodes, offset, &tag);
             let name = match o {
                 Outcome::Pass => "pass",
                 Outcome::Fail => "FAIL",

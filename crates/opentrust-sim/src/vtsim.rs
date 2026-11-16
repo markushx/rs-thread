@@ -153,6 +153,30 @@ impl VtSim {
         })
     }
 
+    /// A simulator on the first free `PORT_OFFSET`, searching from `hint`
+    /// (modulo the 250 offsets whose ports stay below the ephemeral range).
+    /// Free means that the simulator port can be bound and that none of the
+    /// ports of the 33 nodes of that offset is in use, so simulators of
+    /// parallel tests (or of several test processes) never share a port.
+    /// The bound socket of the simulator keeps its offset claimed.
+    pub fn new_free(hint: u16) -> io::Result<Self> {
+        let mut last = None;
+        for k in 0..250 {
+            let offset = 1 + (hint + k) % 250;
+            let port = 9000 + offset * (MAX_NODES + 1);
+            let nodes_free =
+                (1..=MAX_NODES).all(|n| UdpSocket::bind(("0.0.0.0", port + n)).is_ok());
+            if !nodes_free {
+                continue;
+            }
+            match Self::new(offset) {
+                Ok(sim) => return Ok(sim),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last.unwrap_or_else(|| io::Error::other("no free PORT_OFFSET")))
+    }
+
     /// Virtual time in microseconds.
     pub fn now_us(&self) -> u64 {
         self.current_time
@@ -511,19 +535,45 @@ pub fn opentrust_cli_vt() -> Option<std::path::PathBuf> {
     use std::sync::OnceLock;
     static BIN: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
     BIN.get_or_init(|| {
-        if let Some(p) = std::env::var_os("OPENTRUST_CLI_VT") {
-            return Some(p.into());
-        }
-        let dir = target_dir();
-        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-        let ok = Command::new(cargo)
-            .args(["build", "-q", "-p", "opentrust-cli", "--features", "sim"])
-            .args(["--bin", "opentrust-cli-vt"])
-            .env("CARGO_TARGET_DIR", &dir)
-            .status()
-            .is_ok_and(|s| s.success());
-        let p = dir.join("debug/opentrust-cli-vt");
-        (ok && p.is_file()).then_some(p)
+        build_vt(
+            "OPENTRUST_CLI_VT",
+            "opentrust-cli-vt",
+            &["--features", "sim"],
+        )
     })
     .clone()
+}
+
+/// The minimal thread device build of the OpenTrust node,
+/// `opentrust-cli-vt-mtd` (no `ftd`, commissioner or Border Agent code):
+/// `$OPENTRUST_CLI_VT_MTD`, else built with `cargo build -p opentrust-cli
+/// --no-default-features --features sim-mtd` (once per process).
+pub fn opentrust_cli_vt_mtd() -> Option<std::path::PathBuf> {
+    use std::sync::OnceLock;
+    static BIN: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+    BIN.get_or_init(|| {
+        build_vt(
+            "OPENTRUST_CLI_VT_MTD",
+            "opentrust-cli-vt-mtd",
+            &["--no-default-features", "--features", "sim-mtd"],
+        )
+    })
+    .clone()
+}
+
+fn build_vt(env: &str, bin: &str, args: &[&str]) -> Option<std::path::PathBuf> {
+    if let Some(p) = std::env::var_os(env) {
+        return Some(p.into());
+    }
+    let dir = target_dir();
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let ok = Command::new(cargo)
+        .args(["build", "-q", "-p", "opentrust-cli"])
+        .args(args)
+        .args(["--bin", bin])
+        .env("CARGO_TARGET_DIR", &dir)
+        .status()
+        .is_ok_and(|s| s.success());
+    let p = dir.join("debug").join(bin);
+    (ok && p.is_file()).then_some(p)
 }

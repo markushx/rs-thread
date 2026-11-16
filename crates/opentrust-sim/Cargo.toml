@@ -13,6 +13,10 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
+default = ["ftd"]
+# Router-capable nodes with the commissioner and Border Agent compiled in.
+# Without it the virtual-time node is a minimal thread device (MTD) build.
+ftd = ["opentrust-instance/ftd", "opentrust-instance/commissioner", "opentrust-instance/border-agent"]
 # The async test harness (`testing` module): an in-memory 802.15.4 medium,
 # a lock-step virtual-time driver for `opentrust_embassy::OpenTrust::run`
 # futures and a virtual `embassy-time` driver (one per test binary).
@@ -31,7 +35,7 @@ testing = [
 opentrust-core = { workspace = true }
 opentrust-platform = { workspace = true }
 opentrust-mac = { workspace = true }
-opentrust-instance = { workspace = true, features = ["ftd", "commissioner", "border-agent"] }
+opentrust-instance = { workspace = true }
 rand_core = { workspace = true }
 heapless = { workspace = true }
 opentrust-embassy = { workspace = true, optional = true }

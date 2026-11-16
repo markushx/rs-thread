@@ -35,7 +35,10 @@ udp = []
 # `commissioner`, `joiner`.
 commissioning = ["ftd", "opentrust-instance/commissioner"]
 # Host binary `opentrust-cli-sim`: simulated nodes behind OT-style prompts.
-sim = ["dep:opentrust-sim", "ftd", "commissioning"]
+sim = ["sim-mtd", "opentrust-sim/ftd", "ftd", "commissioning"]
+# Host binary `opentrust-cli-vt-mtd`: a minimal thread device (no router, no
+# commissioner, no Border Agent) on the virtual-time simulation platform.
+sim-mtd = ["dep:opentrust-sim", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp"]
 defmt = ["dep:defmt", "opentrust-core/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 
@@ -55,7 +58,7 @@ defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [dev-dependencies]
-opentrust-sim = { workspace = true }
+opentrust-sim = { workspace = true, features = ["ftd"] }
 
 [[bin]]
 name = "opentrust-cli-sim"
@@ -66,6 +69,11 @@ required-features = ["sim"]
 name = "opentrust-cli-vt"
 path = "src/bin/vt.rs"
 required-features = ["sim"]
+
+[[bin]]
+name = "opentrust-cli-vt-mtd"
+path = "src/bin/vt_mtd.rs"
+required-features = ["sim-mtd"]
 
 [lints]
 workspace = true

@@ -16,6 +16,8 @@
 //! directory) and survive a restart of the process; `reset` re-creates the
 //! node in the same process with its settings.
 
+#![allow(clippy::std_instead_of_core)]
+
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -215,7 +217,7 @@ impl Node {
     }
 }
 
-fn main() {
+pub fn main() {
     let id: u16 = match std::env::args().nth(1).and_then(|a| a.parse().ok()) {
         Some(n) if (1..=33).contains(&n) => n,
         _ => {
