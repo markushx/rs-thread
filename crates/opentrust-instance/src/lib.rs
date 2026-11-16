@@ -423,6 +423,10 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) scan: scan::ScanState,
     pub(crate) ip6_enabled: bool,
     pub(crate) started: bool,
+    /// The stored network information has not been used since the instance
+    /// was created (OT restores it at initialisation only; a later
+    /// stop / start attaches from scratch).
+    pub(crate) restore_pending: bool,
 }
 
 impl<S, C: InstanceCrypto, R> core::fmt::Debug for Instance<S, C, R> {
@@ -588,6 +592,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).scan), scan::ScanState::default);
             addr_of_mut!((*p).ip6_enabled).write(false);
             addr_of_mut!((*p).started).write(false);
+            addr_of_mut!((*p).restore_pending).write(true);
             let inst = &mut *p;
             inst.restore_boot_identity();
             inst

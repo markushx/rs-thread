@@ -169,7 +169,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.load_dad_counter();
         self.started = true;
         self.sync_netif();
-        let restored = if lead {
+        // OT restores the network information once, when the instance is
+        // created; after `thread stop` the parent is invalid and a start
+        // attaches with a Parent Request.
+        let restore = core::mem::take(&mut self.restore_pending);
+        let restored = if lead || !restore {
             Err(Error::NotFound)
         } else {
             // The device mode was restored at creation; a `mode` set since
