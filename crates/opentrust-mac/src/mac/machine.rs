@@ -655,6 +655,11 @@ impl<
     /// The parent's CSL accuracy (MLE CSL Accuracy TLV); until it is known
     /// the worst case is assumed ([`CslAccuracy::WORST`]).
     pub fn set_csl_parent_accuracy(&mut self, accuracy: CslAccuracy) {
+        opentrust_core::trace!(
+            "mac: CSL parent accuracy {} ppm, uncertainty {} x 10 us",
+            accuracy.clock_ppm,
+            accuracy.uncertainty_10us
+        );
         self.csl.parent = accuracy;
     }
 
@@ -2293,6 +2298,7 @@ impl<
     }
 
     fn build_data_request(&self) -> Result<FrameBuf> {
+        opentrust_core::trace!("mac: data request");
         let parent = self.poll.parent;
         if parent.is_none() || parent.is_broadcast() {
             return Err(Error::InvalidState);
@@ -2399,6 +2405,15 @@ impl<
         if cca_fail {
             self.counters.tx_err_cca += 1;
         }
+        opentrust_core::trace!(
+            "mac: tx attempt {} ({} bytes, ack {}) done: ok {} cca_fail {} csl_ie {}",
+            tx.retries,
+            tx.frame.len(),
+            tx.ack_request,
+            result.is_ok(),
+            cca_fail,
+            tx.csl_ie
+        );
         // A retransmission of a frame with a CSL IE (the parent did not
         // acknowledge the first attempt, so its idea of our phase may be
         // wrong): a data poll with the CSL IE resynchronizes it (OpenThread
@@ -2652,6 +2667,12 @@ impl<
     /// `psdu` is the PSDU **including** the FCS (`info.len` octets).
     pub fn on_rx(&mut self, psdu: &[u8], info: &PsduRxInfo, now: Instant) {
         self.counters.rx_total += 1;
+        opentrust_core::trace!(
+            "mac: rx {} bytes, ts {:?}, enh-ack sec {}",
+            psdu.len(),
+            info.timestamp_us,
+            info.ack_security.is_some()
+        );
         if self.csl.enabled() && info.ack_security.is_some() {
             // Acked with a secured enhanced ACK by the radio.
             self.csl.last_sync = info

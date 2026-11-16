@@ -60,8 +60,11 @@ def run(port, cmds, timeout=10):
             marker = 'Done'
             t = timeout
             if c.startswith('ping'):
-                n = int(c.split()[3]) if len(c.split()) > 3 else 1
-                t = timeout + n * 1.5
+                # `ping <addr> [size] [count] [interval s] ...`
+                w = c.split()
+                n = int(w[3]) if len(w) > 3 else 1
+                gap = float(w[4]) if len(w) > 4 else 1.0
+                t = timeout + n * (gap + 1.5)
             print(read_until_done(fd, t, marker).rstrip())
             if c.startswith('ping'):
                 time.sleep(0.2)
