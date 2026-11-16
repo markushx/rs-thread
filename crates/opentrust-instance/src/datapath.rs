@@ -626,7 +626,47 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             }
         }
         if let Some(reply) = out.reply(scratch) {
-            self.send_ip6(now, reply, true);
+            let own =
+                Ipv6Header::parse(reply).is_ok_and(|h| self.core.ip6.netif.has_unicast(&h.dst));
+            if own {
+                self.ip6_loopback(now, reply);
+            } else {
+                self.send_ip6(now, reply, true);
+            }
+        }
+    }
+
+    /// Process a datagram this device sent to one of its own addresses (the
+    /// echo reply to a ping of an own address): it never leaves the device.
+    fn ip6_loopback(&mut self, now: Instant, dg: &[u8]) {
+        let mut buf = [0u8; opentrust_net::header::MAX_DATAGRAM_LEN];
+        let Some(b) = buf.get_mut(..dg.len()) else {
+            return;
+        };
+        b.copy_from_slice(dg);
+        let mut scratch = Scratch::new();
+        let rx = {
+            let env = NetDataIp6Env {
+                view: self.core.netdata.view(),
+                mle: &self.mle,
+            };
+            let mut ctx = Ctx {
+                now,
+                rng: &mut self.prng,
+                env: &env,
+            };
+            let meta = RxMeta {
+                origin: opentrust_core::message::Origin::HostTrusted,
+                link_security: true,
+                multicast_loop: false,
+            };
+            self.core.ip6.handle(&mut ctx, meta, b, &mut scratch)
+        };
+        if let Ok(rx) = rx {
+            if let Some(d) = rx.deliver {
+                let bytes = d.bytes(&buf[..dg.len()], &scratch);
+                self.deliver(now, &d, bytes);
+            }
         }
     }
 

@@ -89,3 +89,33 @@ fn end_device_registers_its_slaac_address_with_the_parent() {
     assert!(ping(&mut net, 0, dst, 12, 3), "no reply from {dst}");
     assert!(net.inst(0).address_cache().next().is_none());
 }
+
+#[test]
+fn ping_of_a_service_aloc_is_answered() {
+    let mut net = router_chain(23);
+    net.with(1, |n, _| {
+        n.add_service(
+            opentrust_mesh::netdata::local::ServiceConfig::new(
+                123,
+                &[0x01, 0x23],
+                &[0x0a, 0xbc],
+                true,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    });
+    net.run_until(secs(30), |_| false);
+    let aloc = net
+        .inst(1)
+        .unicast_addresses()
+        .map(|a| a.addr)
+        .find(|a| a.octets()[8..14] == [0, 0, 0, 0xff, 0xfe, 0] && a.octets()[14] == 0xfc)
+        .expect("service ALOC");
+    for from in [0usize, 1, 2] {
+        assert!(
+            ping(&mut net, from, aloc, 8, 5 + from as u16),
+            "ping from {from} to {aloc}"
+        );
+    }
+}

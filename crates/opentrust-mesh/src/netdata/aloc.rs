@@ -1,5 +1,6 @@
 //! Anycast locator (ALOC) addresses this device answers to: the leader
-//! ALOC, the service ALOCs of services it is a server of, and the
+//! ALOC, the service ALOCs of services it is a server of, the Neighbor
+//! Discovery agent ALOC, and the
 //! commissioner ALOC (OT `Mle::AddLeaderAloc`, `Service::Manager`, the
 //! commissioner's `AddCommissionerAloc`).
 
@@ -7,7 +8,8 @@ use heapless::Vec;
 use opentrust_core::Result;
 use opentrust_net::netif::Netif;
 
-use super::lookup::{ALOC16_COMMISSIONER_START, ALOC16_LEADER};
+use super::lookup::{ALOC16_COMMISSIONER_START, ALOC16_LEADER, ALOC16_ND_AGENT_START};
+use super::tlv::BrFlags;
 use super::view::{NetworkDataView, SERVICE_ALOC_BASE};
 
 /// Largest number of ALOCs one device holds at a time (leader, 16
@@ -39,6 +41,19 @@ pub fn desired_alocs(
         if !out.contains(&a) {
             let _ = out.push(a);
         }
+    }
+    // Neighbor Discovery agent (OT `NeighborDiscovery::Agent`): one ALOC for
+    // the first on-mesh prefix with the ND DNS flag served by this device.
+    if let Some(e) = view
+        .on_mesh_prefixes()
+        .find(|e| e.rloc16 == rloc16 && e.flags.has(BrFlags::ND_DNS))
+        && let Some(c) = view
+            .contexts()
+            .filter(|c| c.prefix.contains(&e.prefix.addr()))
+            .max_by_key(|c| c.prefix.len())
+        && c.id >= 1
+    {
+        let _ = out.push(ALOC16_ND_AGENT_START + u16::from(c.id) - 1);
     }
     if let Some(a) = commissioner_aloc16
         && !out.contains(&a)

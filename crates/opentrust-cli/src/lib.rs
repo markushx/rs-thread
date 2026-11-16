@@ -332,6 +332,8 @@ where
             #[cfg(feature = "netdata")]
             "netdata" => self.netdata(a),
             #[cfg(feature = "netdata")]
+            "service" => self.service(a),
+            #[cfg(feature = "netdata")]
             "prefix" => self.prefix(a),
             #[cfg(feature = "netdata")]
             "route" => self.route(a),

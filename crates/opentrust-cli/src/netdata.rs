@@ -3,13 +3,13 @@
 use core::fmt::Write;
 
 use opentrust_instance::InstanceCrypto;
-use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig};
+use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig, ServiceConfig};
 use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, hex, ln, out, parse_prefix};
+use crate::util::{Args, E, R, hex, ln, out, parse_hex_padded, parse_prefix, parse_u32};
 
 /// A prefix as OT prints it: the words covered by the prefix length, then
 /// `::` (`fd00:dead:beef:cafe::/64`).
@@ -52,6 +52,34 @@ where
     Rn: Rng + CryptoRng,
     W: Write,
 {
+    /// `service [add|remove <enterprise> <service data> [<server data>]]`
+    /// (OT `Interpreter::Process<Cmd("service")>`); without arguments the
+    /// local services are listed.
+    pub(crate) fn service(&mut self, a: &Args<'_>) -> R {
+        if a.get(1).is_empty() {
+            return Ok(());
+        }
+        let ent = parse_u32(a.get(2))?;
+        let mut sd = [0u8; 64];
+        let n = parse_hex_padded(a.get(3), &mut sd)?;
+        if n == 0 {
+            return Err(E::INVALID_ARGS);
+        }
+        match a.get(1) {
+            "add" => {
+                let mut srv = [0u8; 64];
+                let m = parse_hex_padded(a.get(4), &mut srv)?;
+                if !a.get(4).is_empty() && m == 0 {
+                    return Err(E::INVALID_ARGS);
+                }
+                let cfg = ServiceConfig::new(ent, &sd[..n], &srv[..m], true)?;
+                self.i.add_service(cfg).map_err(E::from)
+            }
+            "remove" => self.i.remove_service(ent, &sd[..n]).map_err(E::from),
+            _ => Err(E::INVALID_COMMAND),
+        }
+    }
+
     pub(crate) fn netdata(&mut self, a: &Args<'_>) -> R {
         match a.get(1) {
             "show" => {

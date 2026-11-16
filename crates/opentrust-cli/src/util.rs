@@ -182,6 +182,21 @@ pub fn parse_hex(s: &str, out: &mut [u8]) -> Result<usize, E> {
     Ok(b.len() / 2)
 }
 
+/// Like [`parse_hex`], but an odd number of digits is accepted: the first
+/// digit is then the low nibble of the first byte (OT `ParseAsHexString`).
+pub fn parse_hex_padded(s: &str, out: &mut [u8]) -> Result<usize, E> {
+    let mut tmp = [0u8; 2 * 64];
+    let b = s.as_bytes();
+    if b.len() >= tmp.len() {
+        return Err(E::INVALID_ARGS);
+    }
+    let pad = b.len() % 2;
+    tmp[0] = b'0';
+    tmp[pad..pad + b.len()].copy_from_slice(b);
+    let t = core::str::from_utf8(&tmp[..pad + b.len()]).map_err(|_| E::INVALID_ARGS)?;
+    parse_hex(t, out)
+}
+
 /// Parse a hex string of exactly `N` bytes.
 pub fn parse_hex_exact<const N: usize>(s: &str) -> Result<[u8; N], E> {
     let mut b = [0u8; N];
