@@ -381,6 +381,8 @@ Security-relevant decisions for the review before M4:
 - [ ] Full code review
 - [x] Remove mention of PLAN phases from code and comments (keep it that way for new code)
 - [ ] Check what can/needs to be disabled on embedded devices
+- [ ] Check for remaining TODOs
+- [ ] Review no_std compliance
 
 ## Phase 16 – Port ot-br-posix
 
