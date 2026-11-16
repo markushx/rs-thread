@@ -16,7 +16,8 @@
 //!   `ot` (all OpenThread, the baseline), `each` (one run per node of the
 //!   case with only that node OpenTrust), `all` (all OpenTrust), `mtd:3`
 //!   or `mtd:3+4` (those nodes run `opentrust-cli-vt-mtd`, the build without
-//!   router, commissioner and Border Agent; OpenThread for the others).
+//!   router, commissioner and Border Agent; OpenThread for the others),
+//!   `set:2+4` (exactly those nodes OpenTrust, the others OpenThread).
 //!   Default `ot,each`.
 //! - `OPENTRUST_CERT_TIMEOUT`: seconds per run (default 300).
 //! - `OPENTRUST_CERT_ALLOW_FAIL=1`: report failures but exit 0.
@@ -370,6 +371,13 @@ fn main() {
                 "each" => {
                     for &n in &nodes {
                         runs.push((format!("node {n} OpenTrust"), vec![n], vec![]));
+                    }
+                }
+                // `set:2+4`: exactly those nodes are OpenTrust.
+                m if m.starts_with("set:") => {
+                    let ids: Vec<u32> = m[4..].split('+').filter_map(|v| v.parse().ok()).collect();
+                    if ids.iter().all(|i| nodes.contains(i)) {
+                        runs.push((format!("nodes {} OpenTrust", &m[4..]), ids, vec![]));
                     }
                 }
                 // `mtd:3` or `mtd:3+4`: those nodes run the MTD build.

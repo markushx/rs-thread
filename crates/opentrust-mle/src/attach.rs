@@ -863,6 +863,10 @@ impl<const C: usize> Mle<C> {
         #[cfg(feature = "ftd")]
         if self.role.is_router_or_leader() {
             self.router_left_router_role(env);
+            // The Route TLV below is read as a child: a router role that
+            // is still set would detach on the router ID set of the new
+            // partition.
+            self.set_role(env, Role::Detached);
         }
         self.update_leader_data(env, leader);
         #[cfg(feature = "ftd")]
