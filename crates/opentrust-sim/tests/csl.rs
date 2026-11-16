@@ -194,3 +194,128 @@ fn ot_csl_child_of_opentrust_parent() {
     csl_attach(&mut e);
     csl_pings(&mut e, false);
 }
+
+/// The parent's `counters mac` of the frames it sent: how many asked for an
+/// ACK and how many were not acknowledged (attempts, retries included).
+fn parent_tx_stats(sim: &mut VtSim) -> (u64, u64) {
+    let requested = counter(sim, 1, "TxAckRequested");
+    (requested, requested - counter(sim, 1, "TxAcked"))
+}
+
+/// Change the CSL period of an attached SSED (`from` -> `to` microseconds)
+/// and check that the parent keeps reaching it: pings both ways, the child
+/// stays CSL synchronized and (almost) none of the parent's frames goes
+/// unacknowledged.
+fn period_change(parent_rust: bool, child_rust: bool, to: u32) {
+    let Some(mut e) = env("csl-period", &[(1, parent_rust), (2, child_rust)]) else {
+        return;
+    };
+    csl_attach(&mut e);
+    let sim = &mut e.sim;
+    let a2 = mesh_local(sim, 2);
+    let a1 = mesh_local(sim, 1);
+    assert!(ping_rtt(sim, 1, &a2).is_some(), "ping before the change");
+    let (req0, noack0) = parent_tx_stats(sim);
+    ok(sim, 2, &format!("csl period {to}"));
+    let mut sync_lost = false;
+    let mut lost = 0;
+    let mut rtts = Vec::new();
+    for _ in 0..12 {
+        match ping_rtt(sim, 1, &a2) {
+            Some(r) => rtts.push(r),
+            None => lost += 1,
+        }
+        if ping_rtt(sim, 2, &a1).is_none() {
+            lost += 1;
+        }
+        sync_lost |= !parent_rust && !child_synchronized(sim);
+        sim.run(0.7);
+    }
+    let (req1, noack1) = parent_tx_stats(sim);
+    eprintln!(
+        "{PERIOD_US} -> {to} us: lost {lost}, rtts {rtts:?}, parent frames with ACK request {}, no ACK {}",
+        req1 - req0,
+        noack1 - noack0
+    );
+    assert_eq!(lost, 0, "pings lost after {PERIOD_US} -> {to}");
+    assert!(!sync_lost, "the parent marked the child unsynchronized");
+    let child = sim.cmd(2, "csl");
+    assert!(
+        child.iter().any(|l| l == &format!("period: {to}us")),
+        "csl: {child:?}"
+    );
+    // CSL frames of the parent are acknowledged: no more than a stray few.
+    assert!(
+        noack1 - noack0 <= 2,
+        "{} of {} frames of the parent unacknowledged",
+        noack1 - noack0,
+        req1 - req0
+    );
+}
+
+/// The period changes while the parent sends a datagram every 150 ms: the
+/// frames in flight during the change are reacknowledged by the child's next
+/// windows, and the child stays synchronized.
+fn period_change_under_traffic(parent_rust: bool, child_rust: bool, to: u32) {
+    let Some(mut e) = env("csl-period-traffic", &[(1, parent_rust), (2, child_rust)]) else {
+        return;
+    };
+    csl_attach(&mut e);
+    let sim = &mut e.sim;
+    let a2 = mesh_local(sim, 2);
+    let (req0, noack0) = parent_tx_stats(sim);
+    sim.send(1, &format!("ping {a2} 16 60 0.15 64 1"));
+    sim.run(3.0);
+    ok(sim, 2, &format!("csl period {to}"));
+    sim.run(12.0);
+    let out = sim.drain(1);
+    let received = out.iter().filter(|l| l.contains("bytes from")).count();
+    let (req1, noack1) = parent_tx_stats(sim);
+    eprintln!(
+        "under traffic {PERIOD_US} -> {to} us: {received} of 60 echo replies, parent frames with ACK request {}, no ACK {}",
+        req1 - req0,
+        noack1 - noack0
+    );
+    assert!(received >= 57, "only {received} of 60 echo replies");
+    assert!(
+        parent_rust || child_synchronized(sim),
+        "the parent marked the child unsynchronized"
+    );
+    assert!(
+        noack1 - noack0 <= 4,
+        "{} of {} frames of the parent unacknowledged",
+        noack1 - noack0,
+        req1 - req0
+    );
+}
+
+#[test]
+fn csl_period_change_under_traffic_opentrust_child_of_ot_parent() {
+    period_change_under_traffic(false, true, 100_000);
+    period_change_under_traffic(false, true, 200_000);
+}
+
+#[test]
+fn csl_period_change_under_traffic_ot_child_of_opentrust_parent() {
+    period_change_under_traffic(true, false, 100_000);
+}
+
+#[test]
+fn csl_period_change_opentrust_child_of_ot_parent() {
+    period_change(false, true, 100_000);
+}
+
+#[test]
+fn csl_period_change_up_opentrust_child_of_ot_parent() {
+    period_change(false, true, 1_000_000);
+}
+
+#[test]
+fn csl_period_change_ot_child_of_opentrust_parent() {
+    period_change(true, false, 100_000);
+}
+
+#[test]
+fn csl_period_change_opentrust_child_of_opentrust_parent() {
+    period_change(true, true, 100_000);
+}

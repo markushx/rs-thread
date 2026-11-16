@@ -71,6 +71,17 @@ a count.
   parent unable to hit the windows (about half of its CSL frames get no ACK, then it
   falls back to waiting for polls); a fresh `csl period` after the attach works. Not
   diagnosed (the parent's own log is compiled out).
+  In the simulation the change works against OpenThread parents and children, with and
+  without traffic in flight (`opentrust-sim/tests/csl.rs`, `csl_period_change_*`: no frame
+  of the parent unacknowledged, child stays synchronized, 500 -> 100 / 200 / 1000 ms). The
+  simulated radio uses the software CSL path (the MAC samples the windows and builds the
+  enhanced ACKs), like OpenThread's simulation platform, so it does not exercise what the
+  nRF52840 does with `RadioAction::ReceiveAt` / `SetCsl`. The MAC's actions on a change
+  (`csl_period_change_hw_windows`) are consistent: `SetCsl` with the new period and the
+  sample time one period ahead, a wide window around now (not yet synchronized under the
+  new schedule). Needs hardware: log the radio actions across the change and whether the
+  driver still holds a timed window of the old schedule (a pending `receive_at` that the
+  new one does not replace).
 - A sleepy attach (`mode -` set before `thread start`) takes 15 to 45 s (Parent
   Requests, the radio sends bursts of 16 identical 74-byte broadcasts 82 ms apart between
   rounds); the non-sleepy attach takes a few seconds.

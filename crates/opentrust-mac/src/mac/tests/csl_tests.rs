@@ -223,6 +223,50 @@ fn csl_receiver_hw_windows() {
 }
 
 #[test]
+fn csl_period_change_hw_windows() {
+    set_radio(1_000_000);
+    let mut m = plain_mac(clock_caps(Capabilities::RECEIVE_TIMING));
+    m.set_rx_on_when_idle(false);
+    m.set_csl(PERIOD, 0, PARENT_SHORT, PARENT_EXT, t(0))
+        .unwrap();
+    let _ = csl_actions(&mut m, t(0));
+    // Synchronized by an ACKed frame of the parent, a few windows later.
+    set_radio(2_100_000);
+    let mut i = info(CH);
+    i.timestamp_us = Some(2_100_000);
+    i.ack_security = Some(opentrust_platform::radio::AckSecurity {
+        frame_counter: 0,
+        key_id: 1,
+    });
+    let f = data_frame(0, short(OWN_SHORT), ext(PARENT_EXT), false, b"x");
+    m.on_rx(&psdu(&f), &i, t(1_100_000));
+    set_radio(2_300_000);
+    let _ = csl_actions(&mut m, t(1_300_000));
+    // The period drops to 100 ms (625 units) 200 ms after the sync.
+    let new_period: u16 = 625;
+    m.set_csl(new_period, 0, PARENT_SHORT, PARENT_EXT, t(1_300_000))
+        .unwrap();
+    let acts = csl_actions(&mut m, t(1_300_000));
+    std::eprintln!("{acts:?}\nnext deadline {:?}", m.next_deadline());
+    // The schedule the radio gets: the new period, the next sample one
+    // period after now.
+    assert!(
+        acts.iter().any(|a| matches!(a, RadioAction::SetCsl(c)
+            if c.period == u32::from(new_period) && c.sample_time_us == 2_400_000)),
+        "{acts:?}"
+    );
+    // Never synchronized under the new schedule: windows of half a period
+    // on each side, the first around now.
+    assert!(
+        acts.iter().any(
+            |a| matches!(a, RadioAction::ReceiveAt { start_us, duration_us, .. }
+            if *start_us <= 2_300_000 && start_us + u64::from(*duration_us) > 2_300_000)
+        ),
+        "{acts:?}"
+    );
+}
+
+#[test]
 fn csl_receiver_software_sampling() {
     set_radio(0);
     let mut m = plain_mac(clock_caps(Capabilities::empty()));
