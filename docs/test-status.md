@@ -1,5 +1,7 @@
 # Test status
 
+Per-case status of every OpenThread `thread-cert` test-plan script (5.x to 9.x, LowPower, functional tests): [test-plan-status.md](test-plan-status.md).
+
 ## thread-cert (OpenThread `tests/scripts/thread-cert`, Cert_5_1 to 5_3)
 
 Run: `OPENTRUST_CERT=1 OPENTRUST_CERT_CONFIGS=ot,each,all cargo test -p opentrust-sim --test thread_cert` (see the header of `crates/opentrust-sim/tests/thread_cert.rs`; needs `ot-cli-ftd` from `cargo build -p openthread-sys` (rebuild it after changing the build options: the harness uses the existing binary), cmake, ninja, a Python venv with `pexpect pycryptodome pyshark==0.4.6 lxml`). Virtual time, OpenThread `simulator.py`, `THREAD_VERSION=1.4`. Each case runs once with all nodes `ot-cli-ftd` (baseline, validates the setup), once per node of its topology with only that node replaced by `opentrust-cli-vt` (`each`, so a pass means that role works against OpenThread peers) and once with all nodes `opentrust-cli-vt` (`all`). 30 cases, 273 runs: **273 pass, 0 fail** (30 `ot`, 213 `each`, 30 `all`). The whole run takes about 35 minutes.

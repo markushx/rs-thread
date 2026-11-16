@@ -357,7 +357,7 @@ Security-relevant decisions for the review before M4:
 
 ## Phase 13 – Certification readiness & docs
 
-- [ ] Map every Thread 1.4.1 test-plan case to status (pass/fail/NA)
+- [x] Map every Thread 1.4.1 test-plan case to status (pass/fail/NA): `docs/test-plan-status.md` lists every case with an OpenThread `thread-cert` script (5.x to 9.x, LowPower) per configuration (all OT, each node OpenTrust, all OpenTrust, MTD build), plus the functional tests and the NA scripts (OTBR / backbone); cases without an OpenThread script are not covered
 - [ ] Cross-check OpenTrust against OpenThread
 - [ ] Cross-check OpenTrust against Thread specification
 - [ ] Security review (key handling, frame counters, replay protection). Items the `Instance` adds for the review:
@@ -422,6 +422,14 @@ Security-relevant decisions for the review before M4:
   - [x] nRF52840: joins OT nodes and an OTBR network (router, child, leader; Matter light commissioned through the OTBR)
   - [ ] ESP32-C6 (Phase 14)
 - [ ] **M6 – Thread 1.2–1.4 features** and certification test-plan coverage
+  - [ ] Test-plan gaps found by `docs/test-plan-status.md` (OpenThread `thread-cert` scripts, simulation only):
+    - [ ] 9.2.8, 9.2.9, 9.2.11 to 9.2.14, 9.2.18 fail with OpenTrust nodes (being fixed)
+    - [ ] 5.7.1 to 5.7.3: the OpenTrust DUT does not answer Network Diagnostic Get (no diagnostic server / `networkdiagnostic` CLI)
+    - [ ] 6.2.2 (OpenTrust as Router 1 after the merge) and 6.5.2 (SED child stays detached after reset, also MTD build)
+    - [ ] LowPower 7.1.1, 7.1.2, 7.2.1 and the link-metrics functional tests: `linkmetrics` CLI / enhanced-ack probing / forward tracking
+    - [ ] BBR / DUA / MLR (Thread 1.2): needs a sim `ot-cli-ftd` with `OT_BACKBONE_ROUTER` to get a baseline; MATN, BBR 5.11.1 and the `border_router` scripts need an OTBR / backbone harness
+    - [ ] OpenThread functional tests that fail with all-OpenTrust nodes: SRP (CLI), DNS-SD, diag, history, radio filter, anycast locator, child supervision, detach, route table (list in the status file)
+    - [ ] pktverify with `tshark` 4.6 is unreliable (dissection differs); pin the Wireshark version the scripts were written for
 
 ## Open questions
 
