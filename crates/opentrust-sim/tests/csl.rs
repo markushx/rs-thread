@@ -195,6 +195,44 @@ fn ot_csl_child_of_opentrust_parent() {
     csl_pings(&mut e, false);
 }
 
+/// The parent goes away: the SSED's CSL data polls get no ACK, and after
+/// OpenThread's limit (15 in a row) it gives its parent up, detaches and
+/// attaches anew when the parent is back (the last step of the thread-cert case
+/// `v1_2_test_csl_transmission`, which then sees a Child Update Request).
+fn parent_away_longer_than_timeout(child_rust: bool) {
+    let Some(mut e) = env("csl-away", &[(1, false), (2, child_rust)]) else {
+        return;
+    };
+    csl_attach(&mut e);
+    let sim = &mut e.sim;
+    ok(sim, 2, "csl timeout 8");
+    ok(sim, 2, "childtimeout 10");
+    sim.run(2.0);
+    ok(sim, 1, "thread stop");
+    ok(sim, 1, "ifconfig down");
+    // 15 failed polls, 0.5 s apart after the first fast ones, within 25 s.
+    sim.run(25.0);
+    let s = state(sim, 2);
+    assert_ne!(s, "child", "the SSED kept its parent for 25 s");
+    ok(sim, 1, "ifconfig up");
+    ok(sim, 1, "thread start");
+    sim.run(90.0);
+    assert_eq!(state(sim, 1), "leader");
+    assert_eq!(state(sim, 2), "child", "the SSED did not attach again");
+    let a2 = mesh_local(sim, 2);
+    assert!(ping_rtt(sim, 1, &a2).is_some(), "ping after the attach");
+}
+
+#[test]
+fn parent_away_opentrust_ssed() {
+    parent_away_longer_than_timeout(true);
+}
+
+#[test]
+fn parent_away_ot_ssed() {
+    parent_away_longer_than_timeout(false);
+}
+
 /// The parent's `counters mac` of the frames it sent: how many asked for an
 /// ACK and how many were not acknowledged (attempts, retries included).
 fn parent_tx_stats(sim: &mut VtSim) -> (u64, u64) {

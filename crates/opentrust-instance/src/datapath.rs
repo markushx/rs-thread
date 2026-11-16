@@ -249,7 +249,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                         .push_event(Event::EnergyScanResult { channel, max_rssi });
                 }
                 MacEvent::EnergyScanDone => self.core.push_event(Event::EnergyScanDone),
-                MacEvent::DataPollTimeout | MacEvent::DataPollSent(_) => {}
+                MacEvent::DataPollSent(res) => {
+                    let acked = match res {
+                        Ok(_) => Some(true),
+                        Err(opentrust_mac::mac::TxError::NoAck) => Some(false),
+                        Err(_) => None,
+                    };
+                    self.mle.parent_poll_result(&mut self.core, now, acked);
+                }
+                MacEvent::DataPollTimeout => {}
                 MacEvent::TxDone { .. } => {}
                 _ => {}
             }

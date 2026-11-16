@@ -119,6 +119,43 @@ impl<const C: usize> Mle<C> {
         }
     }
 
+    /// The result of a data poll to the parent (OT
+    /// `MeshForwarder::UpdateNeighborOnSentFrame`): an acknowledged poll
+    /// clears the parent's link failure count, a poll without ACK counts one
+    /// (other errors count none), and after
+    /// [`FAILED_ROUTER_TRANSMISSIONS`](crate::consts::FAILED_ROUTER_TRANSMISSIONS)
+    /// ([`FAILED_CSL_DATA_POLL_TRANSMISSIONS`](crate::consts::FAILED_CSL_DATA_POLL_TRANSMISSIONS)
+    /// with CSL) in a row the child gives up its parent and attaches anew.
+    pub fn parent_poll_result<E: MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: Instant,
+        acked: Option<bool>,
+    ) {
+        if self.role != Role::Child {
+            return;
+        }
+        let limit = if self.cfg.csl_period != 0 {
+            crate::consts::FAILED_CSL_DATA_POLL_TRANSMISSIONS
+        } else {
+            crate::consts::FAILED_ROUTER_TRANSMISSIONS
+        };
+        let Some(p) = self.parent.as_mut() else {
+            return;
+        };
+        let n = &mut p.router.neighbor;
+        match acked {
+            Some(true) => n.link_failures = 0,
+            Some(false) => {
+                n.link_failures = n.link_failures.saturating_add(1);
+                if n.link_failures >= limit {
+                    self.become_detached(env, now);
+                }
+            }
+            None => {}
+        }
+    }
+
     pub(crate) fn schedule_csl_child_update(&mut self, now: Instant) {
         if self.child.update_deadline.is_none() {
             self.child.update_deadline =

@@ -15,6 +15,12 @@ pub const MLE_HOP_LIMIT: u8 = 255;
 /// `FAILED_CHILD_TRANSMISSIONS`: consecutive no-ACK transmissions after
 /// which a child is considered lost.
 pub const FAILED_CHILD_TRANSMISSIONS: u8 = 4;
+/// OT `kFailedRouterTransmissions`: consecutive no-ACK transmissions to a
+/// router (a child's parent) after which the link is dropped.
+pub const FAILED_ROUTER_TRANSMISSIONS: u8 = 4;
+/// OT `kFailedCslDataPollTransmissions`: the same for data polls carrying a
+/// CSL IE (they are not retransmitted by the MAC).
+pub const FAILED_CSL_DATA_POLL_TRANSMISSIONS: u8 = 15;
 /// `MLE_MAX_EXTRA_LINK_PROBABILITY` (percent).
 pub const MAX_EXTRA_LINK_PROBABILITY: u8 = 10;
 /// `MLE_UNICAST_RETRANSMISSION_DELAY` (x random 0.9..1.1).
