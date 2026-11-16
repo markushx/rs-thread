@@ -35,7 +35,7 @@ udp = []
 # `networkdiagnostic`.
 diag = []
 # `linkmetrics` (Thread 1.2 Link Metrics Initiator).
-linkmetrics = []
+linkmetrics = ["opentrust-instance/link-metrics-manager"]
 # `commissioner`, `joiner`.
 commissioning = ["ftd", "joiner", "opentrust-instance/commissioner"]
 # `joiner` (also on the MTD build).

@@ -137,6 +137,12 @@ pub enum Event {
         /// timestamp of the frame, for a child that has not been tracked
         /// as a CSL child yet ([`Mac::csl_child_sample`](super::Mac::csl_child_sample)).
         csl: Option<(CslIe, Option<u64>)>,
+        /// The poll was link-secured (and verified).
+        secured: bool,
+        /// LQI of the poll, if the radio reported it.
+        lqi: Option<u8>,
+        /// RSSI of the poll in dBm, if the radio reported it.
+        rssi: Option<i8>,
     },
     /// A beacon was received during an active scan.
     ActiveScanResult(ScanResult),

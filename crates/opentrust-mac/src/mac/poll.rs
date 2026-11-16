@@ -21,6 +21,10 @@ pub(crate) struct PollSender {
     /// Secure polls (EncMic32, key ID mode 1) as Thread requires.
     pub secure: bool,
     default_period: Duration,
+    /// The period MLE derives from the child timeout, without an
+    /// application override (OT `GetDefaultPollPeriod`); `None`: same as
+    /// `default_period`.
+    pub mle_period: Option<Duration>,
     period: Duration,
     timer_start: Instant,
     deadline: Option<Instant>,
@@ -44,6 +48,7 @@ impl Default for PollSender {
             parent: Address::None,
             secure: true,
             default_period: DEFAULT_POLL_PERIOD,
+            mle_period: None,
             period: DEFAULT_POLL_PERIOD,
             timer_start: Instant::ZERO,
             deadline: None,
@@ -122,7 +127,16 @@ impl PollSender {
     /// Restart the poll timer: a frame with a CSL IE acknowledged by the
     /// parent did the keep-alive job (`DataPollSender::ResetKeepAliveTimer`).
     pub fn reset_keep_alive(&mut self, now: Instant) {
-        if self.enabled && self.deadline.is_some() && !self.retx_mode && self.fast_remaining == 0 {
+        // Only while polling at the child-timeout based period: with an
+        // application poll period the keep-alive is the regular poll (OT
+        // `mPollPeriod == GetDefaultPollPeriod()`).
+        let default_in_use = self.mle_period.is_none_or(|m| m == self.period);
+        if self.enabled
+            && default_in_use
+            && self.deadline.is_some()
+            && !self.retx_mode
+            && self.fast_remaining == 0
+        {
             self.timer_start = now;
             self.deadline = Some(now.saturating_add(self.period));
         }
@@ -295,5 +309,25 @@ mod tests {
         let d = p.deadline();
         p.handle_acked_data(true, t(12));
         assert_eq!(p.deadline(), d);
+    }
+
+    #[test]
+    fn application_poll_period_keeps_the_regular_poll() {
+        let t = |s: u64| Instant::from_secs(s);
+        let mut p = PollSender {
+            parent_enhanced_keep_alive: true,
+            ..PollSender::default()
+        };
+        p.start(Address::None, t(0));
+        // MLE's period is 26 s, the application polls every 2 s.
+        p.mle_period = Some(Duration::from_secs(26));
+        p.set_default_period(Duration::from_secs(2), t(0));
+        let due = p.deadline();
+        p.handle_acked_data(false, t(1));
+        assert_eq!(p.deadline(), due);
+        // Polling at MLE's period: the frame does the keep-alive job.
+        p.set_default_period(Duration::from_secs(26), t(1));
+        p.handle_acked_data(false, t(5));
+        assert_eq!(p.deadline(), Some(t(5) + Duration::from_secs(26)));
     }
 }

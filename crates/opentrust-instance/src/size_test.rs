@@ -77,5 +77,11 @@ fn instance_size_breakdown() {
     row("cm.ba_out", &i.cm.ba_out);
     row("dnssrp.srp", &i.dnssrp.srp);
     row("dnssrp.dns", &i.dnssrp.dns);
-    assert!(total <= TOTAL_BOUND, "Instance grew to {total} B");
+    // The Link Metrics Manager's subject table.
+    let lmm = if cfg!(feature = "link-metrics-manager") {
+        450
+    } else {
+        0
+    };
+    assert!(total <= TOTAL_BOUND + lmm, "Instance grew to {total} B");
 }

@@ -22,6 +22,8 @@ tcat = ["opentrust-meshcop/tcat"]
 # Query requests (`/c/ab`, `/c/es`, `/c/pq`; OT `AnnounceBeginServer`,
 # `EnergyScanServer`, `PanIdQueryServer`).
 scan-servers = []
+# The Link Metrics Manager (OT `Utils::LinkMetricsManager`).
+link-metrics-manager = []
 srp-services-8 = []
 srp-services-12 = []
 trel = ["opentrust-mesh/trel"]

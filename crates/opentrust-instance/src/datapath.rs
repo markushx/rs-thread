@@ -222,7 +222,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             match ev {
                 MacEvent::Received(rx) => self.handle_frame(now, rx),
                 #[cfg(feature = "ftd")]
-                MacEvent::DataPollReceived { src, csl, .. } => self.handle_poll(now, src, csl),
+                MacEvent::DataPollReceived {
+                    src,
+                    csl,
+                    secured,
+                    lqi,
+                    rssi,
+                    ..
+                } => self.handle_poll(now, src, csl, secured.then_some((lqi, rssi))),
                 #[cfg(feature = "ftd")]
                 MacEvent::CslChildOutOfSync(Address::Short(s)) => {
                     self.mle.child_csl_desynchronized(Rloc16(s.0));
@@ -307,7 +314,25 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// A data poll from a sleepy child: release its next frame.
     #[cfg(feature = "ftd")]
-    fn handle_poll(&mut self, now: Instant, src: Address, csl: Option<(CslIe, Option<u64>)>) {
+    fn handle_poll(
+        &mut self,
+        now: Instant,
+        src: Address,
+        csl: Option<(CslIe, Option<u64>)>,
+        link: Option<(Option<u8>, Option<i8>)>,
+    ) {
+        // Link metrics of the polling child (OT `Neighbor::AggregateLinkMetrics`).
+        // A radio without LQI reports 0 (`OT_RADIO_LQI_NONE`).
+        if let Some((lqi, Some(rss))) = link
+            && let Some(ext) = self.neighbor_ext_opt(src)
+        {
+            self.mle.aggregate_link_metrics(
+                &ext,
+                opentrust_mle::link_metrics::FrameKind::MacDataRequest,
+                lqi.unwrap_or(0),
+                rss,
+            );
+        }
         // A poll with a CSL IE synchronizes the child (OT `Mac::ProcessCsl`).
         #[cfg(feature = "ftd")]
         if let (Some((ie, ts)), Address::Short(s)) = (csl, src)
@@ -421,13 +446,13 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         };
         // Link metrics of the sender (OT `Neighbor::AggregateLinkMetrics`).
         if link_security
-            && let (Some(lqi), Some(rss)) = (rx.lqi, rx.rssi)
+            && let Some(rss) = rx.rssi
             && let Some(ext) = self.neighbor_ext_opt(src)
         {
             self.mle.aggregate_link_metrics(
                 &ext,
                 opentrust_mle::link_metrics::FrameKind::MacData,
-                lqi,
+                rx.lqi.unwrap_or(0),
                 rss,
             );
         }

@@ -103,6 +103,29 @@ where
         }
     }
 
+    /// `linkmetricsmgr enable|disable|show` (OT `cli.cpp`).
+    pub(crate) fn linkmetricsmgr(&mut self, a: &Args<'_>) -> R {
+        match a.get(1) {
+            "enable" => self.i.link_metrics_manager_set_enabled(true, self.now),
+            "disable" => self.i.link_metrics_manager_set_enabled(false, self.now),
+            "show" => {
+                for n in self.i.neighbor_table() {
+                    if let Ok((margin, rssi)) = self.i.link_metrics_manager_values(&n.ext) {
+                        out!(self.o, "ExtAddr:");
+                        crate::util::hex(self.o, &n.ext.0);
+                        ln!(self.o, ", LinkMargin:{margin}, Rssi:{rssi}");
+                    }
+                }
+            }
+            "" => {
+                let on = self.i.is_link_metrics_manager_enabled();
+                ln!(self.o, "{}", if on { "Enabled" } else { "Disabled" });
+            }
+            _ => return Err(E::INVALID_COMMAND),
+        }
+        Ok(())
+    }
+
     fn lm_request(&mut self, a: &Args<'_>) -> R {
         let (sync, k) = if a.get(2) == "async" {
             (false, 3)

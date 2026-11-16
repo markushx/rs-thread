@@ -350,6 +350,8 @@ where
             "networkdiagnostic" => self.networkdiagnostic(a),
             #[cfg(feature = "linkmetrics")]
             "linkmetrics" => self.linkmetrics(a),
+            #[cfg(feature = "linkmetrics")]
+            "linkmetricsmgr" => self.linkmetricsmgr(a),
             #[cfg(feature = "commissioning")]
             "commissioner" => self.commissioner(a),
             #[cfg(feature = "joiner")]

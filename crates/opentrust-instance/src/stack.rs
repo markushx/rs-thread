@@ -248,6 +248,9 @@ pub struct Core<S, C: CryptoBackend, R> {
     pub(crate) poll_period: Option<Duration>,
     /// Poll period set by the application (OT `otLinkSetPollPeriod`).
     pub(crate) user_poll_period: Option<Duration>,
+    /// The Link Metrics Manager.
+    #[cfg(feature = "link-metrics-manager")]
+    pub(crate) lmm: crate::lmm::LinkMetricsManager,
     pub(crate) mactx: MacTx,
     /// Frames the MLE wants sent on another channel / PAN (Discovery).
     pub(crate) events: Deque<crate::Event, 16>,
@@ -411,6 +414,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> Core<S, C, R> {
         };
         match (period, self.parent) {
             (Some(p), Some((_, r))) => {
+                self.mac.set_mle_poll_period(self.poll_period);
                 self.mac.set_poll_period(p, self.now);
                 self.mac.start_polling(Address::Short(r.into()), self.now);
             }
@@ -582,6 +586,11 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         from: &Ipv6Addr,
         status: opentrust_mle::link_metrics::Status,
     ) {
+        #[cfg(feature = "link-metrics-manager")]
+        self.lmm.on_management_response(
+            &opentrust_core::types::ipv6::iid(from).to_ext_address(),
+            status,
+        );
         self.push_event(crate::Event::LinkMetricsManagement {
             from: *from,
             status: status as u8,
@@ -594,6 +603,8 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         ext: &ExtAddress,
         v: &opentrust_mle::link_metrics::MetricsValues,
     ) {
+        #[cfg(feature = "link-metrics-manager")]
+        self.lmm.on_enh_ack(ext, v, self.now);
         self.push_event(crate::Event::EnhAckLinkMetrics {
             rloc16,
             ext: *ext,

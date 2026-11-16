@@ -100,6 +100,8 @@ mod datapath;
 mod dhcp6;
 mod diag;
 mod dns_srp;
+#[cfg(feature = "link-metrics-manager")]
+mod lmm;
 mod netdata_glue;
 mod scan;
 mod stack;
@@ -537,6 +539,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             addr_of_mut!((*c).parent).write(None);
             addr_of_mut!((*c).poll_period).write(None);
             addr_of_mut!((*c).user_poll_period).write(None);
+            #[cfg(feature = "link-metrics-manager")]
+            addr_of_mut!((*c).lmm).write(lmm::LinkMetricsManager::new());
             put(addr_of_mut!((*c).mactx), stack::MacTx::default);
             put(addr_of_mut!((*c).events), Deque::new);
             addr_of_mut!((*c).iid_secret).write(iid_secret);
@@ -651,6 +655,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy |= self.service_bbr(now);
             busy |= self.service_commissioning(now);
             busy |= self.service_scan(now);
+            #[cfg(feature = "link-metrics-manager")]
+            {
+                busy |= self.service_lmm(now);
+            }
             busy |= self.service_outbox(now);
             if !busy {
                 break;
@@ -681,6 +689,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.bbrg.next_deadline(),
             self.cm.next_deadline(),
             self.scan_servers_deadline(),
+            self.lmm_deadline(),
         ]
         .into_iter()
         .flatten()
@@ -689,6 +698,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             d = Some(self.core.now);
         }
         d
+    }
+
+    #[cfg(feature = "link-metrics-manager")]
+    fn lmm_deadline(&self) -> Option<Instant> {
+        self.core.lmm.next_deadline()
+    }
+
+    #[cfg(not(feature = "link-metrics-manager"))]
+    #[allow(clippy::unused_self)]
+    const fn lmm_deadline(&self) -> Option<Instant> {
+        None
     }
 
     #[cfg(feature = "scan-servers")]
