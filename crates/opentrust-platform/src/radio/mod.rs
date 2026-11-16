@@ -219,6 +219,12 @@ pub struct RadioCaps {
     /// The fixed uncertainty (jitter) of the radio's timed receive, in units of
     /// 10 µs, as reported to a CSL parent. `u8::MAX` if unknown.
     pub csl_uncertainty: u8,
+    /// How far ahead of its start a timed receive window must be handed to the
+    /// radio (`RadioAction::ReceiveAt` in the soft MAC): a radio that arbitrates
+    /// its air time (a timeslot on a shared radio) refuses a window that starts
+    /// sooner. The CSL receiver arms its window timer that much earlier;
+    /// microseconds, `0` if the radio accepts a window at once.
+    pub receive_at_lead_us: u32,
     /// The speed of the link between the stack and the radio, in bits per
     /// second, for a radio behind one (e.g. an RCP on a UART); `0` for a radio
     /// on the same chip. An FTD hands the frames for its CSL children over
@@ -253,6 +259,7 @@ impl Default for RadioCaps {
             clock: None,
             csl_accuracy_ppm: u8::MAX,
             csl_uncertainty: u8::MAX,
+            receive_at_lead_us: 0,
             bus_speed: 0,
             bus_latency_us: 0,
         }

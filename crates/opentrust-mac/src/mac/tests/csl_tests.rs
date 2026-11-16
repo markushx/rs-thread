@@ -130,6 +130,29 @@ fn csl_actions(m: &mut TestMac, now: Instant) -> Vec<RadioAction> {
 }
 
 #[test]
+fn csl_receiver_hw_window_lead() {
+    // A radio that needs its windows handed over early: the window timer
+    // fires `receive_at_lead_us` before the window start, the window itself
+    // (radio time) stays where it is.
+    set_radio(1_000_000);
+    let mut caps = clock_caps(Capabilities::RECEIVE_TIMING);
+    caps.receive_at_lead_us = 3000;
+    let mut m = plain_mac(caps);
+    m.set_rx_on_when_idle(false);
+    m.set_csl(PERIOD, 0, PARENT_SHORT, PARENT_EXT, t(0))
+        .unwrap();
+    let ahead = 250_000 - CSL_RECEIVE_TIME_AHEAD;
+    let acts = csl_actions(&mut m, t(0));
+    let win = RadioAction::ReceiveAt {
+        channel: CH,
+        start_us: 1_000_000 - u64::from(ahead),
+        duration_us: ahead + 250_000,
+    };
+    assert!(acts.contains(&win), "{acts:?}");
+    assert_eq!(m.next_deadline(), Some(t(500_000 - 250_000 - 3000)));
+}
+
+#[test]
 fn csl_receiver_hw_windows() {
     set_radio(1_000_000);
     let mut m = plain_mac(clock_caps(Capabilities::RECEIVE_TIMING));

@@ -699,8 +699,9 @@ impl<
         if self.caps.hw_csl() {
             // One call per period: the timer fires `ahead` before the next
             // sample, the radio listens in the window by itself.
+            let lead = self.caps.receive_at_lead_us.min(period_us / 2);
             let at = (self.csl.sample_local + period)
-                .saturating_sub(Duration::from_micros(ahead.into()));
+                .saturating_sub(Duration::from_micros(u64::from(ahead) + u64::from(lead)));
             let _ = self.timers.start(TimerId::CslRx, at);
             let ahead = ahead.saturating_sub(CSL_RECEIVE_TIME_AHEAD);
             let start32 = self.csl.sample_radio.wrapping_sub(ahead);

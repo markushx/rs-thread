@@ -271,6 +271,11 @@ impl core::fmt::Debug for NrfRadio<'_> {
 }
 
 impl<'d> NrfRadio<'d> {
+    /// A timed receive window must be handed to the driver this far ahead of
+    /// its start: the driver reserves a timeslot for it and refuses a window
+    /// that starts within about a millisecond.
+    pub const RECEIVE_AT_LEAD_US: u32 = 3000;
+
     /// Default clock accuracy reported to a CSL parent: the 32.768 kHz
     /// crystal MPSL is configured with by [`init_mpsl`].
     pub const DEFAULT_CSL_ACCURACY_PPM: u8 = LFCLK_ACCURACY_PPM;
@@ -350,6 +355,7 @@ impl Radio for NrfRadio<'_> {
             clock: Some(RadioClock(radio_now_us)),
             csl_accuracy_ppm: self.csl_accuracy_ppm,
             csl_uncertainty: self.csl_uncertainty,
+            receive_at_lead_us: Self::RECEIVE_AT_LEAD_US,
             ..RadioCaps::default()
         })
     }
@@ -403,13 +409,14 @@ impl Radio for NrfRadio<'_> {
         // that a window still running is not aborted.
         self.window_channel = channel;
 
-        // The driver wants the start comfortably ahead of its clock: trim a
-        // window whose start has (nearly) passed rather than lose it.
-        const MIN_LEAD_US: u64 = 250;
+        // The driver wants the start `RECEIVE_AT_LEAD_US` ahead of its clock:
+        // trim a window whose start is nearer (the first one after CSL was
+        // switched on starts "now") rather than lose it.
+        const MIN_LEAD_US: u64 = NrfRadio::RECEIVE_AT_LEAD_US as u64;
         let now = self.hw.now_us();
         let end_us = start_us + u64::from(duration_us);
         let start_us = start_us.max(now + MIN_LEAD_US);
-        if end_us <= start_us + MIN_LEAD_US {
+        if end_us <= start_us + 250 {
             opentrust_core::debug!("timed receive window missed");
             return Err(RadioErrorKind::RxFailed);
         }
