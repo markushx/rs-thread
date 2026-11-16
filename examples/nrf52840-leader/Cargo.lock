@@ -1145,6 +1145,7 @@ dependencies = [
  "opentrust-nrf",
  "opentrust-platform",
  "panic-probe",
+ "rand_core 0.10.1",
  "static_cell",
 ]
 

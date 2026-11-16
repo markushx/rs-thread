@@ -132,7 +132,7 @@ Cause: Parent Requests are MLE secured. The OpenThread parent keeps the child en
 (Valid, child timeout 240 s) of the previous attach of the same extended address and
 drops every secured MLE message whose frame counter is below the one it stored for
 that neighbor (`Mle::HandleUdpReceive`: `frameCounter >= neighbor->GetMleFrameCounter()`
-else `kErrorDuplicated`). The CLI firmware keeps its settings in RAM only, so the MLE
+else `kErrorDuplicated`). The CLI firmware kept its settings in RAM only at the time (it persists them in flash now, see below), so the MLE
 frame counter restarts at 0 after every reset, and each Parent Request counts one up
 until the counter has caught up with the parent's: the attach time grows with the
 number of earlier attaches (4.9, 7.7, 12.1, 16.3, 21.7 s over five resets; 6.8, 11, 14,
@@ -150,8 +150,25 @@ history). A fresh parent entry removes it: with a new extended address (`extaddr
 (polled every 0.25 s over the CLI, so +- 0.3 s) the same as in the simulation (1.2 s).
 The attach with CSL set first is no slower. Firmware with settings in flash
 (`nrf52840-light`) stores the frame counters ahead and does not have the problem. When
-testing with the RAM-settings CLI against an OpenThread parent, give every attach a new
+testing with a RAM-settings firmware against an OpenThread parent, give every attach a new
 extended address or wait for the child timeout of the old entry.
+
+With the settings in flash (frame counters stored ahead, as OpenThread) the CLI firmware
+resets cleanly: ten resets in a row against the OpenThread parent show no growth of the
+attach time; `factoryreset` erases the settings and the next boot picks a new random
+extended address. Time from `thread start` to `child` over ten hardware resets (the
+stored dataset, role and counters restored, `mode` set before the start):
+
+| mode | first start | after each of 9 resets (s) |
+|---|---|---|
+| SED (`mode -`) | 1.6 s | 6.1 to 6.6, median 6.3, no growth |
+| non-sleepy (`mode rdn`) | 1.0 s | 0.1 (restored role, one Child Update exchange) |
+
+The restored SED does not get the answer of its Child Update Request (four attempts
+about 5 s, then a normal attach of about 1.3 s); the non-sleepy restore is answered at
+once. Open: why the restore exchange of a sleepy child fails against the OpenThread
+parent (the parent's child table shows our entry with the receiver-on flag after such a
+restore, the simulation restores a sleepy child with one exchange).
 
 ## Parent loss and re-attach
 

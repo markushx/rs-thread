@@ -7,9 +7,12 @@
 //! joiner and commissioner events, received UDP datagrams) is printed as it
 //! happens.
 //!
-//! The settings are kept in RAM: they do not survive a reset (the flash
-//! regions of the other firmware binaries are left alone). `reset` and
-//! `factoryreset` restart the chip.
+//! The settings (datasets, network info with the frame counters stored ahead,
+//! child and parent info, the random extended address, ...) are persisted in
+//! the Thread region of flash (`opentrust-flash`, see `memory.x`) and survive
+//! a reset. `reset` restarts the chip; `factoryreset` erases the settings
+//! first (the next boot picks a new extended address), as does Button 1 held
+//! at boot.
 //!
 //! Build: `cargo build --release --bin cli --features cli-all`; single
 //! command groups are the features `cli-dataset`, `cli-ping`, ... (see
@@ -33,9 +36,10 @@ use nrf52840_leader::Board;
 use opentrust_cli::Cli;
 use opentrust_core::crypto::soft::SoftCrypto;
 use opentrust_embassy::{OpenTrust, Resources};
-use opentrust_instance::{ExtAddress, Instance};
+use opentrust_flash::{FlashWriter, Settings, Shared};
+use opentrust_instance::Instance;
 use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::{Radio, RamSettings};
+use opentrust_platform::Radio;
 use panic_probe as _;
 use static_cell::StaticCell;
 
@@ -45,7 +49,9 @@ bind_interrupts!(struct Irqs {
     UARTE0 => buffered_uarte::InterruptHandler<peripherals::UARTE0>;
 });
 
-type Store = RamSettings<2048>;
+/// RAM image of the settings (bytes) and the number of distinct keys tracked.
+static STORE: Shared<2048, 16> = Shared::new();
+type Store = Settings<'static, 2048, 16>;
 type Res = Resources<NoopRawMutex, EmbassyClock, Store, SoftCrypto, NrfRng<'static>>;
 static RES: StaticCell<Res> = StaticCell::new();
 static RX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
@@ -83,17 +89,6 @@ impl Sink {
     }
 }
 
-fn ext_address() -> ExtAddress {
-    let ficr = embassy_nrf::pac::FICR;
-    let lo = ficr.deviceid(0).read();
-    let hi = ficr.deviceid(1).read();
-    let mut a = [0u8; 8];
-    a[..4].copy_from_slice(&hi.to_be_bytes());
-    a[4..].copy_from_slice(&lo.to_be_bytes());
-    a[0] = (a[0] | 0x02) & !0x01;
-    ExtAddress(a)
-}
-
 /// The line editor of OpenThread's UART CLI.
 struct Line {
     buf: [u8; LINE_MAX],
@@ -108,17 +103,33 @@ struct Line {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let Board {
-        rng,
+        mut rng,
         mut radio,
+        mut flash,
+        button1,
         uart,
         ..
     } = nrf52840_leader::init(&spawner);
+    nrf52840_leader::flash::check();
+    if nrf52840_leader::flash::factory_reset_requested(&button1).await {
+        info!("factory reset: erasing the settings");
+        nrf52840_leader::flash::erase_all(&mut flash).await.unwrap();
+    }
+    let mut writer = FlashWriter::<_, 512>::mount(
+        flash,
+        nrf52840_leader::flash::THREAD_START,
+        nrf52840_leader::flash::THREAD_PAGES,
+        &STORE,
+    )
+    .await
+    .unwrap();
+    info!("settings: {} bytes loaded", STORE.with(|i| i.used()));
     let caps = radio.init().await.unwrap();
-    let ext = ext_address();
+    let ext = nrf52840_leader::flash::ext_address(&STORE, &mut rng);
     info!("OpenTrust CLI, ext address {:x}", ext.0);
     let config = opentrust_instance::Config::router(ext, caps);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
-        Instance::init(slot, config, Store::new(), SoftCrypto, rng);
+        Instance::init(slot, config, STORE.settings(), SoftCrypto, rng);
     });
     let ot = OpenTrust::new(res);
 
@@ -188,6 +199,14 @@ async fn main(spawner: Spawner) {
             }
             ot.with(|i, now| cli.poll(i, now, &mut sink));
             sink.flush(&mut tx).await;
+            // Settings changed (also the frame counter store-ahead): write
+            // them to flash. `factoryreset` wiped the image, which the flush
+            // turns into an erase of the old bank.
+            if STORE.is_dirty()
+                && let Err(e) = writer.flush(&STORE).await
+            {
+                defmt::warn!("flash write failed: {}", e);
+            }
             if cli.take_reset_request() {
                 let _ = tx.flush().await;
                 Timer::after_millis(50).await;

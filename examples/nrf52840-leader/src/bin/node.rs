@@ -33,7 +33,7 @@ use opentrust_core::crypto::soft::SoftCrypto;
 use opentrust_core::settings::NetworkInfo;
 use opentrust_embassy::{OpenTrust, Resources};
 use opentrust_flash::{FlashWriter, Settings, Shared};
-use opentrust_instance::{Dataset, ExtAddress, Instance};
+use opentrust_instance::{Dataset, Instance};
 use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
 use opentrust_platform::Radio;
 use panic_probe as _;
@@ -60,21 +60,10 @@ const PING_PERIOD_SECS: u64 = 5;
 const STATUS_PERIOD_SECS: u64 = 10;
 const PING_PAYLOAD: usize = 32;
 
-fn ext_address() -> ExtAddress {
-    let ficr = embassy_nrf::pac::FICR;
-    let lo = ficr.deviceid(0).read();
-    let hi = ficr.deviceid(1).read();
-    let mut a = [0u8; 8];
-    a[..4].copy_from_slice(&hi.to_be_bytes());
-    a[4..].copy_from_slice(&lo.to_be_bytes());
-    a[0] = (a[0] | 0x02) & !0x01;
-    ExtAddress(a)
-}
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let Board {
-        rng,
+        mut rng,
         mut radio,
         mut flash,
         button1,
@@ -112,7 +101,7 @@ async fn main(spawner: Spawner) {
         );
     }
     let caps = radio.init().await.unwrap();
-    let ext = ext_address();
+    let ext = nrf52840_leader::flash::ext_address(&STORE, &mut rng);
     info!("ext address {:x}", ext.0);
     let mut config = opentrust_instance::Config::router(ext, caps);
     config.mle.router.eligible = !cfg!(feature = "child-only");
