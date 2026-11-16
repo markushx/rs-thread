@@ -229,6 +229,8 @@ pub fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1u64);
+    #[cfg(feature = "cert-log")]
+    opentrust_cli::cert_log::init();
     let link = VtLink::connect(id).unwrap_or_else(|e| {
         eprintln!("cannot open the simulation socket: {e}");
         std::process::exit(1);

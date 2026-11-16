@@ -77,6 +77,7 @@ extern crate std;
 
 #[cfg(feature = "border-agent")]
 pub mod border_agent;
+pub mod cert_log;
 #[cfg(feature = "commissioner")]
 pub mod commissioner;
 pub mod dataset;

@@ -625,6 +625,7 @@ where
             session: s,
             out: |d: &[u8]| io.send_unsecured(JOINER_UDP_PORT, &peer, d),
         };
+        crate::cert_log::cert_log(true, crate::cert_log::Msg::JoinFinReq, &self.finalize);
         let _ = self.coap.post(
             now,
             rng,
@@ -666,6 +667,13 @@ where
                     || msg.code() != Code::CHANGED
                 {
                     return;
+                }
+                if Tlvs(msg.payload()).state().is_ok() {
+                    crate::cert_log::cert_log(
+                        false,
+                        crate::cert_log::Msg::JoinFinRsp,
+                        msg.payload(),
+                    );
                 }
                 match Tlvs(msg.payload()).state() {
                     Ok(State::Accept) => Some(true),
@@ -729,6 +737,7 @@ where
         let Ok(key) = Tlvs(req.msg.payload()).network_key() else {
             return;
         };
+        crate::cert_log::cert_log(false, crate::cert_log::Msg::JoinEntNtf, &[]);
         let Some(c) = self.current else { return };
         let mut ds = Dataset::new();
         if ds.set_network_key(&key).is_err()
@@ -739,6 +748,7 @@ where
         }
         io.save_dataset(&ds);
         drop(ds);
+        crate::cert_log::cert_log(true, crate::cert_log::Msg::JoinEntRsp, &[]);
         let opts = SendOpts::default();
         let _ = self.entrust_ep.respond_payload(
             now,

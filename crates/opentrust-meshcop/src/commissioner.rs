@@ -274,6 +274,11 @@ where
         Ok(())
     }
 
+    /// The Provisioning URL that Joiners must present (empty: none).
+    pub fn provisioning_url(&self) -> &str {
+        &self.provisioning_url
+    }
+
     /// Set the Provisioning URL that Joiners must present (if they send
     /// one); at most 64 bytes.
     pub fn set_provisioning_url(&mut self, url: &str) -> Result<()> {
@@ -878,11 +883,13 @@ where
         if req.msg.ty() != Type::Con || req.msg.code() != Code::POST {
             return;
         }
+        crate::cert_log::cert_log(false, crate::cert_log::Msg::JoinFinReq, req.msg.payload());
         let mut p = [0u8; 4];
         let mut w = Writer::new(&mut p);
         if w.state(state).is_err() {
             return;
         }
+        crate::cert_log::cert_log(true, crate::cert_log::Msg::JoinFinRsp, w.written());
         let Some(s) = self.session.as_mut() else {
             return;
         };

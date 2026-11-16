@@ -131,6 +131,147 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.cm.comm.state()
     }
 
+    /// The Commissioner ID of the next petition (OT `otCommissionerGetId`).
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_id(&self) -> &str {
+        self.cm.comm.id()
+    }
+
+    /// The Provisioning URL the Commissioner expects from Joiners (empty:
+    /// none; OT `otCommissionerGetProvisioningUrl`).
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_provisioning_url(&self) -> &str {
+        self.cm.comm.provisioning_url()
+    }
+
+    /// Set the Commissioner ID (OT `otCommissionerSetId`; only while
+    /// disabled).
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_set_id(&mut self, id: &str) -> Result<()> {
+        self.cm.comm.set_id(id)
+    }
+
+    /// Set the Provisioning URL (OT `otCommissionerSetProvisioningUrl`).
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_set_provisioning_url(&mut self, url: &str) -> Result<()> {
+        self.cm.comm.set_provisioning_url(url)
+    }
+
+    /// MGMT_COMMISSIONER_GET for the TLV types `types` (empty: all; OT
+    /// `otCommissionerSendMgmtGet`). Only while active.
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_mgmt_get(&mut self, types: &[u8], now: Instant) -> Result<()> {
+        self.core.now = now;
+        if self.cm.comm.state() != opentrust_meshcop::commissioner::CommissionerState::Active {
+            return Err(Error::InvalidState);
+        }
+        let mut t = crate::cm_comm::mesh_transport!(self);
+        self.cm.comm.send_commissioner_get(now, &mut t, types)?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// MGMT_COMMISSIONER_SET with the TLVs `tlvs` as they are (OT
+    /// `otCommissionerSendMgmtSet` sends exactly the given dataset fields
+    /// and TLVs). Only while active.
+    #[cfg(feature = "commissioner")]
+    pub fn commissioner_mgmt_set(&mut self, tlvs: &[u8], now: Instant) -> Result<()> {
+        self.core.now = now;
+        if self.cm.comm.state() != opentrust_meshcop::commissioner::CommissionerState::Active {
+            return Err(Error::InvalidState);
+        }
+        let mut t = crate::cm_comm::mesh_transport!(self);
+        self.cm
+            .comm
+            .send_mgmt(now, &mut t, opentrust_coap::uri::Uri::CommissionerSet, tlvs)?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// MGMT_ACTIVE_SET / MGMT_PENDING_SET with the TLVs of `dataset` to the
+    /// Leader (OT `otDatasetSendMgmtActiveSet` / `PendingSet`); an active
+    /// Commissioner adds its Session ID unless the dataset has one.
+    #[cfg(feature = "commissioner")]
+    pub fn dataset_mgmt_set(
+        &mut self,
+        active: bool,
+        dataset: &opentrust_meshcop::dataset::Dataset,
+        now: Instant,
+    ) -> Result<()> {
+        use opentrust_meshcop::tlv::{WriterExt, ty};
+        self.core.now = now;
+        if !self.mle.role().is_attached() {
+            return Err(Error::InvalidState);
+        }
+        let mut b = [0u8; 255];
+        let mut w = opentrust_core::bytes::Writer::new(&mut b);
+        w.write_slice(dataset.as_bytes())?;
+        if self.cm.comm.state() == opentrust_meshcop::commissioner::CommissionerState::Active
+            && !dataset.contains(ty::COMMISSIONER_SESSION_ID)
+        {
+            w.commissioner_session_id(self.cm.comm.session_id())?;
+        }
+        let uri = if active {
+            opentrust_coap::uri::Uri::ActiveSet
+        } else {
+            opentrust_coap::uri::Uri::PendingSet
+        };
+        let mut t = crate::cm_comm::mesh_transport!(self);
+        self.cm.comm.send_mgmt(now, &mut t, uri, w.written())?;
+        self.poll(now);
+        Ok(())
+    }
+
+    /// MGMT_ACTIVE_GET / MGMT_PENDING_GET for the TLV types `types` (empty:
+    /// all) to the Leader or to `dest` (OT `otDatasetSendMgmtActiveGet` /
+    /// `PendingGet`).
+    #[cfg(feature = "commissioner")]
+    pub fn dataset_mgmt_get(
+        &mut self,
+        active: bool,
+        types: &[u8],
+        dest: Option<core::net::Ipv6Addr>,
+        now: Instant,
+    ) -> Result<()> {
+        use opentrust_meshcop::tlv::WriterExt;
+        self.core.now = now;
+        if !self.mle.role().is_attached() {
+            return Err(Error::InvalidState);
+        }
+        let mut b = [0u8; 64];
+        let mut w = opentrust_core::bytes::Writer::new(&mut b);
+        if !types.is_empty() {
+            w.get_list(types)?;
+        }
+        let uri = if active {
+            opentrust_coap::uri::Uri::ActiveGet
+        } else {
+            opentrust_coap::uri::Uri::PendingGet
+        };
+        match dest {
+            None => {
+                let mut t = crate::cm_comm::mesh_transport!(self);
+                self.cm.comm.send_mgmt(now, &mut t, uri, w.written())?;
+            }
+            Some(d) => {
+                let src = self.core.cfg.cur.mesh_local_prefix.rloc(self.mle.rloc16());
+                self.agent.post(
+                    now,
+                    &mut self.prng,
+                    &mut self.sink,
+                    d,
+                    Some(src),
+                    opentrust_core::message::Priority::Net,
+                    uri,
+                    w.written(),
+                    Some(opentrust_meshcop::commissioner::USER_MGMT),
+                )?;
+            }
+        }
+        self.poll(now);
+        Ok(())
+    }
+
     /// The Commissioner Session ID.
     #[cfg(feature = "commissioner")]
     pub fn commissioner_session_id(&self) -> u16 {

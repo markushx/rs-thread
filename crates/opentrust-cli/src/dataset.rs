@@ -137,6 +137,71 @@ fn parse_policy(a: &Args<'_>, i: usize) -> Result<SecurityPolicy, E> {
     Ok(p)
 }
 
+/// Set the dataset component `name` from the argument at `i` (the value);
+/// returns the number of value arguments consumed.
+fn set_component(d: &mut Dataset, name: &str, a: &Args<'_>, i: usize) -> Result<usize, E> {
+    let v = a.get(i);
+    match name {
+        "activetimestamp" | "pendingtimestamp" => {
+            let ty = if name == "activetimestamp" {
+                DatasetType::Active
+            } else {
+                DatasetType::Pending
+            };
+            let ts = Timestamp {
+                seconds: parse_u64(v)?,
+                ticks: 0,
+                authoritative: false,
+            };
+            d.set_timestamp(ty, &ts)?;
+        }
+        "channel" => d.set_channel(parse_u8(v)?)?,
+        "channelmask" => d.set_channel_mask(parse_u32(v)?)?,
+        "delay" | "delaytimer" => d.set_delay_timer(parse_u32(v)?)?,
+        "extpanid" => d.set_ext_pan_id(&ExtPanId(parse_hex_exact::<8>(v)?))?,
+        "meshlocalprefix" | "localprefix" => {
+            let p = if let Some((addr, _)) = v.split_once('/') {
+                parse_ip6(addr)?
+            } else {
+                parse_ip6(v)?
+            };
+            let mut b = [0u8; 8];
+            b.copy_from_slice(&p.octets()[..8]);
+            d.set_mesh_local_prefix(&Prefix64(b))?;
+        }
+        "networkkey" => d.set_network_key(&NetworkKey(parse_hex_exact::<16>(v)?))?,
+        "networkname" => d.set_network_name(&NetworkName::new(v)?)?,
+        "panid" => d.set_pan_id(parse_u16(v)?)?,
+        "pskc" => d.set_pskc(&Pskc(parse_hex_exact::<16>(v)?))?,
+        "securitypolicy" => {
+            d.set_security_policy(&parse_policy(a, i)?)?;
+            return Ok(if parse_u8(a.get(i + 2)).is_ok() { 3 } else { 2 });
+        }
+        _ => return Err(E::INVALID_ARGS),
+    }
+    Ok(1)
+}
+
+/// TLV type of a dataset component name (`dataset mgmtgetcommand`).
+#[cfg(feature = "commissioning")]
+fn component_tlv(name: &str) -> Option<u8> {
+    Some(match name {
+        "activetimestamp" => 14,
+        "pendingtimestamp" => 51,
+        "networkkey" => 5,
+        "networkname" => 3,
+        "extpanid" => 2,
+        "meshlocalprefix" | "localprefix" => 7,
+        "delay" | "delaytimer" => 52,
+        "panid" => 1,
+        "channel" => 0,
+        "pskc" => 4,
+        "securitypolicy" => 12,
+        "channelmask" => 53,
+        _ => return None,
+    })
+}
+
 impl<S, C, Rn, W> Ctx<'_, S, C, Rn, W>
 where
     S: SettingsStore,
@@ -186,6 +251,10 @@ where
                     _ => Err(E::INVALID_ARGS),
                 }
             }
+            #[cfg(feature = "commissioning")]
+            "mgmtsetcommand" => self.mgmt_set(a),
+            #[cfg(feature = "commissioning")]
+            "mgmtgetcommand" => self.mgmt_get(a),
             "clear" => {
                 self.st.dataset.clear();
                 Ok(())
@@ -267,40 +336,74 @@ where
             }
             return Ok(());
         }
-        match name {
-            "activetimestamp" | "pendingtimestamp" => {
-                let ty = if name == "activetimestamp" {
-                    DatasetType::Active
-                } else {
-                    DatasetType::Pending
-                };
-                let ts = Timestamp {
-                    seconds: parse_u64(v)?,
-                    ticks: 0,
-                    authoritative: false,
-                };
-                d.set_timestamp(ty, &ts)?;
-            }
-            "channel" => d.set_channel(parse_u8(v)?)?,
-            "channelmask" => d.set_channel_mask(parse_u32(v)?)?,
-            "delay" | "delaytimer" => d.set_delay_timer(parse_u32(v)?)?,
-            "extpanid" => d.set_ext_pan_id(&ExtPanId(parse_hex_exact::<8>(v)?))?,
-            "meshlocalprefix" | "localprefix" => {
-                let p = if let Some((addr, _)) = v.split_once('/') {
-                    parse_ip6(addr)?
-                } else {
-                    parse_ip6(v)?
-                };
-                let mut b = [0u8; 8];
-                b.copy_from_slice(&p.octets()[..8]);
-                d.set_mesh_local_prefix(&Prefix64(b))?;
-            }
-            "networkkey" => d.set_network_key(&NetworkKey(parse_hex_exact::<16>(v)?))?,
-            "networkname" => d.set_network_name(&NetworkName::new(v)?)?,
-            "panid" => d.set_pan_id(parse_u16(v)?)?,
-            "pskc" => d.set_pskc(&Pskc(parse_hex_exact::<16>(v)?))?,
-            _ => d.set_security_policy(&parse_policy(a, 2)?)?,
-        }
+        set_component(d, name, a, 2)?;
         Ok(())
+    }
+
+    /// `dataset mgmtsetcommand active|pending [<component> <value>]... [-x tlvs]`
+    /// (OT `otDatasetSendMgmtActiveSet` / `PendingSet`).
+    #[cfg(feature = "commissioning")]
+    fn mgmt_set(&mut self, a: &Args<'_>) -> R {
+        let active = match a.get(2) {
+            "active" => true,
+            "pending" => false,
+            _ => return Err(E::INVALID_ARGS),
+        };
+        let mut d = Dataset::new();
+        let n = a.rest(0).len();
+        let mut i = 3;
+        while i < n {
+            let name = a.get(i);
+            i += 1;
+            if name == "-x" {
+                let mut b = [0u8; 254];
+                let len = parse_hex(a.get(i), &mut b)?;
+                let other = Dataset::from_tlvs_unchecked(&b[..len])?;
+                d.write_tlvs_from(&other)?;
+                i += 1;
+            } else {
+                i += set_component(&mut d, name, a, i)?;
+            }
+        }
+        self.i
+            .dataset_mgmt_set(active, &d, self.now)
+            .map_err(E::from)
+    }
+
+    /// `dataset mgmtgetcommand active|pending [address <ip6>] [<component>]...
+    /// [-x tlvs]` (OT `otDatasetSendMgmtActiveGet` / `PendingGet`).
+    #[cfg(feature = "commissioning")]
+    fn mgmt_get(&mut self, a: &Args<'_>) -> R {
+        let active = match a.get(2) {
+            "active" => true,
+            "pending" => false,
+            _ => return Err(E::INVALID_ARGS),
+        };
+        let mut types = [0u8; 40];
+        let mut len = 0;
+        let mut dest = None;
+        let n = a.rest(0).len();
+        let mut i = 3;
+        while i < n {
+            let name = a.get(i);
+            i += 1;
+            if let Some(t) = component_tlv(name) {
+                if len < types.len() {
+                    types[len] = t;
+                    len += 1;
+                }
+            } else if name == "-x" {
+                len += parse_hex(a.get(i), &mut types[len..])?;
+                i += 1;
+            } else if name == "address" {
+                dest = Some(parse_ip6(a.get(i))?);
+                i += 1;
+            } else {
+                return Err(E::INVALID_ARGS);
+            }
+        }
+        self.i
+            .dataset_mgmt_get(active, &types[..len], dest, self.now)
+            .map_err(E::from)
     }
 }

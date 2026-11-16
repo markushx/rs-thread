@@ -23,12 +23,18 @@
 //! `Error 35: InvalidCommand` like OpenThread does for an unknown command.
 
 mod basic;
+#[cfg(feature = "cert-log")]
+extern crate std;
+#[cfg(feature = "cert-log")]
+pub mod cert_log;
 #[cfg(feature = "commissioning")]
 mod comm;
 #[cfg(feature = "dataset")]
 mod dataset;
 #[cfg(feature = "dns")]
 mod dns;
+#[cfg(feature = "joiner")]
+mod joiner;
 mod net;
 #[cfg(feature = "netdata")]
 mod netdata;
@@ -324,7 +330,7 @@ where
             "udp" => self.udp(a),
             #[cfg(feature = "commissioning")]
             "commissioner" => self.commissioner(a),
-            #[cfg(feature = "commissioning")]
+            #[cfg(feature = "joiner")]
             "joiner" => self.joiner(a),
             _ => Err(E::INVALID_COMMAND),
         }
@@ -345,7 +351,7 @@ where
             Event::UdpReadable(s) => self.udp_readable(*s),
             #[cfg(feature = "dns")]
             Event::DnsResult(id) => self.dns_result(*id),
-            #[cfg(feature = "commissioning")]
+            #[cfg(feature = "joiner")]
             Event::JoinerResult(r) => self.joiner_result(*r),
             #[cfg(feature = "commissioning")]
             Event::Commissioner(e) => self.commissioner_event(e),

@@ -33,12 +33,17 @@ dns = []
 # `udp`.
 udp = []
 # `commissioner`, `joiner`.
-commissioning = ["ftd", "opentrust-instance/commissioner"]
+commissioning = ["ftd", "joiner", "opentrust-instance/commissioner"]
+# `joiner` (also on the MTD build).
+joiner = []
 # Host binary `opentrust-cli-sim`: simulated nodes behind OT-style prompts.
 sim = ["sim-mtd", "opentrust-sim/ftd", "ftd", "commissioning"]
+# The `[THCI]` commissioning trace lines of OpenThread's reference device
+# build on the CLI output (read by the thread-cert scripts).
+cert-log = ["dep:log", "opentrust-meshcop/cert-log"]
 # Host binary `opentrust-cli-vt-mtd`: a minimal thread device (no router, no
 # commissioner, no Border Agent) on the virtual-time simulation platform.
-sim-mtd = ["dep:opentrust-sim", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp"]
+sim-mtd = ["dep:opentrust-sim", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "joiner", "cert-log"]
 defmt = ["dep:defmt", "opentrust-core/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 

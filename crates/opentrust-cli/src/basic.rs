@@ -131,7 +131,8 @@ where
                 | "preferrouterid"
                 | "releaserouterid"
                 | "routeridrange" => cfg!(feature = "ftd"),
-                "commissioner" | "joiner" => cfg!(feature = "commissioning"),
+                "commissioner" => cfg!(feature = "commissioning"),
+                "joiner" => cfg!(feature = "joiner"),
                 "dataset" => cfg!(feature = "dataset"),
                 "discover" | "scan" => cfg!(feature = "scan"),
                 "dns" => cfg!(feature = "dns"),
