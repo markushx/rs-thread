@@ -211,6 +211,8 @@ pub(crate) struct NetConfig {
     pub nd_version_bump: bool,
     /// The configuration changed (channel, PAN ID, prefix, key).
     pub applied: bool,
+    /// The network key changed: the neighbors' frame counters must be reset.
+    pub key_changed: bool,
 }
 
 /// Everything but the MLE state machine.
@@ -315,7 +317,9 @@ impl<S: SettingsStore, C: CryptoBackend> DatasetEnv for DsEnv<'_, S, C> {
             self.cfg.network_name = Some(*n);
         }
         if let Some(k) = &cfg.network_key {
-            self.mac.security_mut().set_network_key(k.clone());
+            if self.mac.security_mut().set_network_key(k.clone()) {
+                self.cfg.key_changed = true;
+            }
             self.cfg.cur.network_key = k.clone();
         }
         if let Some(p) = &cfg.pskc {
@@ -719,6 +723,10 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         };
         let (ds, mut env) = self.ds();
         ds.restore(&mut env, now, t).is_ok()
+    }
+
+    fn take_network_key_changed(&mut self) -> bool {
+        core::mem::take(&mut self.cfg.key_changed)
     }
 
     fn apply_pending_configuration(&mut self, now: Instant) {

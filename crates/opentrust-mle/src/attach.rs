@@ -457,6 +457,9 @@ impl<const C: usize> Mle<C> {
             ReattachState::Active => {
                 if env.restore_dataset(now, StoredDataset::Pending) {
                     env.apply_pending_configuration(now);
+                    if env.take_network_key_changed() {
+                        self.reset_frame_counters();
+                    }
                     self.attach.reattach = ReattachState::Pending;
                     self.attach.state = AttachState::Start;
                     return Duration::from_millis(
@@ -855,6 +858,9 @@ impl<const C: usize> Mle<C> {
             env.clear_pending_dataset(now);
         }
         env.dataset_received(now, active, pending);
+        if env.take_network_key_changed() {
+            self.reset_frame_counters();
+        }
 
         let cand = self.attach.candidate.take().ok_or(Error::InvalidState)?;
         // OT SetStateDetached(): leaves the old attachment.

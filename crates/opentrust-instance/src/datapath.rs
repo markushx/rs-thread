@@ -379,6 +379,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             return;
         }
         // Link-layer replay protection (Thread 1.4.1 section 7.2.1.2).
+        self.sync_key_reset();
         if let Some(sec) = &rx.security
             && let Some(ks) = sec.key_sequence
             && self

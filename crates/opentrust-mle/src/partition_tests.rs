@@ -227,3 +227,41 @@ fn advertisements_of_the_previous_partition_are_ignored_for_a_while() {
     sim2.run(secs(3));
     assert_eq!(sim2.nodes[0].mle.rtr.previous_partition_timeout, 0);
 }
+
+#[test]
+fn network_key_change_resets_neighbor_frame_counters() {
+    // OT `KeyManager::ResetFrameCounters`: after a network key change the
+    // peers count from 0 again, so the parent's, routers' and children's
+    // incoming key sequence and counters are forgotten.
+    let mut sim = Sim::new(2);
+    sim.connect(0, 1, -60);
+    sim.start(0);
+    assert!(sim.run_until(secs(60), |s| s.role(0) == Role::Leader));
+    sim.start(1);
+    assert!(sim.run_until(secs(30), |s| s.role(1) == Role::Child));
+    sim.run(secs(30));
+    {
+        let n = sim.nodes[1].mle.neighbor_mut(crate::mle::NbRef::Parent);
+        n.link_counters.set(3, 100);
+        n.mle_replay = crate::neighbor::MleReplay::with(50);
+        assert_ne!(
+            n.link_counters,
+            opentrust_mac::security::LinkFrameCounters::new()
+        );
+    }
+    sim.nodes[0].mle.reset_frame_counters();
+    sim.nodes[1].mle.reset_frame_counters();
+    let after = &sim.nodes[1].mle.parent().unwrap().router.neighbor;
+    assert_eq!(
+        after.link_counters,
+        opentrust_mac::security::LinkFrameCounters::new()
+    );
+    assert_eq!(after.mle_replay.frame_counter(), Some(0));
+    let child_of_leader = sim.nodes[0]
+        .mle
+        .children()
+        .iter(crate::neighbor::StateFilter::Valid)
+        .next()
+        .unwrap();
+    assert_eq!(child_of_leader.neighbor.mle_replay.frame_counter(), Some(0));
+}

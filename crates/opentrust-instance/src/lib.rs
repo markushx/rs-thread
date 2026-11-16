@@ -494,6 +494,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 ds_events: Deque::new(),
                 nd_version_bump: false,
                 applied: false,
+                key_changed: false,
             });
             put(addr_of_mut!((*c).mle_events), Deque::new);
             addr_of_mut!((*c).child_changes).write(Deque::new());

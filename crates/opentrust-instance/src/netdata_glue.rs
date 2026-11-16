@@ -75,6 +75,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             let (ds, mut env) = self.core.ds();
             ds.poll(&mut env, now);
         }
+        self.sync_key_reset();
         self.slaac.poll(&mut self.core.ip6.netif, now);
         self.dhcp6_poll(now);
         #[cfg(feature = "ftd")]
@@ -91,6 +92,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     #[inline(never)]
     pub(crate) fn service_mle_events(&mut self, now: Instant) -> bool {
         let mut busy = false;
+        self.sync_key_reset();
         while let Some(ev) = self.core.mle_events.pop_front() {
             busy = true;
             self.dispatch_mle_event(now, ev);
@@ -124,6 +126,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.sync_netif();
         self.sync_mac_neighbors();
         busy
+    }
+
+    /// A dataset change (delay timer, MGMT_SET, the API) switched the network
+    /// key: reset the neighbors' frame counters (OT
+    /// `KeyManager::SetNetworkKey`).
+    pub(crate) fn sync_key_reset(&mut self) {
+        if core::mem::take(&mut self.core.cfg.key_changed) {
+            self.mle.reset_frame_counters();
+        }
     }
 
     fn dispatch_mle_event(&mut self, now: Instant, ev: MleEvent) {

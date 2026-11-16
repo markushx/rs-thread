@@ -108,6 +108,9 @@ impl<const C: usize> Mle<C> {
                     env.event(MleEvent::NetworkDataChanged);
                     if active.is_some() || pending.is_some() {
                         env.dataset_received(now, active, pending);
+                        if env.take_network_key_changed() {
+                            self.reset_frame_counters();
+                        }
                     }
                 }
                 Err(Error::NotFound) => data_request = true,

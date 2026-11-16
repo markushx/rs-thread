@@ -744,6 +744,34 @@ impl<const C: usize> Mle<C> {
         Ok(())
     }
 
+    /// The network key changed: the key sequence restarts at 0 and the
+    /// peers' outgoing frame counters restart with it, so forget the
+    /// incoming key sequence and frame counters of the parent, the routers
+    /// and the children (OT `KeyManager::ResetFrameCounters`).
+    pub fn reset_frame_counters(&mut self) {
+        let reset = |n: &mut Neighbor| {
+            n.link_counters.reset();
+            n.mle_replay.reset();
+        };
+        if let Some(p) = self.parent.as_mut() {
+            reset(&mut p.router.neighbor);
+        }
+        #[cfg(feature = "ftd")]
+        for r in self
+            .rtr
+            .table
+            .iter_mut(crate::neighbor::StateFilter::AnyExceptInvalid)
+        {
+            reset(&mut r.neighbor);
+        }
+        for c in self
+            .children
+            .iter_mut(crate::neighbor::StateFilter::AnyExceptInvalid)
+        {
+            reset(&mut c.neighbor);
+        }
+    }
+
     pub(crate) fn neighbor_mut(&mut self, r: NbRef) -> &mut Neighbor {
         match r {
             NbRef::Parent => &mut self.parent.as_mut().expect("parent").router.neighbor,

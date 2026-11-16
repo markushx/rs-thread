@@ -467,6 +467,13 @@ pub trait MleEnv {
     fn apply_pending_configuration(&mut self, _now: Instant) {}
     /// Delete the Pending Dataset (OT `PendingDatasetManager::Clear`).
     fn clear_pending_dataset(&mut self, _now: Instant) {}
+    /// `true` once if applying a dataset changed the network key. MLE then
+    /// forgets the neighbors' incoming key sequence and frame counters
+    /// ([`Mle::reset_frame_counters`](crate::Mle::reset_frame_counters), OT
+    /// `KeyManager::ResetFrameCounters`).
+    fn take_network_key_changed(&mut self) -> bool {
+        false
+    }
     /// Datasets received in a Child ID Response / Data Response.
     fn dataset_received(
         &mut self,
