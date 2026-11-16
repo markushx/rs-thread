@@ -76,6 +76,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             ds.poll(&mut env, now);
         }
         self.slaac.poll(&mut self.core.ip6.netif, now);
+        self.dhcp6_poll(now);
         #[cfg(feature = "ftd")]
         if self.leader.sync_timed_out(now) {
             self.mle.become_detached(&mut self.core, now);
@@ -346,6 +347,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
         let attached = role.is_attached();
         let rloc = self.mle.rloc16();
+        let dhcp_alocs = self.dhcp6_update(now, attached);
         let view = self.core.netdata.view();
         // SLAAC and ALOCs follow Network Data and role.
         let prefixes = if attached {
@@ -360,12 +362,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         };
         self.slaac
             .update(&params, &mut self.core.ip6.netif, &prefixes, None, now);
-        let want = desired_alocs(
+        let mut want = desired_alocs(
             role == Role::Leader,
             &view,
             attached.then_some(rloc.0),
             self.glue.commissioner_aloc,
         );
+        for a in dhcp_alocs {
+            if !want.contains(&a) {
+                let _ = want.push(a);
+            }
+        }
         let _ = self.alocs.update(&mut self.core.ip6.netif, &want);
 
         // Published entries follow the Network Data.

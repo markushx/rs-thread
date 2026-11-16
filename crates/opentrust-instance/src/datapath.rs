@@ -614,7 +614,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     self.dispatch_receiver(now, id, &meta, payload);
                 }
                 UdpRx::Queued(h) => {
-                    if !self.dns_srp_rx(now, h) {
+                    if !self.dhcp6_rx(now, h) && !self.dns_srp_rx(now, h) {
                         self.core.push_event(Event::UdpReadable(UdpSocket(h)));
                     }
                 }

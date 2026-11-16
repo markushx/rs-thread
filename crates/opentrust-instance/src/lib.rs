@@ -97,6 +97,7 @@ mod cm_glue;
 mod cm_io;
 mod commissioning;
 mod datapath;
+mod dhcp6;
 mod diag;
 mod dns_srp;
 mod netdata_glue;
@@ -380,6 +381,7 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) slaac: Slaac<4>,
     pub(crate) glue: netdata_glue::GlueState,
     pub(crate) dnssrp: dns_srp::DnsSrp,
+    pub(crate) dhcp6: dhcp6::Dhcp6,
     pub(crate) bbrg: bbr::BbrGlue,
     pub(crate) diag_in: Deque<Vec<u8, { diag::MAX_RESPONSE }>, 2>,
     pub(crate) cm: commissioning::Commissioning<C>,
@@ -540,6 +542,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).slaac), Slaac::new);
             put(addr_of_mut!((*p).glue), netdata_glue::GlueState::default);
             put(addr_of_mut!((*p).dnssrp), dns_srp::DnsSrp::new);
+            put(addr_of_mut!((*p).dhcp6), dhcp6::Dhcp6::new);
             put(addr_of_mut!((*p).bbrg), bbr::BbrGlue::new);
             put(addr_of_mut!((*p).diag_in), Deque::new);
             addr_of_mut!((*p).tmf_ext).write(None);
@@ -638,6 +641,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.leader_deadline(),
             self.glue.next_deadline(),
             self.dnssrp.next_deadline(),
+            self.dhcp6.next_deadline(),
             self.bbrg.next_deadline(),
             self.cm.next_deadline(),
         ]

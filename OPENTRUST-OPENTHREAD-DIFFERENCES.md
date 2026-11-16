@@ -157,7 +157,9 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | Address resolver API | Calls `MeshForwarder::HandleResolved`, sends TMF directly | Emits `ResolverEvent`s (send query/error, resolved/failed) to a caller sink; replies to `/a/aq` are decided by `address_query_response` | CoAP/TMF are Phase 5/7 | API |
 | Address resolver lists | Four intrusive linked lists | One entry array with a state and an insertion counter (same eviction order and capacities) | No alloc, no pointers | none |
 | Address resolver extras | `ResolveUsingNetDataServices`, Backbone Router queries, DUA, `/a/ae` child handling | Not implemented | Phases 7/9 | API |
-| DHCPv6 | Optional client/server | Not implemented | Legacy; no use case yet | none |
+| DHCPv6 | `Dhcp6::Client` / `Dhcp6::Server`, always on with the build option | `opentrust-instance` `dhcp6`: Solicit with Rapid Commit answered by a Reply (no Request / Renew / Release / Confirm, as OpenThread); updated from the Network Data in the instance's Network Data pass | Needed by thread-cert 5.3.8 / 5.3.9 | none |
+| DHCPv6 client Solicit timer | Trickle timer (`Imin` 1 s, `Imax` 120 s) | Same intervals, but the first Solicit goes out immediately, later ones at a uniform time in `[I/2, I)` of a doubling interval (no redundancy counter) | No trickle timer in the instance | none |
+| DHCPv6 server context check | Prefix agent only if the prefix has a 6LoWPAN context (`GetContext`) | Any context covering the prefix (compress flag ignored) provides the agent ALOC16; none: no ALOC but the server still answers on the RLOC | Same behavior for the Context TLVs the leader allocates | none |
 
 ## CoAP / TMF (`opentrust-coap`, TLVs in `opentrust-core::tlv`)
 
@@ -372,7 +374,7 @@ Reference: `network_data_tlvs.{hpp,cpp}`, `network_data.cpp`,
 | Route lookup | `RouteLookup` also tries the Domain ID remembered for a deprecated SLAAC address | Only prefixes in Network Data | `Slaac` does not track domain IDs | a datagram from a deprecating SLAAC address has no route once its prefix is gone |
 | Route preference tie breaks | On an MTD prefer the own RLOC16, on an FTD lower path cost, then router over child | Same; `MeshInfo` supplies costs (`Mle` for FTDs, `EndDeviceMesh` for end devices) | | none |
 | Anycast lookup | Backbone Router primary ALOC from the BBR leader | `Error::Drop` for `0xfc38` | Thread 1.2 BBR is not implemented | none |
-| ALOC subscription | Leader ALOC by `Mle`, service ALOCs by `Service::Manager`, DHCPv6 / ND agent ALOCs by their servers | `AlocSet` maintains leader, service and commissioner ALOCs; no DHCPv6 / ND agent ALOCs | No DHCPv6 server or ND agent | none |
+| ALOC subscription | Leader ALOC by `Mle`, service ALOCs by `Service::Manager`, DHCPv6 / ND agent ALOCs by their servers | `AlocSet` maintains leader, service and commissioner ALOCs plus the DHCP agent ALOCs of the DHCPv6 server (`0xfc00 | context id`); no ND agent ALOCs | No ND agent | none |
 | Local data | Prefix TLVs per kind with limits `kMaxOnMeshPrefixes` etc. | `LocalData<P, R, S>` with typed entries (service and server data at most 32 bytes each), encoded on demand for the current RLOC16 | Fixed capacity | none |
 | Contexts as `ContextProvider` | Mesh-local prefix first in `FindContextForAddress` | Same (`NetDataContexts` builds context 0 from the mesh-local prefix) | | none |
 | Anycast locator | Callback, aborts a pending request | `send_anycast_locate` / `parse_response`; one request per call, the caller keeps the state | Sans-IO | none |

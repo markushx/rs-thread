@@ -111,7 +111,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [x] Mesh forwarder glue: hold datagrams while an EID resolves, `HandleResolved`, ICMPv6 destination-unreachable on no route/resolution failure, snooping from forwarded frames (Phase 7a: `opentrust_mesh::forwarder`)
   - [x] Network Data providers for `Ip6Env` (`route_lookup`, `is_on_mesh`) and for SLAAC (`OnMeshPrefix` list) (Phase 7b, `opentrust_mesh::netdata::lookup::NetDataIp6Env`, `consumers::slaac_prefixes`)
   - [x] Persisted SLAAC IID secret key in settings (`Instance::thread_start` loads / stores `SettingsKey::SlaacIidSecretKey`)
-- [ ] DHCPv6 address allocation (OT `Dhcp6Client`/`Dhcp6Server`, legacy; only if a use case needs it)
+- [x] DHCPv6 address allocation (OT `Dhcp6Client`/`Dhcp6Server`: Solicit / Rapid Commit / Reply, DHCP agent ALOCs; `opentrust-instance` `dhcp6`; needed by thread-cert 5.3.8 / 5.3.9)
 - [x] Domain Unicast Address client (Thread 1.2, `/n/dr`, `/n/dn`, duplicate DUA handling in `/a/ae`: `opentrust_mesh::dua`); `/b/bq` / `/b/bb` belong to the Backbone Router server role (Phase 9)
 - [x] Multicast Listener Registration (MLR, `/n/mr`) for subscribed multicast groups (`opentrust_mesh::mlr`, Phase 9)
 - [ ] IPv6 fragmentation/reassembly above the 6LoWPAN layer (OT `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`, off by default; not needed for 1280-byte Thread datagrams)
