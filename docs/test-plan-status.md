@@ -218,7 +218,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
 | Link metrics / enhanced ack (Thread 1.2) | 5 | 0 | 3 | 2 | 0 | 0 |
 | Python unit tests of the cert libraries (no nodes) | 8 | 0 | 0 | 0 | 0 | 8 |
-| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 13 | 0 | 18 | 1 | 0 |
+| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 21 | 0 | 10 | 1 | 0 |
 
 #### SRP
 
@@ -303,18 +303,18 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 | script | status | runs passed | detail |
 |---|---|---|---|
-| `test_anycast` | fail | 1/2 | fails: all; anycast ping fails |
-| `test_anycast_locator` | fail | 1/2 | fails: all; `Error 35: InvalidCommand` (anycast locator CLI missing) |
+| `test_anycast` | pass | 2/2 | Neighbor Discovery agent ALOC |
+| `test_anycast_locator` | pass | 2/2 | `locate` CLI and anycast locate API |
 | `test_br_upgrade_router_role` | fail | 1/2 | fails: all; child does not upgrade to router (`child` != `router`) |
-| `test_child_supervision` | fail | 1/2 | fails: all; child supervision counters (0 != 129) |
-| `test_dataset_updater` | fail | 1/2 | fails: all |
+| `test_child_supervision` | pass | 2/2 | secured empty frames, polls do not reset the supervision interval, failure counter kept across a detach, child table columns |
+| `test_dataset_updater` | pass | 2/2 | `dataset updater start|cancel`, 30 s default delay as OT |
 | `test_detach` | fail | 1/2 | fails: all; router stays `detached` (`detached` != `router`) |
 | `test_diag` | fail | 1/2 | fails: all; `diag` CLI missing |
 | `test_history_tracker` | fail | 1/2 | fails: all; `Error 35: InvalidCommand` (history CLI missing) |
 | `test_inform_previous_parent_on_reattach` | fail | 1/2 | fails: all; old parent still lists the child |
 | `test_ipv6_fragmentation` | fail | 1/2 | fails: all; timeout (large ping / fragmentation path) |
 | `test_ipv6_source_selection` | pass | 2/2 |  |
-| `test_key_rotation_and_key_guard_time` | fail | 1/2 | fails: all; `dataset updater start` CLI missing |
+| `test_key_rotation_and_key_guard_time` | pass | 2/2 | Dataset Updater; minimum key rotation time 2 as OT |
 | `test_leader_reboot_multiple_link_request` | pass | 2/2 |  |
 | `test_mac_scan` | pass | 2/2 |  |
 | `test_mle_msg_key_seq_jump` | pass | 2/2 | reestablish link with a child, key sequence stored while disabled |
@@ -322,8 +322,8 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_on_mesh_prefix` | pass | 2/2 |  |
 | `test_ping` | pass | 2/2 |  |
 | `test_ping_lla_src` | pass | 2/2 |  |
-| `test_radio_filter` | fail | 1/2 | fails: all; `Error 35: InvalidCommand` (radio filter CLI missing) |
-| `test_reed_address_solicit_rejected` | fail | 1/2 | fails: all |
+| `test_radio_filter` | pass | 2/2 | `radiofilter` CLI, filter in the instance |
+| `test_reed_address_solicit_rejected` | pass | 2/2 | `service add|remove` CLI |
 | `test_reset` | pass | 2/2 |  |
 | `test_route_table` | fail | 1/2 | fails: all; route table differs from the expected set |
 | `test_router_downgrade_on_sec_policy_change` | pass | 2/2 |  |
@@ -331,7 +331,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_router_reattach` | pass | 2/2 |  |
 | `test_router_reboot_multiple_link_request` | pass | 2/2 |  |
 | `test_router_upgrade` | pass | 2/2 |  |
-| `test_service` | fail | 1/2 | fails: all |
+| `test_service` | pass | 2/2 | `service add|remove` CLI, Neighbor Discovery agent ALOC, echo reply to an own address |
 | `test_set_mliid` | pass | 2/2 |  |
 | `test_zero_len_external_route` | pass | 2/2 |  |
 | `v1_2_test_parent_selection` | baseline-fail | 0/9 | all-OT: FAIL FAILED (failures=1); baseline failure of the case itself (assertion in the script with `ot-cli-ftd`) |
