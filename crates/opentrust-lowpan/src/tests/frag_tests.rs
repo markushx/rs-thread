@@ -327,6 +327,65 @@ fn out_of_order_next_fragments_are_dropped() {
     );
 }
 
+/// OT `MeshForwarder::HandleFragment`: a sleepy device reassembles one
+/// datagram at a time.
+#[test]
+fn sleepy_device_reassembles_one_datagram_at_a_time() {
+    let d1 = datagram(500, 5683, 5684);
+    let d2 = datagram(400, 5683, 5684);
+    let f1 = fragment(&d1, 1, None, 100);
+    let f2 = fragment(&d2, 2, None, 100);
+    let now = Instant::ZERO;
+
+    // A rx-on device keeps both.
+    let mut r = Reassembler::<4, 1280>::new();
+    feed(&mut r, now, &f1[0]).unwrap();
+    feed(&mut r, now, &f2[0]).unwrap();
+    assert_eq!(r.pending(), 2);
+    assert_eq!(feed(&mut r, now, &f1[2]).unwrap_err(), Error::Drop);
+    assert_eq!(r.pending(), 2);
+
+    // A sleepy device: a new secure first fragment drops the other one.
+    let mut r = Reassembler::<4, 1280>::new();
+    r.set_sleepy(true);
+    feed(&mut r, now, &f1[0]).unwrap();
+    feed(&mut r, now, &f2[0]).unwrap();
+    assert_eq!(r.pending(), 1);
+    // The first datagram is gone, the second completes.
+    assert_eq!(feed(&mut r, now, &f1[1]).unwrap_err(), Error::Drop);
+    assert_eq!(r.pending(), 0);
+
+    // A secure next fragment that matches nothing (a missed fragment) clears
+    // the list.
+    feed(&mut r, now, &f1[0]).unwrap();
+    assert_eq!(feed(&mut r, now, &f1[2]).unwrap_err(), Error::Drop);
+    assert_eq!(r.pending(), 0);
+    // An unsecured fragment does not.
+    feed(&mut r, now, &f1[0]).unwrap();
+    let ctx = ot_contexts();
+    assert_eq!(
+        r.handle_fragment(now, &ctx, &LONG_SRC, &LONG_DST, false, &f1[2])
+            .unwrap_err(),
+        Error::Drop
+    );
+    assert_eq!(r.pending(), 1);
+    // The in-order fragments of the pending datagram still complete it.
+    for fr in &f1[1..f1.len() - 1] {
+        feed(&mut r, now, fr).unwrap();
+    }
+    assert_eq!(complete(feed(&mut r, now, f1.last().unwrap())), d1);
+
+    // With a full table the new datagram replaces the old one.
+    let mut r = Reassembler::<1, 1280>::new();
+    r.set_sleepy(true);
+    feed(&mut r, now, &f1[0]).unwrap();
+    feed(&mut r, now, &f2[0]).unwrap();
+    for fr in &f2[1..f2.len() - 1] {
+        feed(&mut r, now, fr).unwrap();
+    }
+    assert_eq!(complete(feed(&mut r, now, f2.last().unwrap())), d2);
+}
+
 #[test]
 fn duplicate_fragments_are_dropped() {
     let d = datagram(500, 5683, 5684);

@@ -1244,6 +1244,8 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
         };
         let datagram: &[u8] = match inner {
             LowpanFrame::Fragment { .. } => {
+                self.reasm
+                    .set_sleepy(!r.mle.device_mode().rx_on_when_idle());
                 match self
                     .reasm
                     .handle_fragment(now, r.contexts, src, dst, link_security, payload)

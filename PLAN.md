@@ -88,7 +88,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   - [ ] Compression of Destination Options / Routing / Fragment extension headers (OT only compresses Hop-by-Hop; others are sent inline)
 - [x] Mesh header, fragmentation header, reassembly with timeouts (`mesh`, `frag`, `reassembly`: `MeshHeader`, `FragmentHeader`, sans-IO `Fragmenter`, fixed-capacity `Reassembler`, 2 s timeout like OT)
   - [ ] Out-of-order reassembly (OT drops out-of-order fragments; so do we)
-  - [ ] Sleepy-device reassembly rules (clear list on new secure first fragment / mismatch): call `Reassembler::clear` from the MLE/role layer
+  - [x] Sleepy-device reassembly rules (clear list on new secure first fragment / mismatch): `Reassembler::set_sleepy`, set by the forwarder from the device mode on every fragment; a sleepy device keeps one datagram, a secure first fragment or an unmatched secure next fragment drops the rest like OT `HandleFragment`
   - [x] Reassembling and queueing the Tx side (`Fragmenter` frames -> MAC) is done by the mesh forwarder and the `Instance` (frames wait in a bounded queue for room in the MAC transmit queue)
   - [ ] MLE messages that need fragmentation must be link-secured (`MeshForwarder` retry with security) and delay-aware queue management (Phase 6)
 - [x] Mesh forwarding (mesh header) for FTD (`forward`: `classify`/`parse_frame`, `handle_mesh` deliver/forward/drop with `LocalRlocs` + `NextHops` traits, hops-left handling, 2-hop loop detection)

@@ -76,6 +76,7 @@ impl<const MAX: usize> Slot<MAX> {
 pub struct Reassembler<const SLOTS: usize, const MAX_DATAGRAM: usize = THREAD_MTU> {
     slots: [Slot<MAX_DATAGRAM>; SLOTS],
     timeout: Duration,
+    sleepy: bool,
 }
 
 impl<const SLOTS: usize, const MAX_DATAGRAM: usize> Default for Reassembler<SLOTS, MAX_DATAGRAM> {
@@ -90,7 +91,18 @@ impl<const SLOTS: usize, const MAX_DATAGRAM: usize> Reassembler<SLOTS, MAX_DATAG
         Self {
             slots: core::array::from_fn(|_| Slot::empty()),
             timeout: REASSEMBLY_TIMEOUT,
+            sleepy: false,
         }
+    }
+
+    /// Whether this device is a sleepy end device (rx-off-when-idle). A
+    /// sleepy device reassembles one datagram at a time (OT
+    /// `MeshForwarder::HandleFragment`): a new link-secured first fragment
+    /// drops all other pending reassemblies, and so does a link-secured
+    /// next fragment that matches none (a missed fragment, or the parent
+    /// moved to a new datagram).
+    pub fn set_sleepy(&mut self, sleepy: bool) {
+        self.sleepy = sleepy;
     }
 
     /// Override the reassembly timeout.
@@ -175,11 +187,16 @@ impl<const SLOTS: usize, const MAX_DATAGRAM: usize> Reassembler<SLOTS, MAX_DATAG
             if self.slots.iter().any(matches) {
                 return Err(Error::Drop);
             }
-            let idx = self
-                .slots
-                .iter()
-                .position(|s| !s.used)
-                .ok_or(Error::NoBufs)?;
+            let one_at_a_time = self.sleepy && link_security != LinkSecurity::None;
+            let idx = match self.slots.iter().position(|s| !s.used) {
+                Some(i) => i,
+                // Full: the one pending reassembly makes way.
+                None if one_at_a_time && SLOTS > 0 => {
+                    self.clear();
+                    0
+                }
+                None => return Err(Error::NoBufs),
+            };
             let slot = &mut self.slots[idx];
             let d = decompress(
                 ctxs,
@@ -203,6 +220,11 @@ impl<const SLOTS: usize, const MAX_DATAGRAM: usize> Reassembler<SLOTS, MAX_DATAG
             slot.tag = hdr.datagram_tag;
             slot.filled = filled;
             slot.secure = link_security;
+            if one_at_a_time {
+                for (i, s) in self.slots.iter_mut().enumerate() {
+                    s.used = i == idx;
+                }
+            }
             idx
         } else {
             let off = usize::from(hdr.datagram_offset);
@@ -215,7 +237,13 @@ impl<const SLOTS: usize, const MAX_DATAGRAM: usize> Reassembler<SLOTS, MAX_DATAG
                         && off + data.len() <= size
                         && s.secure == link_security
                 })
-                .ok_or(Error::Drop)?;
+                .ok_or(Error::Drop);
+            let Ok(idx) = idx else {
+                if self.sleepy && link_security != LinkSecurity::None {
+                    self.clear();
+                }
+                return Err(Error::Drop);
+            };
             let slot = &mut self.slots[idx];
             slot.buf[off..off + data.len()].copy_from_slice(data);
             slot.filled += data.len();
