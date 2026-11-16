@@ -164,11 +164,18 @@ stored dataset, role and counters restored, `mode` set before the start):
 | SED (`mode -`) | 1.6 s | 6.1 to 6.6, median 6.3, no growth |
 | non-sleepy (`mode rdn`) | 1.0 s | 0.1 (restored role, one Child Update exchange) |
 
-The restored SED does not get the answer of its Child Update Request (four attempts
+The restored SED did not get the answer of its Child Update Request (four attempts
 about 5 s, then a normal attach of about 1.3 s); the non-sleepy restore is answered at
-once. Open: why the restore exchange of a sleepy child fails against the OpenThread
-parent (the parent's child table shows our entry with the receiver-on flag after such a
-restore, the simulation restores a sleepy child with one exchange).
+once. Cause: the parent holds the Child Update Response of a sleepy child until the child
+polls, and the restore request started no poll (the poll target was only set with the child
+state; OpenThread polls the restored parent in attach mode). The restoring sleepy child now
+polls its restored parent (also a CSL child, since the restoring request carries no CSL
+TLVs). Not measured on the board after the fix: the second DK was not reachable (its J-Link
+VCOM and debug interface were gone) and no border router was running.
+
+A second restore difference showed in `Cert_6_5_02`: OpenThread restores the extended
+address at instance creation, OpenTrust only at `thread start`, so a reset device reported a
+random address before the start (see OPENTRUST-OPENTHREAD-DIFFERENCES.md).
 
 ## Parent loss and re-attach
 
