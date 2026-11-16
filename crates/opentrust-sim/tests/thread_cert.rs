@@ -26,6 +26,10 @@
 //!
 //! Packet verification (`PACKET_VERIFICATION`, needs `tshark`) is off unless
 //! `OPENTRUST_CERT_PKTVERIFY=1`: the cases then also verify the captured packets.
+//! `tshark` is linked into `/tmp/thread-wireshark` (where `pktverify` looks).
+//! On macOS `tests/cert_pyshim/sitecustomize.py` makes `os.uname()` report
+//! Linux, which `thread_cert.py` insists on, and adapts `pktverify` and
+//! `pyshark` to Python 3.14 and `tshark` 4.6.
 
 #![allow(clippy::std_instead_of_core)]
 
@@ -38,6 +42,14 @@ use opentrust_sim::vtsim::{opentrust_cli_vt, opentrust_cli_vt_mtd, ot_cli_ftd};
 /// Packet verification with `tshark`: `OPENTRUST_CERT_PKTVERIFY=1`.
 fn pktverify() -> bool {
     std::env::var("OPENTRUST_CERT_PKTVERIFY").as_deref() == Ok("1")
+}
+
+/// `PYTHONPATH` of a run: the `thread-cert` directory, plus a
+/// `sitecustomize` that makes `os.uname()` report Linux on macOS, where
+/// `thread_cert.py` would refuse to verify packets.
+fn python_path(cert_dir: &Path) -> std::ffi::OsString {
+    let shim = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cert_pyshim");
+    std::env::join_paths([shim.as_path(), cert_dir]).unwrap_or_else(|_| cert_dir.into())
 }
 
 fn root() -> PathBuf {
@@ -199,8 +211,12 @@ fn run_case(
     let mut child = Command::new(&s.py)
         .arg(s.cert_dir.join(format!("{case}.py")))
         .current_dir(&dir)
-        .env("PYTHONPATH", &s.cert_dir)
+        .env("PYTHONPATH", python_path(&s.cert_dir))
         .env("PYTHONUNBUFFERED", "1")
+        .env(
+            "OPENTRUST_FAKE_LINUX_UNAME",
+            if cfg!(target_os = "macos") { "1" } else { "0" },
+        )
         .env("OT_CLI_PATH", &wrapper)
         .env("OT_CLI_FTD", &s.ot)
         .env("OPENTRUST_CLI_VT", &s.rust)
@@ -259,10 +275,33 @@ fn run_case(
     (outcome, reason)
 }
 
+/// `pktverify` looks for `tshark`, `dumpcap` and `mergecap` in the fixed
+/// directory `/tmp/thread-wireshark`: link the installed ones there.
+fn link_wireshark() {
+    let dir = Path::new("/tmp/thread-wireshark");
+    if dir.join("tshark").exists() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(dir);
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut search: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    search.push("/opt/homebrew/bin".into());
+    search.push("/usr/local/bin".into());
+    for tool in ["tshark", "dumpcap", "mergecap"] {
+        if let Some(found) = search.iter().map(|d| d.join(tool)).find(|p| p.exists()) {
+            #[cfg(unix)]
+            let _ = std::os::unix::fs::symlink(found, dir.join(tool));
+        }
+    }
+}
+
 fn main() {
     if std::env::var("OPENTRUST_CERT").as_deref() != Ok("1") {
         println!("thread-cert run skipped: set OPENTRUST_CERT=1 (see the header of this file)");
         return;
+    }
+    if pktverify() {
+        link_wireshark();
     }
     let skip = |why: &str| {
         println!("thread-cert run skipped: {why}");

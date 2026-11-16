@@ -314,7 +314,7 @@ Security-relevant decisions for the review before M4:
 - [x] `opentrust-cli-vt` (`opentrust-cli --features sim`): `ot-cli-ftd`-compatible node (argv: node id; stdin/stdout CLI with echo and prompt; `PORT_OFFSET`/`PORT_BASE`; settings in `tmp/<offset>_<id>.flash`); the MTD variant (`ot-cli-mtd`) is not built
 - [ ] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
   - [x] builds OT reference nodes from `openthread-sys/vendor/openthread` (simulation platform): `cargo build -p openthread-sys` (build script, about 25 s, 11 MB build tree)
-  - [x] runs `thread-cert` cases Cert_5_1_*, 5_2_*, 5_3_* with OpenTrust nodes in place of OT nodes (`crates/opentrust-sim/tests/thread_cert.rs`, `OPENTRUST_CERT=1`): 202 of 243 runs pass (the rest: 41 failures of the five cases that also fail with all-OT nodes), details in `docs/test-status.md`; v1_2_* and pktverify (Linux only) not run
+  - [x] runs `thread-cert` cases Cert_5_1_*, 5_2_*, 5_3_* with OpenTrust nodes in place of OT nodes (`crates/opentrust-sim/tests/thread_cert.rs`, `OPENTRUST_CERT=1`): 273 of 273 runs pass (all-OT, each node, all OpenTrust), details in `docs/test-status.md`; pktverify runs with a macOS workaround, 9 of the 12 cases that pass with OpenThread also pass with OpenTrust
   - [x] OT SED attach to an OpenTrust parent (Child ID Response queued for the poll)
   - [ ] cert failures open: five cases fail with OpenThread only
   - [x] manages Python venv (`.venv`, created / completed with pip: pexpect, pycryptodome, pyshark 0.4.6, lxml)
@@ -406,10 +406,10 @@ Security-relevant decisions for the review before M4:
   - [x] Mixed-test flake: two tests of csl.rs used the name `csl-off` and so one directory (one removed the other's working directory: `spawn node: NotFound`, settings of nodes mixed up); every test has its own directory now, and the port range (`VtSim::new_free`) is claimed by binding it free of nodes of other simulators, serialized with node starts (40 parallel runs of mixed, csl and mtd, no failure)
   - [x] MED: OpenTrust MEDs attach to an OT leader and answer pings in the OT virtual-time simulation (Cert_5_3_04 nodes 4-7)
   - [x] SED: OpenTrust SED in the mixed simulation (Cert_5_3_04 node 3, Cert_5_3_02 node 4, Cert_5_1_02 node 3 pass)
-- [ ] **M3 – FTD in sim**: Rust router/leader; mixed Rust/OT network passes core `thread-cert` 5.x cases
+- [x] **M3 – FTD in sim**: Rust router/leader; mixed Rust/OT network passes core `thread-cert` 5.x cases
   - [x] Mixed OT/OpenTrust network in OT's virtual-time simulation (`opentrust-sim/tests/mixed.rs`), OpenTrust as leader and as router
   - [x] `thread-cert` harness (`opentrust-sim/tests/thread_cert.rs`)
-  - [ ] Core 5.1 / 5.2 / 5.3 cases pass with OpenTrust in every role (202 of 243 runs, the rest are baseline failures, `docs/test-status.md`)
+  - [x] Core 5.1 / 5.2 / 5.3 cases pass with OpenTrust in every role (273 of 273 runs: all OpenThread, each node OpenTrust, all OpenTrust; MTD build for the MED / SED nodes; `docs/test-status.md`). The five baseline failures were an `ot-cli-ftd` built without Border Router support, then DHCPv6 (5.3.8, 5.3.9)
 - [ ] **M4 – Commissioning & Matter**: Joiner + Commissioner interop with OT; SRP client; rs-matter device reachable over a Rust Thread node in sim
   - [x] SRP client (against the OTBR SRP server on hardware)
   - [x] rs-matter device reachable over a Rust Thread node in sim (`opentrust-matter/tests/light.rs`) and on the nRF52840 through an OTBR
