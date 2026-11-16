@@ -25,6 +25,11 @@ use std::time::Duration as StdDuration;
 use crate::vt::{EV_ALARM, EV_RADIO};
 
 const MAX_NODES: u16 = 33;
+
+/// Held while a simulator probes for free node ports ([`VtSim::new_free`]) and
+/// while a node starts ([`VtSim::spawn`]): the probe binds the node ports for a
+/// moment, and a node that starts then finds its port taken and exits.
+static PORT_CLAIM: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const END_OF_TIME: u64 = u64::MAX;
 
 #[derive(Debug, Clone)]
@@ -160,6 +165,7 @@ impl VtSim {
     /// parallel tests (or of several test processes) never share a port.
     /// The bound socket of the simulator keeps its offset claimed.
     pub fn new_free(hint: u16) -> io::Result<Self> {
+        let _claim = PORT_CLAIM.lock().unwrap_or_else(|e| e.into_inner());
         let mut last = None;
         for k in 0..250 {
             let offset = 1 + (hint + k) % 250;
@@ -185,6 +191,7 @@ impl VtSim {
     /// Start node `id` with `exe` (`ot-cli-ftd` or `opentrust-cli-vt`) in
     /// `cwd`; returns when the node has reported its first alarm.
     pub fn spawn(&mut self, id: u16, exe: &Path, cwd: &Path) -> io::Result<()> {
+        let _claim = PORT_CLAIM.lock().unwrap_or_else(|e| e.into_inner());
         std::fs::create_dir_all(cwd)?;
         let mut child = Command::new(exe)
             .arg(id.to_string())
@@ -367,6 +374,17 @@ impl VtSim {
         }
         let delay = u64::from_ne_bytes(msg[..8].try_into().unwrap());
         let kind = msg[8];
+        if std::env::var_os("VTS_TRACE").is_some() {
+            eprintln!(
+                "VTS off{} t={} node {} kind {} delay {} pause {}",
+                self.offset,
+                self.current_time,
+                port - self.port,
+                kind,
+                delay,
+                self.pause_time
+            );
+        }
         let data = msg[11..].to_vec();
         let event_time = self.current_time.saturating_add(delay);
         match kind {
@@ -481,7 +499,31 @@ impl VtSim {
         self.awake.clear();
     }
 
+    /// Take in the events nodes sent that are still on their way. After a
+    /// console command a node may send a second sleep event (OpenThread's
+    /// main loop sends one per iteration) after the first one ended the wait
+    /// in [`go`](Self::go); its delay is relative to the time of the command, so
+    /// it must be read before virtual time moves on, or the node's next alarm
+    /// lands too late (a leader that starts seconds after `thread start`).
+    fn settle(&mut self) {
+        let mut buf = [0u8; 2048];
+        self.sock.set_nonblocking(false).ok();
+        self.sock
+            .set_read_timeout(Some(StdDuration::from_millis(4)))
+            .ok();
+        while let Ok((n, SocketAddr::V4(a))) = self.sock.recv_from(&mut buf) {
+            let (msg, port) = (buf[..n].to_vec(), a.port());
+            if self.devices.contains_key(&port) {
+                self.process_event(&msg, port);
+            }
+        }
+        self.sock.set_nonblocking(true).ok();
+    }
+
     fn go(&mut self, duration_us: u64, node: Option<u16>) {
+        if duration_us > 0 {
+            self.settle();
+        }
         assert_eq!(self.current_time, self.pause_time);
         self.pause_time += duration_us;
         if let Some(n) = node {

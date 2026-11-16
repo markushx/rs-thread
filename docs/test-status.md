@@ -46,9 +46,13 @@ Run with `OPENTRUST_CERT_CASES=v1_2_LowPower_5_3_01_SSEDAttachment,v1_2_test_csl
 | case | all OT (baseline) | OpenTrust as node n: pass | OpenTrust as node n: fail |
 |---|---|---|---|
 | v1_2_LowPower_5_3_01_SSEDAttachment (1 leader, 2 router, 3 SSED) | pass | 1,2,3, all | |
-| v1_2_test_csl_transmission (1 leader, 2 SSED) | pass | 1, all | 2 |
+| v1_2_test_csl_transmission (1 leader, 2 SSED) | pass | 1, 2, all | |
 
-Node 2 of `v1_2_test_csl_transmission` (OpenTrust SSED, OpenThread leader) passes every step up to the last one: after the leader was away for more than the child timeout and returns, the SSED sends no Child Update Request within 5 s.
+Node 2 of `v1_2_test_csl_transmission` (OpenTrust SSED, OpenThread leader) passes: the SSED counts the failed data polls to its parent and detaches after 15 (4 without CSL) like OpenThread, so it attaches again when the leader returns.
+
+### MTD build (`opentrust-cli-vt-mtd`, no ftd / commissioner / Border Agent)
+
+`OPENTRUST_CERT_CONFIGS=mtd:3` etc. runs the named nodes with the MTD binary. All pass: Cert_5_1_02 (node 3, node 4, nodes 3+4), Cert_5_3_04 (node 3, node 4, 3+4, 3+4+5+6+7), v1_2_LowPower_5_3_01 (node 3). `crates/opentrust-sim/tests/mtd.rs`: MED, SED and SSED attach to an OpenThread leader and to an OpenThread router (macfilter), ping both ways with 8 to 1232 byte datagrams.
 
 End-to-end CSL tests in `crates/opentrust-sim/tests/csl.rs` (virtual time, mixed OpenThread / OpenTrust): OpenTrust SSED under an OpenThread parent, OpenThread SSED under an OpenTrust parent, both OpenTrust. Each: attach with `csl period 500000`, the parent reports `CSL Synchronized: 1` (OpenThread parent), 4 x 2 pings with round trips between 42 and 444 ms (all inside one 500 ms period, they follow the phase between pings), no data polls of the child for them, fragmented 128 byte pings both ways, CSL channel 12 and back, `csl period 0` (child unreachable afterwards). Sample: OpenTrust child under OpenThread parent `[193, 192, 393, 392, 92, 92, 294, 292]` ms, polls 1 to 1.
 

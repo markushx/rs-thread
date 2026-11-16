@@ -133,7 +133,14 @@ fn sleepy_parent_request_rounds_follow_openthread() {
     seqs.sort_unstable();
     seqs.dedup();
     assert_eq!(seqs.len(), n, "a frame was repeated");
-    assert_eq!(rust.len(), ot.len(), "frames in 40 s");
+    // The rounds of the two are offset by their random start: the last one may
+    // fall inside the 40 s or not.
+    assert!(
+        rust.len().abs_diff(ot.len()) <= 2,
+        "frames in 40 s: {} / {}",
+        rust.len(),
+        ot.len()
+    );
 }
 
 /// The same with the CSL period set before the attach.
