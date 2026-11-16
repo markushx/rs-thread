@@ -3,7 +3,7 @@
 //! printed like OpenThread's `LogCert` through the CLI output, which the
 //! `thread-cert` scripts read (`read_cert_messages_in_commissioning_log`).
 
-use std::fmt::Write as _;
+use core::fmt::Write as _;
 use std::format;
 use std::io::Write as _;
 use std::string::{String, ToString};

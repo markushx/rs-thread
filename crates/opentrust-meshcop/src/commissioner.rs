@@ -883,13 +883,13 @@ where
         if req.msg.ty() != Type::Con || req.msg.code() != Code::POST {
             return;
         }
-        crate::cert_log::cert_log(false, crate::cert_log::Msg::JoinFinReq, req.msg.payload());
+        crate::cert_log::cert_log(false, crate::cert_log::Msg::FinReq, req.msg.payload());
         let mut p = [0u8; 4];
         let mut w = Writer::new(&mut p);
         if w.state(state).is_err() {
             return;
         }
-        crate::cert_log::cert_log(true, crate::cert_log::Msg::JoinFinRsp, w.written());
+        crate::cert_log::cert_log(true, crate::cert_log::Msg::FinRsp, w.written());
         let Some(s) = self.session.as_mut() else {
             return;
         };

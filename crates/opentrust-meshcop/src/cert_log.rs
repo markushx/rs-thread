@@ -13,13 +13,13 @@ pub const TARGET: &str = "thci";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Msg {
     /// JOIN_FIN.req (with its TLVs).
-    JoinFinReq,
+    FinReq,
     /// JOIN_FIN.rsp (with its TLVs).
-    JoinFinRsp,
+    FinRsp,
     /// JOIN_ENT.ntf.
-    JoinEntNtf,
+    EntNtf,
     /// JOIN_ENT.rsp.
-    JoinEntRsp,
+    EntRsp,
 }
 
 #[cfg(feature = "cert-log")]
@@ -40,10 +40,10 @@ impl core::fmt::Display for Hex<'_> {
 #[cfg(feature = "cert-log")]
 pub(crate) fn cert_log(send: bool, msg: Msg, payload: &[u8]) {
     let t = match msg {
-        Msg::JoinFinReq => "JOIN_FIN.req",
-        Msg::JoinFinRsp => "JOIN_FIN.rsp",
-        Msg::JoinEntNtf => "JOIN_ENT.ntf",
-        Msg::JoinEntRsp => "JOIN_ENT.rsp",
+        Msg::FinReq => "JOIN_FIN.req",
+        Msg::FinRsp => "JOIN_FIN.rsp",
+        Msg::EntNtf => "JOIN_ENT.ntf",
+        Msg::EntRsp => "JOIN_ENT.rsp",
     };
     log::info!(
         target: TARGET,

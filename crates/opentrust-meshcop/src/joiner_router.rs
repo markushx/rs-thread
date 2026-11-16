@@ -339,7 +339,7 @@ impl JoinerRouter {
             io.set_kek(None);
             return None;
         }
-        crate::cert_log::cert_log(true, crate::cert_log::Msg::JoinEntNtf, &[]);
+        crate::cert_log::cert_log(true, crate::cert_log::Msg::EntNtf, &[]);
         self.in_flight = Some(d.joiner);
         Some(JoinerRouterEvent::EntrustSent(d.joiner))
     }
@@ -372,7 +372,7 @@ impl JoinerRouter {
                 user: USER_JOINER_ENTRUST,
                 ..
             } => {
-                crate::cert_log::cert_log(false, crate::cert_log::Msg::JoinEntRsp, &[]);
+                crate::cert_log::cert_log(false, crate::cert_log::Msg::EntRsp, &[]);
                 io.set_kek(None);
                 self.in_flight
                     .take()
