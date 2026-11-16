@@ -779,3 +779,26 @@ fn pending_delay_survives_a_reset_by_the_last_checkpoint() {
     assert!(rem < 200_000, "restarted with {rem}");
     assert!(rem > 100_000, "{rem}");
 }
+
+#[test]
+fn restoring_a_held_pending_dataset_does_not_restart_the_delay() {
+    let d = dataset(1, 15, 0x1234, 0x42, "OpenTrust");
+    let mut net = form(&d);
+    let mut p = dataset(2, 20, 0x1234, 0x42, "OpenTrust");
+    p.set_timestamp(DatasetType::Pending, &ts(2)).unwrap();
+    p.set_delay_timer(250_000).unwrap();
+    net.post(2, leader_aloc(), Uri::PendingSet, p.as_bytes());
+    assert_eq!(state_of(&mut net, 2), State::Accept);
+    // A reattach restores the Pending Dataset several times; the delay
+    // keeps counting down from the first save (OT reads the stored delay
+    // minus the time since the last save).
+    for _ in 0..4 {
+        net.run(secs(20));
+        let now = net.now();
+        let s = &mut *net.shared(2);
+        s.ds.restore(&mut s.env, now, DatasetType::Pending).unwrap();
+    }
+    let rem = net.shared(2).ds.remaining_delay_ms(net.now()).unwrap();
+    assert!(rem < 175_000, "delay restarted: {rem}");
+    assert!(rem > 150_000, "{rem}");
+}

@@ -291,9 +291,17 @@ impl Datasets {
         t: DatasetType,
     ) -> Result<()> {
         let mut buf = [0u8; crate::dataset::MAX_LEN];
-        let loaded = env
-            .load(t, &mut buf)
-            .and_then(|n| Dataset::from_tlvs(&buf[..n]).ok());
+        // A Pending Dataset that is already held keeps counting down:
+        // OT reads the stored dataset with the delay left since the last
+        // save (`CalculateRemainingDelay(.., mLocalUpdateTime)`), so a
+        // reattach does not restart the delay timer.
+        let held = (t == DatasetType::Pending)
+            .then(|| self.read(t, now))
+            .flatten();
+        let loaded = held.or_else(|| {
+            env.load(t, &mut buf)
+                .and_then(|n| Dataset::from_tlvs(&buf[..n]).ok())
+        });
         match loaded {
             Some(mut d) => {
                 if t == DatasetType::Active {
