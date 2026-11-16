@@ -213,6 +213,8 @@ pub(crate) struct NetConfig {
     pub applied: bool,
     /// The network key changed: the neighbors' frame counters must be reset.
     pub key_changed: bool,
+    /// The Security Policy of the Active Dataset changed.
+    pub policy_changed: bool,
 }
 
 /// Everything but the MLE state machine.
@@ -334,6 +336,10 @@ impl<S: SettingsStore, C: CryptoBackend> DatasetEnv for DsEnv<'_, S, C> {
             self.mac
                 .security_mut()
                 .set_key_rotation_hours(p.rotation_time);
+            let old = self.cfg.policy.unwrap_or_default().routing_policy();
+            if old != p.routing_policy() || self.cfg.policy.is_none() {
+                self.cfg.policy_changed = true;
+            }
             self.cfg.policy = Some(p);
         }
         self.cfg.applied = true;

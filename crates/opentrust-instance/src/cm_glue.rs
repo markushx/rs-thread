@@ -75,6 +75,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 JoinerAction::Save(ds) => {
                     let (m, mut env) = self.core.ds();
                     let _ = m.save_local(&mut env, now, DatasetType::Active, &ds);
+                    self.sync_key_reset();
                 }
                 JoinerAction::Event(e) => self.joiner_event(now, e),
             }

@@ -93,6 +93,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     pub(crate) fn service_mle_events(&mut self, now: Instant) -> bool {
         let mut busy = false;
         self.sync_key_reset();
+        self.sync_security_policy(now);
         while let Some(ev) = self.core.mle_events.pop_front() {
             busy = true;
             self.dispatch_mle_event(now, ev);
@@ -134,6 +135,21 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     pub(crate) fn sync_key_reset(&mut self) {
         if core::mem::take(&mut self.core.cfg.key_changed) {
             self.mle.reset_frame_counters();
+        }
+    }
+
+    /// A dataset change switched the router-relevant part of the Security
+    /// Policy: the MLE decides about the downgrade (OT
+    /// `Mle::HandleSecurityPolicyChanged`).
+    pub(crate) fn sync_security_policy(&mut self, now: Instant) {
+        if core::mem::take(&mut self.core.cfg.policy_changed)
+            && let Some(p) = self.core.cfg.policy
+        {
+            #[cfg(feature = "ftd")]
+            self.mle
+                .set_routing_policy(&mut self.core, now, p.routing_policy());
+            #[cfg(not(feature = "ftd"))]
+            let _ = (now, p);
         }
     }
 

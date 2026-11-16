@@ -118,6 +118,25 @@ impl<const C: usize> Mle<C> {
             }
         }
         if data_request {
+            // OT `HandleLeaderData`: the Data Request goes to the sender of
+            // the message, after a delay (a router has no parent to ask).
+            #[cfg(feature = "ftd")]
+            if self.role.is_router_or_leader() {
+                let ms = if rx.meta.dst.is_multicast() {
+                    1 + u64::from(Self::rand_range(
+                        env,
+                        0,
+                        crate::consts::MAX_DATA_REQUEST_DELAY.as_millis() as u32,
+                    ))
+                } else {
+                    10
+                };
+                self.schedule_delayed(
+                    now.saturating_add(opentrust_core::time::Duration::from_millis(ms)),
+                    crate::router_link::DelayedKind::DataRequest(rx.meta.src),
+                );
+                return Ok(());
+            }
             let _ = self.send_data_request(env, now);
         }
         Ok(())
@@ -219,7 +238,7 @@ impl<const C: usize> Mle<C> {
         let timeout = self.cfg.timeout_secs;
         let dev = self.cfg.mode;
         let link_fc = env.keys().frame_counter();
-        let mle_fc = self.mle_counter.current();
+        let mle_fc = self.mle_counter.current_for(env.keys().key_epoch());
         let addrs = Self::address_entries(env, true);
         let sup = (dev.is_sleepy() && self.cfg.supervision_interval != 0)
             .then_some(self.cfg.supervision_interval);

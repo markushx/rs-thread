@@ -371,7 +371,7 @@ impl<const C: usize> Mle<C> {
         let rloc = self.rloc16;
         let leader = self.leader_data;
         let link_fc = env.keys().frame_counter();
-        let mle_fc = self.mle_counter.current();
+        let mle_fc = self.mle_counter.current_for(env.keys().key_epoch());
         let (seq, mask, entries) = self.fill_route64(router);
         let router_rloc =
             router.and_then(|id| self.rtr.table.find_by_id(id).map(|r| r.neighbor.rloc16));

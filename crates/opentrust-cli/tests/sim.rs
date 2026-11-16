@@ -570,3 +570,35 @@ fn networkdiagnostic_get_and_reset() {
         "Done\n"
     );
 }
+
+#[test]
+fn security_policy_change_downgrades_routers() {
+    let mut h = H::new(&[Kind::Router, Kind::Router], 21);
+    h.net.medium.connect(0, 1, -60);
+    assert_eq!(h.cmd(0, "dataset init new"), "Done\n");
+    assert_eq!(h.cmd(0, "dataset commit active"), "Done\n");
+    assert_eq!(h.cmd(0, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(0, "thread start"), "Done\n");
+    h.wait_state(0, "leader", 60);
+    let tlvs = line_value(&h.cmd(0, "dataset active -x"));
+    assert_eq!(h.cmd(1, &format!("dataset set active {tlvs}")), "Done\n");
+    assert_eq!(h.cmd(1, "ifconfig up"), "Done\n");
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    h.wait_state(1, "router", 300);
+    assert_eq!(h.cmd(0, "routereligible"), "Enabled\nDone\n");
+    assert_eq!(h.cmd(1, "routereligible"), "Enabled\nDone\n");
+
+    // The R bit off and a version threshold of 7: nobody may be a router.
+    let o = h.cmd(
+        0,
+        "dataset mgmtsetcommand active activetimestamp 30 securitypolicy 3600 onc 7",
+    );
+    h.run(8);
+    assert_eq!(h.cmd(0, "state"), "leader\nDone\n", "{o}");
+    assert_eq!(h.cmd(0, "routereligible"), "Disabled\nDone\n", "{o}");
+    assert_eq!(h.cmd(1, "routereligible"), "Disabled\nDone\n", "{o}");
+    // The leader waits at least 10 s before it downgrades.
+    assert_eq!(h.cmd(1, "state"), "router\nDone\n");
+    h.run(150);
+    assert_eq!(h.cmd(0, "state"), "detached\nDone\n");
+}

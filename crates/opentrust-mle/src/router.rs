@@ -178,6 +178,10 @@ fn set_next_hop_invalid(r: &mut Router) -> bool {
     set_next_hop_and_cost(r, None, 0)
 }
 
+/// Extra role transition delay of a leader that is no longer router eligible
+/// (OT `kLeaderDowngradeExtraDelay`).
+pub const LEADER_DOWNGRADE_EXTRA_DELAY_SECS: u8 = 10;
+
 /// Time the former child RLOC16 stays valid after a REED became a router
 /// (OT `kAlternateRloc16Timeout`).
 pub const ALTERNATE_RLOC16_TIMEOUT_SECS: u8 = 8;
@@ -197,18 +201,27 @@ impl<const C: usize> Mle<C> {
                 .allows_routers(crate::consts::THREAD_VERSION)
     }
 
-    /// The Security Policy of the Active Operational Dataset changed
-    /// (OT `HandleNotifierEvents(kEventSecurityPolicyChanged)`): a router or
-    /// leader that is no longer eligible detaches.
+    /// The Security Policy of the Active Operational Dataset changed (OT
+    /// `HandleSecurityPolicyChanged` on `kEventSecurityPolicyChanged`): a
+    /// router or leader that is no longer eligible starts the role transition
+    /// timeout (a leader waits [`LEADER_DOWNGRADE_EXTRA_DELAY_SECS`] longer)
+    /// and detaches when it expires and the device is still not eligible.
     pub fn set_routing_policy<E: MleEnv>(
         &mut self,
         env: &mut E,
-        now: Instant,
+        _now: Instant,
         policy: crate::router_config::RoutingPolicy,
     ) {
         self.cfg.router.policy = policy;
-        if self.role.is_router_or_leader() && !self.is_router_eligible() {
-            self.become_detached(env, now);
+        if self.role.is_router_or_leader() && !self.is_router_eligible() && self.rtr.transition == 0
+        {
+            self.start_role_transition(env);
+            if self.role == Role::Leader {
+                self.rtr.transition = self
+                    .rtr
+                    .transition
+                    .saturating_add(LEADER_DOWNGRADE_EXTRA_DELAY_SECS);
+            }
         }
     }
 

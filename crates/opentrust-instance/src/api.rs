@@ -538,6 +538,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             opentrust_mac::security::KeySeqUpdate::FORCE_RESET_GUARD,
             now,
         )?;
+        // OT stores the settings on every key sequence change, also while
+        // not attached (an existing record gets the new key sequence).
+        let _ = self.mle.store(&mut self.core);
         self.poll(now);
         Ok(())
     }
@@ -597,6 +600,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             let (ds, mut env) = self.core.ds();
             ds.save_local(&mut env, now, t, d)
         };
+        self.sync_key_reset();
         self.poll(now);
         r
     }
@@ -692,6 +696,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.notifier
             .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
         Ok(())
+    }
+
+    /// Whether this device may be a router: the configuration, the device
+    /// type and the Security Policy (OT `otThreadIsRouterEligible`).
+    pub fn is_router_eligible(&self) -> bool {
+        #[cfg(feature = "ftd")]
+        return self.mle.is_router_eligible();
+        #[cfg(not(feature = "ftd"))]
+        false
     }
 
     /// The router configuration (eligibility, upgrade and downgrade

@@ -855,15 +855,34 @@ impl<const C: usize> Mle<C> {
     }
 
     /// OT `ReestablishLinkWithNeighbor`: probe the parent with a Child
-    /// Update Request, a router neighbor with a Link Request.
+    /// Update Request carrying a Challenge, a router neighbor with a Link
+    /// Request and a child with a Child Update Request that carries a
+    /// Challenge, so that the answer is an authoritative message.
+    #[allow(clippy::needless_return)] // the FTD part follows
     fn reestablish_link<E: MleEnv>(&mut self, env: &mut E, now: Instant, nb: Option<NbRef>) {
         if nb == Some(NbRef::Parent) && self.role == Role::Child {
-            let _ = self.send_child_update_request(env, now);
+            let _ = self.send_child_update_request_with(
+                env,
+                now,
+                crate::child::ChildUpdateMode::Challenge,
+            );
+            return;
         }
         #[cfg(feature = "ftd")]
-        if let Some(NbRef::Router(id)) = nb {
-            if self.is_full_thread_device() {
-                let _ = self.send_link_request(env, now, Some(id));
+        if self.is_full_thread_device() {
+            match nb {
+                Some(NbRef::Router(id)) => {
+                    let _ = self.send_link_request(env, now, Some(id));
+                }
+                Some(NbRef::Child(i)) => {
+                    // The state change makes the request carry a challenge
+                    // (the child is no longer valid).
+                    if let Some(c) = self.children.get_mut(i) {
+                        c.neighbor.state = crate::neighbor::NeighborState::ChildUpdateRequest;
+                    }
+                    let _ = self.send_child_update_request_to_child(env, now, i);
+                }
+                _ => {}
             }
         }
     }

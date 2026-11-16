@@ -772,7 +772,7 @@ impl<const C: usize> Mle<C> {
         let mode = self.cfg.mode;
         let ftd = mode.full_thread_device();
         let link_fc = env.keys().frame_counter();
-        let mle_fc = self.mle_counter.current();
+        let mle_fc = self.mle_counter.current_for(env.keys().key_epoch());
         let timeout = self.cfg.timeout_secs;
         let sup = (mode.is_sleepy() && self.cfg.supervision_interval != 0)
             .then_some(self.cfg.supervision_interval);

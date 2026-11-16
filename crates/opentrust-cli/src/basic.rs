@@ -467,14 +467,17 @@ where
 
     #[cfg(feature = "ftd")]
     pub(crate) fn routereligible(&mut self, a: &Args<'_>) -> R {
-        let c = self.i.router_config_mut();
         match a.get(1) {
             "" => {
-                let e = if c.eligible { "Enabled" } else { "Disabled" };
+                let e = if self.i.is_router_eligible() {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                };
                 ln!(self.o, "{e}");
             }
-            "enable" => c.eligible = true,
-            "disable" => c.eligible = false,
+            "enable" => self.i.router_config_mut().eligible = true,
+            "disable" => self.i.router_config_mut().eligible = false,
             _ => return Err(E::INVALID_COMMAND),
         }
         Ok(())

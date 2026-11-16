@@ -273,6 +273,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                 env.session_id = session_id;
                 let o = mgmt::handle_set(ds, &mut env, now, t, cmd, req, rsp);
                 let _ = self.out.outcomes.push(o);
+                // OT `KeyManager::SetNetworkKey` resets the neighbors'
+                // frame counters right away.
+                if core::mem::take(&mut self.core.cfg.key_changed) {
+                    self.mle.reset_frame_counters();
+                }
             }
             #[cfg(feature = "ftd")]
             Uri::LeaderPetition | Uri::LeaderKeepAlive | Uri::CommissionerSet => {
