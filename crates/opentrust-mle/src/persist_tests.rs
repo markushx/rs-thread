@@ -222,13 +222,19 @@ fn restore_error_cases() {
     );
     // A saved router only restores identity and counters.
     info.role = Role::Router as u8;
+    info.device_mode = DeviceMode::new(true, true, true).to_bits() & 0x0b;
     info.rloc16 = Rloc16(0x0800);
     info.previous_partition_id = 0xabcd;
     env.store_network_info(&info).unwrap();
+    // A router record of a device without the FTD bit in its mode.
+    let mut mtd_info = info;
+    mtd_info.device_mode = RX_ON.to_bits() & 0x0b & !0x02;
+    env.store_network_info(&mtd_info).unwrap();
     assert_eq!(
         mle.restore(&mut env, Instant::ZERO),
         Err(Error::InvalidState)
-    ); // MTD configuration
+    );
+    env.store_network_info(&info).unwrap();
     let mut r: Mle<4> = Mle::new(MleConfig::new(DeviceMode::new(true, true, true)));
     assert_eq!(
         r.restore(&mut env, Instant::ZERO),
@@ -239,4 +245,25 @@ fn restore_error_cases() {
         })
     );
     assert_eq!(env.ext, crate::test_support::ext(9));
+}
+
+#[test]
+fn restore_starts_the_reattach_with_the_stored_datasets() {
+    // OT `Mle::Start(kNormalAttach)`: a restore that fails continues with
+    // the Active, then the Pending Dataset.
+    let (_child, _env, _p, t, settings) = persisted_child(RX_ON);
+    let (mut child2, mut env2) = restart(settings, RX_ON);
+    child2.restore(&mut env2, t).unwrap();
+    assert_eq!(child2.attach.reattach, crate::attach::ReattachState::Start);
+}
+
+#[test]
+fn restore_keeps_the_stored_device_mode_bits() {
+    // A device configured with `mode -` is not a full Thread device after
+    // a reset, whatever the mode it is created with.
+    let (_child, _env, _p, t, settings) = persisted_child(SLEEPY);
+    assert!(!SLEEPY.full_thread_device());
+    let (mut child2, mut env2) = restart(settings, RX_ON);
+    child2.restore(&mut env2, t).unwrap();
+    assert!(!child2.cfg.mode.full_thread_device());
 }

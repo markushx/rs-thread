@@ -152,15 +152,21 @@ impl<const C: usize> Mle<C> {
         let role = Role::from_u8(info.role)
             .filter(|r| r.is_attached())
             .ok_or(Error::InvalidState)?;
-        // The FTD capability is a property of the build/configuration, not
-        // of the stored record (OT clears it on MTD builds).
+        // OT `Mle::Restore`: the stored mode, including the FTD bit (a device
+        // configured with `mode -` stays a minimal device across a reset);
+        // an MTD build clears the FTD bit.
         let stored = DeviceMode::from_bits(info.device_mode);
         self.cfg.mode = DeviceMode::new(
             stored.rx_on_when_idle(),
-            self.cfg.mode.full_thread_device(),
+            cfg!(feature = "ftd") && stored.full_thread_device(),
             stored.full_network_data(),
         );
         env.apply_restored_identity(&info.ext_address, &info.ml_iid);
+        // OT `Mle::Start(kNormalAttach)`: a failed restore (no answer from
+        // the parent or routers) continues with the stored Active Dataset
+        // and then the stored Pending Dataset, whose channel / PAN ID the
+        // network may have moved to while this device was off.
+        self.attach.reattach = crate::attach::ReattachState::Start;
         if role.is_router_or_leader() {
             if !self.cfg.mode.full_thread_device() {
                 return Err(Error::InvalidState);
