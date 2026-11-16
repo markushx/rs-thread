@@ -7,7 +7,8 @@
 
 The `cli` binary (`cargo build --release --bin cli --features cli-all`) is the OpenTrust
 CLI on UARTE0 (TX P0.06, RX P0.08, 115200 8N1: the J-Link VCOM port of the DK), so
-`otcli.py` drives it like an `ot-cli-ftd` DK. Its settings are kept in RAM only.
+`otcli.py` drives it like an `ot-cli-ftd` DK. Its settings are persisted in flash (`opentrust-flash`, the Thread region of `memory.x`);
+`factoryreset` erases them.
 
 Interop test: build `ot-cli-ftd` from ot-nrf528xx (UART transport), flash it to
 the second DK, start it with the dataset `DATASET_HEX` of `src/lib.rs`, and run

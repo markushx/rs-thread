@@ -234,9 +234,21 @@ pub struct RadioCaps {
     /// USB serial bridge, moving data at the host's polling interval); `0` for
     /// a radio on the same chip.
     pub bus_latency_us: u32,
+    /// How long a CSL receive window stays open after the sample time, on top
+    /// of the clock uncertainty, microseconds (OpenThread
+    /// `OPENTHREAD_CONFIG_MIN_RECEIVE_ON_AFTER`; the window is also never
+    /// wider than half a period). The default covers the longest frame and
+    /// its acknowledgement; a radio whose receiver stays on until the frame
+    /// in progress ends can lower it to save energy, a slow radio can raise
+    /// it.
+    pub csl_receive_on_after_us: u32,
 }
 
 impl RadioCaps {
+    /// Default of [`csl_receive_on_after_us`](Self::csl_receive_on_after_us):
+    /// the longest frame plus acknowledgement, `(127 + 6 + 39) * 32` us.
+    pub const DEFAULT_CSL_RECEIVE_ON_AFTER_US: u32 = (127 + 6 + 39) * 32;
+
     /// The OpenThread core's own default receive sensitivity (dBm), for
     /// drivers that do not (yet) report a hardware-specific figure.
     pub const DEFAULT_RECEIVE_SENSITIVITY: i8 = -110;
@@ -262,6 +274,7 @@ impl Default for RadioCaps {
             receive_at_lead_us: 0,
             bus_speed: 0,
             bus_latency_us: 0,
+            csl_receive_on_after_us: Self::DEFAULT_CSL_RECEIVE_ON_AFTER_US,
         }
     }
 }

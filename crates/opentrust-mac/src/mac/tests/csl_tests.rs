@@ -84,7 +84,7 @@ fn csl_window_edges_math() {
         clock_ppm: 30,
         uncertainty_10us: 10,
     };
-    let (ahead, after) = window_edges(PERIOD, 10_000_000, 20, 5, parent);
+    let (ahead, after) = window_edges(PERIOD, 10_000_000, 20, 5, parent, MIN_RECEIVE_ON_AFTER);
     let semi_window = 500 + 100 + 50;
     assert_eq!(
         ahead,
@@ -93,11 +93,25 @@ fn csl_window_edges_math() {
     assert_eq!(ahead, 1162);
     assert_eq!(after, semi_window + MIN_RECEIVE_ON_AFTER);
     assert_eq!(after, 6154);
+    // A radio can change the time after the sample time (the default is the
+    // OpenThread 5.5 ms); the width stays limited to half a period.
+    assert_eq!(MIN_RECEIVE_ON_AFTER, 5504);
+    let (_, after) = window_edges(PERIOD, 10_000_000, 20, 5, parent, 2_000);
+    assert_eq!(after, semi_window + 2_000);
+    let (_, after) = window_edges(PERIOD, 10_000_000, 20, 5, parent, 1_000_000);
+    assert_eq!(after, u32::from(PERIOD) * 160 / 2);
     // Never wider than half a period.
-    let (ahead, after) = window_edges(100, u32::MAX, 20, 5, CslAccuracy::WORST);
+    let (ahead, after) = window_edges(
+        100,
+        u32::MAX,
+        20,
+        5,
+        CslAccuracy::WORST,
+        MIN_RECEIVE_ON_AFTER,
+    );
     assert_eq!((ahead, after), (8_000, 8_000));
     // Right after a sync only the uncertainties count.
-    let (ahead, _) = window_edges(PERIOD, 0, 20, 5, parent);
+    let (ahead, _) = window_edges(PERIOD, 0, 20, 5, parent, MIN_RECEIVE_ON_AFTER);
     assert_eq!(ahead, 100 + 50 + 192 + 320);
 }
 
