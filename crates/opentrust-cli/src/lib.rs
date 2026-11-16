@@ -319,6 +319,7 @@ where
             "routereligible" => self.routereligible(a),
             #[cfg(feature = "dataset")]
             "dataset" => self.dataset(a),
+            "mac" => self.mac_cmd(a),
             #[cfg(feature = "ping")]
             "ping" => self.ping_cmd(a),
             #[cfg(feature = "tables")]

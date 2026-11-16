@@ -834,6 +834,50 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         r
     }
 
+    /// Send an empty data frame (acknowledged, link-secured) to the parent
+    /// (OT `otLinkSendEmptyData`, reference device feature). Errors:
+    /// [`opentrust_core::Error::InvalidState`] unless this is a sleepy child
+    /// with a parent.
+    pub fn send_mac_empty_data(&mut self, now: Instant) -> Result<()> {
+        if self.mle.is_rx_on_when_idle() {
+            return Err(opentrust_core::Error::InvalidState);
+        }
+        let parent = self
+            .mle
+            .parent()
+            .map(|p| p.router.neighbor.rloc16)
+            .filter(|r| *r != Rloc16::INVALID)
+            .ok_or(opentrust_core::Error::InvalidState)?;
+        let src = Address::Short(self.core.mac.short_address());
+        let mut notes = FwdNotes::default();
+        let mut sink = Sink {
+            mac: MacSink {
+                mac: &mut self.core.mac,
+                tx: &mut self.core.mactx,
+            },
+            notes: &mut notes,
+        };
+        let r = sink.transmit(&TxFrame {
+            src,
+            dst: MacDest::Short(parent),
+            payload: &[],
+            security: LinkSecurity::Network,
+            frame_pending: false,
+            indirect: false,
+            csl: false,
+            radio: opentrust_mesh::radio::RadioLink::Ieee802154,
+        });
+        self.poll(now);
+        r
+    }
+
+    /// Send a data poll now (OT `otLinkSendDataRequest`).
+    pub fn send_mac_data_request(&mut self, now: Instant) -> Result<()> {
+        self.core.mac.send_data_poll(now)?;
+        self.poll(now);
+        Ok(())
+    }
+
     // ------------------------------------------------------------ resolver
 
     /// Act on one event of the address cache.

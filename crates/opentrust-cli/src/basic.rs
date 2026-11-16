@@ -149,6 +149,18 @@ where
         Ok(())
     }
 
+    /// `mac send datarequest|emptydata` (OT `cli_mac.cpp`, reference device).
+    pub(crate) fn mac_cmd(&mut self, a: &Args<'_>) -> R {
+        if a.get(1) != "send" {
+            return Err(E::INVALID_COMMAND);
+        }
+        match a.get(2) {
+            "datarequest" => self.i.send_mac_data_request(self.now).map_err(E::from),
+            "emptydata" => self.i.send_mac_empty_data(self.now).map_err(E::from),
+            _ => Err(E::INVALID_ARGS),
+        }
+    }
+
     pub(crate) fn version(&mut self, a: &Args<'_>) -> R {
         match a.get(1) {
             "" => ln!(self.o, "{}", VERSION),
