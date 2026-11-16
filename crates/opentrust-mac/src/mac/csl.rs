@@ -18,6 +18,7 @@ use opentrust_core::time::Instant;
 use opentrust_core::types::{ExtAddress, ShortAddress};
 
 use crate::frame::Address;
+use opentrust_platform::radio::RadioCaps;
 
 /// One CSL period unit (10 symbols) in microseconds.
 pub const US_PER_TEN_SYMBOLS: u32 = 160;
@@ -30,9 +31,10 @@ pub const MIN_CSL_IE_PERIOD: u16 = 10;
 /// Receiver radio-on time before the MHR (`OPENTHREAD_CONFIG_MIN_RECEIVE_ON_AHEAD`),
 /// microseconds.
 pub const MIN_RECEIVE_ON_AHEAD: u32 = 6 * 32;
-/// Receiver radio-on time after the sample time
+/// Default receiver radio-on time after the sample time
 /// (`OPENTHREAD_CONFIG_MIN_RECEIVE_ON_AFTER`: longest frame + ACK), microseconds.
-pub const MIN_RECEIVE_ON_AFTER: u32 = (127 + 6 + 39) * 32;
+/// A radio can change it through `RadioCaps::csl_receive_on_after_us`.
+pub const MIN_RECEIVE_ON_AFTER: u32 = RadioCaps::DEFAULT_CSL_RECEIVE_ON_AFTER_US;
 /// The receiver wakes up this much earlier than its window
 /// (`OPENTHREAD_CONFIG_CSL_RECEIVE_TIME_AHEAD`), microseconds.
 pub const CSL_RECEIVE_TIME_AHEAD: u32 = 320;
@@ -103,13 +105,17 @@ pub fn csl_phase(sample_time_us: u32, tx_time_us: u32, period: u16) -> u16 {
 /// `elapsed_us` is the time since the last synchronization with the parent,
 /// `own_ppm` / `own_uncertainty_10us` the radio's accuracy
 /// ([`RadioCaps::csl_accuracy_ppm`](opentrust_platform::radio::RadioCaps::csl_accuracy_ppm)
-/// and `csl_uncertainty`), `parent` the parent's.
+/// and `csl_uncertainty`), `parent` the parent's, `min_after_us` the radio-on
+/// time after the sample time
+/// ([`RadioCaps::csl_receive_on_after_us`](opentrust_platform::radio::RadioCaps::csl_receive_on_after_us),
+/// default [`MIN_RECEIVE_ON_AFTER`]).
 pub fn window_edges(
     period: u16,
     elapsed_us: u32,
     own_ppm: u8,
     own_uncertainty_10us: u8,
     parent: CslAccuracy,
+    min_after_us: u32,
 ) -> (u32, u32) {
     let semi_period = u32::from(period) * US_PER_TEN_SYMBOLS / 2;
     let drift =
@@ -120,7 +126,7 @@ pub fn window_edges(
             .saturating_add(MIN_RECEIVE_ON_AHEAD)
             .saturating_add(CSL_RECEIVE_TIME_AHEAD),
     );
-    let after = semi_period.min(semi_window.saturating_add(MIN_RECEIVE_ON_AFTER));
+    let after = semi_period.min(semi_window.saturating_add(min_after_us));
     (ahead, after)
 }
 

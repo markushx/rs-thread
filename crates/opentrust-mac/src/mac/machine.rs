@@ -683,6 +683,7 @@ impl<
                 self.caps.csl_accuracy_ppm,
                 self.caps.csl_uncertainty,
                 self.csl.parent,
+                self.caps.csl_receive_on_after_us,
             )
         })
     }
