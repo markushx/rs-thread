@@ -94,9 +94,9 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 5.6.6 | Network Data Expiration | `Cert_5_6_06_NetworkDataExpiration` | pass | 6/6 |  | fail / fail |  |
 | 5.6.7 | Network Data Request REED | `Cert_5_6_07_NetworkDataRequestREED` | pass | 19/19 |  | pass / pass |  |
 | 5.6.9 | Network Data Forwarding | `Cert_5_6_09_NetworkDataForwarding` | pass | 7/7 |  | fail / fail |  |
-| 5.7.1 | Coap Diag Commands | `Cert_5_7_01_CoapDiagCommands` | partial | 6/8 |  | fail / fail | fails: n1, all; DUT does not answer the Leader's Network Diagnostic Get (`networkdiagnostic get` times out; no diagnostic server in the OpenTrust CLI) |
-| 5.7.2 | Coap Diag Commands | `Cert_5_7_02_CoapDiagCommands` | partial | 17/19 |  | fail / fail | fails: n1, all; same cause as 5.7.1 |
-| 5.7.3 | Coap Diag Commands | `Cert_5_7_03_CoapDiagCommands` | partial | 5/7 |  | fail / fail | fails: n1, all; same cause as 5.7.1 |
+| 5.7.1 | Coap Diag Commands | `Cert_5_7_01_CoapDiagCommands` | pass | 8/8 |  | pass / pass | the DUT answered all along; the Leader needed the `networkdiagnostic get|reset` CLI |
+| 5.7.2 | Coap Diag Commands | `Cert_5_7_02_CoapDiagCommands` | pass | 19/19 |  | pass / pass | as 5.7.1 |
+| 5.7.3 | Coap Diag Commands | `Cert_5_7_03_CoapDiagCommands` | pass | 7/7 |  | pass / pass | as 5.7.1 |
 | 5.8.2 | Key Increment | `Cert_5_8_02_KeyIncrement` | pass | 4/4 |  | pass / fail |  |
 | 5.8.3 | Key Increment Roll Over | `Cert_5_8_03_KeyIncrementRollOver` | pass | 4/4 |  | pass / fail |  |
 | 5.8.4 | Security Policy TLV | `Cert_5_8_04_SecurityPolicyTLV` | pass | 6/6 |  | fail / fail |  |
@@ -113,7 +113,7 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 6.1.6 | REED Attach Link Quality | `Cert_6_1_06_REEDAttachLinkQuality` | pass | 6/6 | n4 pass | pass / pass |  |
 | 6.1.7 | Router Attach Link Quality | `Cert_6_1_07_RouterAttachLinkQuality` | pass | 6/6 | n4 pass | pass / fail |  |
 | 6.2.1 | New Partition | `Cert_6_2_01_NewPartition` | pass | 5/5 | n3 pass | pass / pass |  |
-| 6.2.2 | New Partition | `Cert_6_2_02_NewPartition` | partial | 4/6 | n4 pass | pass / fail | fails: n2, all; stable: ping from Router 1 after the partitions merge fails when node 2 is OpenTrust |
+| 6.2.2 | New Partition | `Cert_6_2_02_NewPartition` | pass | 6/6 |  | pass / fail | passes in every configuration on the current tree (the earlier node 2 / all failure did not reproduce; not traced to a change); pktverify differs |
 | 6.3.1 | Orphan Reattach | `Cert_6_3_01_OrphanReattach` | pass | 5/5 | n3 pass | pass / pass |  |
 | 6.3.2 | Network Data Update | `Cert_6_3_02_NetworkDataUpdate` | pass | 4/4 | n2 pass | pass / pass |  |
 | 6.4.1 | Link Local | `Cert_6_4_01_LinkLocal` | pass | 4/4 | n2 pass | fail / pass |  |
@@ -282,9 +282,9 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 |---|---|---|---|
 | `v1_2_LowPower_test_forward_tracking_series` | partial | 2/4 | fails: n2, all; link metrics (CLI missing) |
 | `v1_2_LowPower_test_link_metrics_manager` | partial | 3/5 | fails: n1, all; link metrics manager / `linkmetrics` CLI missing |
-| `v1_2_test_enhanced_frame_pending` | partial | 3/4 | fails: n1; node 1 (Leader) OpenTrust fails (enhanced frame pending); all-OpenTrust passes |
-| `v1_2_test_enhanced_keep_alive` | fail | 1/4 | fails: n1, n2, all; SED ping to the Leader ALOC fails (enhanced keep-alive) |
-| `v1_2_test_single_probe` | fail | 1/4 | fails: n1, n2, all; `linkmetrics` CLI missing (`Error 35: InvalidCommand`) |
+| `v1_2_test_enhanced_frame_pending` | pass | 4/4 | child timeout is refreshed by data frames (enhanced keep-alive) |
+| `v1_2_test_enhanced_keep_alive` | pass | 4/4 | parent and child side of the enhanced keep-alive |
+| `v1_2_test_single_probe` | pass | 4/4 | `linkmetrics` initiator CLI; extended MAC addresses for indirect link-local frames |
 
 #### Python unit tests of the cert libraries (no nodes)
 
@@ -314,10 +314,10 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_inform_previous_parent_on_reattach` | fail | 1/2 | fails: all; old parent still lists the child |
 | `test_ipv6_fragmentation` | fail | 1/2 | fails: all; timeout (large ping / fragmentation path) |
 | `test_ipv6_source_selection` | pass | 2/2 |  |
-| `test_key_rotation_and_key_guard_time` | fail | 1/2 | fails: all |
+| `test_key_rotation_and_key_guard_time` | fail | 1/2 | fails: all; `dataset updater start` CLI missing |
 | `test_leader_reboot_multiple_link_request` | pass | 2/2 |  |
 | `test_mac_scan` | pass | 2/2 |  |
-| `test_mle_msg_key_seq_jump` | fail | 1/2 | fails: all; key sequence jump: counter 0 != 5 |
+| `test_mle_msg_key_seq_jump` | pass | 2/2 | reestablish link with a child, key sequence stored while disabled |
 | `test_netdata_publisher` | fail | 1/2 | fails: all |
 | `test_on_mesh_prefix` | pass | 2/2 |  |
 | `test_ping` | pass | 2/2 |  |
@@ -326,7 +326,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_reed_address_solicit_rejected` | fail | 1/2 | fails: all |
 | `test_reset` | pass | 2/2 |  |
 | `test_route_table` | fail | 1/2 | fails: all; route table differs from the expected set |
-| `test_router_downgrade_on_sec_policy_change` | fail | 1/2 | fails: all; router does not downgrade on a security policy change |
+| `test_router_downgrade_on_sec_policy_change` | pass | 2/2 |  |
 | `test_router_multicast_link_request` | pass | 2/2 |  |
 | `test_router_reattach` | pass | 2/2 |  |
 | `test_router_reboot_multiple_link_request` | pass | 2/2 |  |

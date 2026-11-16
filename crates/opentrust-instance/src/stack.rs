@@ -213,6 +213,8 @@ pub(crate) struct NetConfig {
     pub applied: bool,
     /// The network key changed: the neighbors' frame counters must be reset.
     pub key_changed: bool,
+    /// The Security Policy of the Active Dataset changed.
+    pub policy_changed: bool,
 }
 
 /// Everything but the MLE state machine.
@@ -334,6 +336,10 @@ impl<S: SettingsStore, C: CryptoBackend> DatasetEnv for DsEnv<'_, S, C> {
             self.mac
                 .security_mut()
                 .set_key_rotation_hours(p.rotation_time);
+            let old = self.cfg.policy.unwrap_or_default().routing_policy();
+            if old != p.routing_policy() || self.cfg.policy.is_none() {
+                self.cfg.policy_changed = true;
+            }
             self.cfg.policy = Some(p);
         }
         self.cfg.applied = true;
@@ -556,6 +562,30 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
 
     fn csl_child_desync(&mut self, _ext: &ExtAddress, rloc16: Rloc16) {
         self.mac.csl_child_desync(Address::Short(rloc16.into()));
+    }
+
+    fn link_metrics_report(
+        &mut self,
+        from: &Ipv6Addr,
+        values: Option<&opentrust_mle::link_metrics::MetricsValues>,
+        status: opentrust_mle::link_metrics::Status,
+    ) {
+        self.push_event(crate::Event::LinkMetricsReport {
+            from: *from,
+            values: values.copied(),
+            status: status as u8,
+        });
+    }
+
+    fn link_metrics_management_response(
+        &mut self,
+        from: &Ipv6Addr,
+        status: opentrust_mle::link_metrics::Status,
+    ) {
+        self.push_event(crate::Event::LinkMetricsManagement {
+            from: *from,
+            status: status as u8,
+        });
     }
 
     fn enh_ack_probing_report(

@@ -323,3 +323,35 @@ fn command_codes() {
         }
     }
 }
+
+#[test]
+fn key_switch_restarts_mle_frame_counter() {
+    // OT `KeyManager::SetCurrentKeySequence` resets `mMleFrameCounter`
+    // whatever caused the switch (rotation timer, neighbor, dataset); a
+    // network key change (`SetNetworkKey`) does not.
+    let now = Instant::from_secs(0);
+    let mut keys = km();
+    let mut counter = MleFrameCounter::new();
+    let (_, _) = send_with(&keys, &mut counter);
+    let (_, _) = send_with(&keys, &mut counter);
+    assert_eq!(counter.current_for(keys.key_epoch()), 2);
+
+    // Rotation through the poll.
+    keys.start(now);
+    let due = keys.next_deadline().unwrap();
+    assert!(keys.poll(due));
+    assert_eq!(keys.key_sequence(), 1);
+    let (buf, _) = send_with(&keys, &mut counter);
+    let aux = AuxHeader::from_bytes(&buf[1..11]).unwrap();
+    assert_eq!((aux.key_sequence, aux.frame_counter), (1, 0));
+    assert_eq!(counter.current(), 1);
+
+    // An authoritative message with a newer key sequence.
+    assert!(keys.set_key_sequence(2, KeySeqUpdate::FORCE, due).unwrap());
+    assert_eq!(counter.current_for(keys.key_epoch()), 0);
+
+    // A network key change keeps the counter.
+    let _ = send_with(&keys, &mut counter);
+    assert!(keys.set_network_key(NetworkKey([9; 16])));
+    assert_eq!(counter.current_for(keys.key_epoch()), 1);
+}

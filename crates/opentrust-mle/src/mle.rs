@@ -744,6 +744,29 @@ impl<const C: usize> Mle<C> {
         Ok(())
     }
 
+    /// A secured data frame (key ID mode 1) arrived from `src`: from a
+    /// sleepy child of Thread version 1.2 or later it counts as a keep-alive
+    /// (OT `Mac::ProcessReceiveSecurity`, enhanced keep-alive).
+    pub fn data_frame_received(&mut self, src: opentrust_mac::frame::Address, now: Instant) {
+        use opentrust_mac::frame::Address;
+        let idx = match src {
+            Address::Short(s) => self
+                .children
+                .index_by_rloc(Rloc16(s.0), crate::neighbor::StateFilter::Valid),
+            Address::Extended(e) => self
+                .children
+                .iter(crate::neighbor::StateFilter::Valid)
+                .position(|c| c.neighbor.ext_address == e),
+            Address::None => None,
+        };
+        if let Some(c) = idx.and_then(|i| self.children.get_mut(i))
+            && !c.neighbor.is_rx_on_when_idle()
+            && c.neighbor.version >= crate::consts::THREAD_VERSION_1_2
+        {
+            c.neighbor.last_heard = now;
+        }
+    }
+
     /// The network key changed: the key sequence restarts at 0 and the
     /// peers' outgoing frame counters restart with it, so forget the
     /// incoming key sequence and frame counters of the parent, the routers
@@ -855,15 +878,34 @@ impl<const C: usize> Mle<C> {
     }
 
     /// OT `ReestablishLinkWithNeighbor`: probe the parent with a Child
-    /// Update Request, a router neighbor with a Link Request.
+    /// Update Request carrying a Challenge, a router neighbor with a Link
+    /// Request and a child with a Child Update Request that carries a
+    /// Challenge, so that the answer is an authoritative message.
+    #[allow(clippy::needless_return)] // the FTD part follows
     fn reestablish_link<E: MleEnv>(&mut self, env: &mut E, now: Instant, nb: Option<NbRef>) {
         if nb == Some(NbRef::Parent) && self.role == Role::Child {
-            let _ = self.send_child_update_request(env, now);
+            let _ = self.send_child_update_request_with(
+                env,
+                now,
+                crate::child::ChildUpdateMode::Challenge,
+            );
+            return;
         }
         #[cfg(feature = "ftd")]
-        if let Some(NbRef::Router(id)) = nb {
-            if self.is_full_thread_device() {
-                let _ = self.send_link_request(env, now, Some(id));
+        if self.is_full_thread_device() {
+            match nb {
+                Some(NbRef::Router(id)) => {
+                    let _ = self.send_link_request(env, now, Some(id));
+                }
+                Some(NbRef::Child(i)) => {
+                    // The state change makes the request carry a challenge
+                    // (the child is no longer valid).
+                    if let Some(c) = self.children.get_mut(i) {
+                        c.neighbor.state = crate::neighbor::NeighborState::ChildUpdateRequest;
+                    }
+                    let _ = self.send_child_update_request_to_child(env, now, i);
+                }
+                _ => {}
             }
         }
     }

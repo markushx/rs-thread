@@ -35,6 +35,10 @@ pub mod tlv {
     pub const IP6_ADDR_LIST: u8 = 8;
     /// MAC Counters.
     pub const MAC_COUNTERS: u8 = 9;
+    /// Battery level.
+    pub const BATTERY_LEVEL: u8 = 14;
+    /// Supply voltage.
+    pub const SUPPLY_VOLTAGE: u8 = 15;
     /// Child Table.
     pub const CHILD_TABLE: u8 = 16;
     /// Channel Pages.
@@ -47,17 +51,30 @@ pub mod tlv {
     pub const EUI64: u8 = 23;
     /// Thread version.
     pub const VERSION: u8 = 24;
+    /// Vendor name.
+    pub const VENDOR_NAME: u8 = 25;
+    /// Vendor model.
+    pub const VENDOR_MODEL: u8 = 26;
+    /// Vendor software version.
+    pub const VENDOR_SW_VERSION: u8 = 27;
+    /// Thread stack version string.
+    pub const THREAD_STACK_VERSION: u8 = 28;
     /// Answer.
     pub const ANSWER: u8 = 32;
     /// Query ID.
     pub const QUERY_ID: u8 = 33;
+    /// Vendor application URL.
+    pub const VENDOR_APP_URL: u8 = 35;
 }
 
 /// `user` value of the Diagnostic Get request in [`opentrust_coap::tmf::Agent::post`].
 pub(crate) const USER_DIAG_GET: u32 = 0x0a53_0030;
 
-/// Largest diagnostic response (the TMF message size).
-pub const MAX_RESPONSE: usize = 256;
+/// Largest diagnostic response (the TLVs of one message).
+pub const MAX_RESPONSE: usize = 512;
+
+/// A received diagnostic answer: the sender and the TLVs.
+pub(crate) type Answer = (core::net::Ipv6Addr, Vec<u8, MAX_RESPONSE>);
 
 /// The TLVs of a response, built in place.
 pub(crate) struct Out {
@@ -71,12 +88,22 @@ impl Out {
 
     /// Append a TLV; `false` (nothing written) if it does not fit.
     fn put(&mut self, ty: u8, value: &[u8]) -> bool {
-        let need = 2 + value.len();
-        if value.len() > 254 || self.buf.len() + need > MAX_RESPONSE {
+        // Values of 255 bytes and more use the extended TLV form (length
+        // 0xff followed by a 16-bit length), as OT does.
+        let ext = value.len() > 254;
+        let need = if ext { 4 } else { 2 } + value.len();
+        if self.buf.len() + need > MAX_RESPONSE {
             return false;
         }
         let _ = self.buf.push(ty);
-        let _ = self.buf.push(value.len() as u8);
+        if ext {
+            let _ = self.buf.push(0xff);
+            let _ = self
+                .buf
+                .extend_from_slice(&(value.len() as u16).to_be_bytes());
+        } else {
+            let _ = self.buf.push(value.len() as u8);
+        }
         let _ = self.buf.extend_from_slice(value);
         true
     }
@@ -211,6 +238,12 @@ pub(crate) fn append_tlv<S, C: CryptoBackend, R>(
         tlv::CHANNEL_PAGES => {
             out.put(ty, &[0]);
         }
+        tlv::THREAD_STACK_VERSION => {
+            out.put(
+                ty,
+                concat!("OpenTrust/", env!("CARGO_PKG_VERSION")).as_bytes(),
+            );
+        }
         tlv::VERSION => {
             out.put(ty, &opentrust_mle::consts::THREAD_VERSION.to_be_bytes());
         }
@@ -262,7 +295,7 @@ pub(crate) fn append_tlv<S, C: CryptoBackend, R>(
 }
 
 fn ip6_list<const U: usize, const M: usize>(netif: &Netif<U, M>, out: &mut Out) {
-    let mut v: Vec<u8, 128> = Vec::new();
+    let mut v: Vec<u8, 256> = Vec::new();
     for a in netif.unicast_addresses() {
         if v.extend_from_slice(&a.addr.octets()).is_err() {
             break;
@@ -383,10 +416,18 @@ where
     ) -> opentrust_core::Result<()> {
         let mut p: Vec<u8, 48> = Vec::new();
         let n = u8::try_from(types.len()).map_err(|_| opentrust_core::Error::InvalidArgs)?;
-        let _ = p.push(tlv::TYPE_LIST);
-        let _ = p.push(n);
-        p.extend_from_slice(types)
-            .map_err(|_| opentrust_core::Error::InvalidArgs)?;
+        if n > 0 {
+            let _ = p.push(tlv::TYPE_LIST);
+            let _ = p.push(n);
+            p.extend_from_slice(types)
+                .map_err(|_| opentrust_core::Error::InvalidArgs)?;
+        }
+        if uri == opentrust_coap::uri::Uri::DiagnosticGetQuery {
+            self.diag_query_id = self.diag_query_id.wrapping_add(1);
+            let _ = p.push(tlv::QUERY_ID);
+            let _ = p.push(2);
+            let _ = p.extend_from_slice(&self.diag_query_id.to_be_bytes());
+        }
         let own = self.mle.rloc16();
         let mlp = self.core.cfg.cur.mesh_local_prefix;
         self.core.now = now;
@@ -408,7 +449,26 @@ where
     /// The oldest received diagnostic answer: the TLVs of a Diagnostic Get
     /// response or a Diagnostic Answer message (decode with `diag_tlv`).
     pub fn diag_take_answer(&mut self) -> Option<Vec<u8, MAX_RESPONSE>> {
+        self.diag_in.pop_front().map(|(_, v)| v)
+    }
+
+    /// Like [`diag_take_answer`](Self::diag_take_answer) with the address of
+    /// the sender.
+    pub fn diag_take_answer_from(
+        &mut self,
+    ) -> Option<(core::net::Ipv6Addr, Vec<u8, MAX_RESPONSE>)> {
         self.diag_in.pop_front()
+    }
+
+    /// Reset diagnostic counters of `dst` with a Diagnostic Reset request (OT
+    /// `otThreadSendDiagnosticReset`; MAC counters are supported).
+    pub fn diag_reset(
+        &mut self,
+        dst: core::net::Ipv6Addr,
+        types: &[u8],
+        now: opentrust_core::time::Instant,
+    ) -> opentrust_core::Result<()> {
+        self.diag_request(opentrust_coap::uri::Uri::DiagnosticReset, dst, types, now)
     }
 
     /// The MAC counters (OT `otLinkGetCounters`).

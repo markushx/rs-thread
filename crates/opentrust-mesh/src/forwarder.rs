@@ -513,9 +513,11 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
                 && c.confirmed
                 && !c.neighbor.mode.rx_on_when_idle()
             {
+                // The MAC addresses follow the link-local IPv6 addresses
+                // (extended), as in OT `GetMacSourceAndDestinationAddresses`.
                 return Ok(Route::Indirect {
                     child: c.neighbor.rloc16,
-                    to_ext: None,
+                    to_ext: Some(c.neighbor.ext_address),
                 });
             }
             // The Child ID Response for a sleepy child that is attaching

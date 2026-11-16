@@ -137,7 +137,7 @@ pub use stack::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 
 pub use opentrust_mac::mac::{RadioAction, TxOutcome};
 
-use heapless::{Deque, Vec};
+use heapless::Deque;
 use opentrust_coap::tmf::Agent;
 use opentrust_core::time::Instant;
 use opentrust_core::types::Iid;
@@ -248,6 +248,24 @@ pub enum Event {
         link_margin: Option<u8>,
         /// RSSI in dBm.
         rssi: Option<i8>,
+    },
+    /// A Link Metrics Report arrived (OT `otLinkMetricsReportCallback`):
+    /// the values, or only the Subject's status.
+    LinkMetricsReport {
+        /// Sender (link-local address).
+        from: core::net::Ipv6Addr,
+        /// The metric values; `None` if the Subject answered with `status`.
+        values: Option<opentrust_mle::link_metrics::MetricsValues>,
+        /// Link Metrics Status value.
+        status: u8,
+    },
+    /// A Link Metrics Management Response arrived (OT
+    /// `otLinkMetricsMgmtResponseCallback`).
+    LinkMetricsManagement {
+        /// Sender (link-local address).
+        from: core::net::Ipv6Addr,
+        /// Link Metrics Status value.
+        status: u8,
     },
     /// A graceful detach finished ([`Instance::detach_gracefully`]); Thread
     /// is stopped.
@@ -395,7 +413,8 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) dnssrp: dns_srp::DnsSrp,
     pub(crate) dhcp6: dhcp6::Dhcp6,
     pub(crate) bbrg: bbr::BbrGlue,
-    pub(crate) diag_in: Deque<Vec<u8, { diag::MAX_RESPONSE }>, 2>,
+    pub(crate) diag_in: Deque<diag::Answer, 2>,
+    pub(crate) diag_query_id: u16,
     pub(crate) cm: commissioning::Commissioning<C>,
     pub(crate) tmf_ext: Option<TmfExtension>,
     pub(crate) ping: api::PingState,
@@ -507,6 +526,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 nd_version_bump: false,
                 applied: false,
                 key_changed: false,
+                policy_changed: false,
             });
             put(addr_of_mut!((*c).mle_events), Deque::new);
             addr_of_mut!((*c).child_changes).write(Deque::new());
@@ -558,6 +578,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).dhcp6), dhcp6::Dhcp6::new);
             put(addr_of_mut!((*p).bbrg), bbr::BbrGlue::new);
             put(addr_of_mut!((*p).diag_in), Deque::new);
+            addr_of_mut!((*p).diag_query_id).write((prng_seed >> 16) as u16);
             addr_of_mut!((*p).tmf_ext).write(None);
             addr_of_mut!((*p).ping).write(api::PingState::default());
             put(addr_of_mut!((*p).scan), scan::ScanState::default);

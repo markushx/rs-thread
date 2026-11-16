@@ -104,6 +104,8 @@ impl AuxHeader {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct MleFrameCounter {
     next: u32,
+    /// The `KeyManager::key_epoch` this counter belongs to.
+    epoch: u32,
     stored: u32,
     ahead: u32,
 }
@@ -120,6 +122,7 @@ impl MleFrameCounter {
     pub const fn new() -> Self {
         Self {
             next: 0,
+            epoch: 0,
             stored: 0,
             ahead: DEFAULT_STORE_FRAME_COUNTER_AHEAD,
         }
@@ -134,6 +137,22 @@ impl MleFrameCounter {
     /// Set the store-ahead distance.
     pub fn set_store_ahead(&mut self, ahead: u32) {
         self.ahead = ahead;
+    }
+
+    /// Restart at 0 if the key sequence changed since the counter was last
+    /// used (`epoch` is `KeyManager::key_epoch`): OT `SetCurrentKeySequence`
+    /// resets `mMleFrameCounter`, whoever changed the key sequence.
+    pub fn sync(&mut self, epoch: u32) {
+        if epoch != self.epoch {
+            self.epoch = epoch;
+            self.next = 0;
+        }
+    }
+
+    /// [`sync`](Self::sync), then [`current`](Self::current).
+    pub fn current_for(&mut self, epoch: u32) -> u32 {
+        self.sync(epoch);
+        self.next
     }
 
     /// The next counter to be used.
@@ -236,6 +255,7 @@ pub fn secure<B: CryptoBackend>(
     if len < SECURED_PAYLOAD_OFFSET + 1 || buf.len() < len + TAG_LEN {
         return Err(Error::NoBufs);
     }
+    counter.sync(keys.key_epoch());
     let frame_counter = counter.take()?;
     let hdr = AuxHeader {
         frame_counter,

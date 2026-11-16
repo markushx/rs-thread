@@ -111,6 +111,10 @@ pub struct KeyManager<B: CryptoBackend> {
     backend: B,
     network_key: NetworkKey,
     key_sequence: u32,
+    /// Counts the key sequence changes made by `set_key_sequence`: users of
+    /// state that OpenThread resets in `SetCurrentKeySequence` (the MLE
+    /// frame counter) compare it with the value they last saw.
+    key_epoch: u32,
     /// Keys for `key_sequence - 1`, `key_sequence`, `key_sequence + 1`
     /// (wrapping, as OpenThread's sub-MAC keys).
     keys: [ThreadKeys; 3],
@@ -146,6 +150,7 @@ impl<B: CryptoBackend> KeyManager<B> {
             backend,
             network_key,
             key_sequence: 0,
+            key_epoch: 0,
             keys,
             frame_counter: 0,
             mode2_frame_counter: 0,
@@ -205,6 +210,14 @@ impl<B: CryptoBackend> KeyManager<B> {
 
     // ------------------------------------------------------------ key sequence
 
+    /// Number of key sequence changes since creation (not counting
+    /// [`restore`](Self::restore) and network key changes). The outgoing MLE
+    /// frame counter restarts at 0 whenever it changes (OT
+    /// `SetCurrentKeySequence` resets `mMleFrameCounter`).
+    pub const fn key_epoch(&self) -> u32 {
+        self.key_epoch
+    }
+
     /// `thrKeySequenceCounter`.
     pub const fn key_sequence(&self) -> u32 {
         self.key_sequence
@@ -243,6 +256,7 @@ impl<B: CryptoBackend> KeyManager<B> {
             return Ok(false);
         }
         self.switch_to(key_sequence);
+        self.key_epoch = self.key_epoch.wrapping_add(1);
         if self.rotation_start.is_some() {
             self.rotation_start = Some(now);
         }

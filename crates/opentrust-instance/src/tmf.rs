@@ -132,7 +132,7 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     ls: &'a mut opentrust_meshcop::leader::LeaderState,
     resolver: &'a mut AddressResolver<8>,
     bbrg: &'a mut crate::bbr::BbrGlue,
-    diag_in: &'a mut heapless::Deque<Vec<u8, { crate::diag::MAX_RESPONSE }>, 2>,
+    diag_in: &'a mut heapless::Deque<crate::diag::Answer, 2>,
     #[cfg(any(feature = "scan-servers", feature = "commissioner"))]
     scan: &'a mut crate::scan::ScanState,
     ext: Option<crate::TmfExtension>,
@@ -198,6 +198,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                 }
             }
             Uri::DiagnosticGetRequest => {
+                // OT drops the request unless it is a confirmable POST.
+                if req.msg.ty() != opentrust_coap::message::Type::Con {
+                    return;
+                }
                 let o = crate::diag::build_response(self.mle, self.core, req.msg.payload());
                 let _ = rsp.respond(Code::CHANGED, &o.buf);
             }
@@ -216,12 +220,25 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                     if self.diag_in.is_full() {
                         let _ = self.diag_in.pop_front();
                     }
-                    let _ = self.diag_in.push_back(v);
+                    let _ = self.diag_in.push_back((req.ctx.peer.addr, v));
                     self.out.diag_event = true;
                 }
             }
             Uri::DiagnosticReset => {
-                self.out.reset_counters = true;
+                if req.msg.ty() != opentrust_coap::message::Type::Con {
+                    return;
+                }
+                // OT: only a leading Type List TLV is honoured; MAC counters
+                // are the one counter set kept here.
+                let p = req.msg.payload();
+                if p.first() == Some(&crate::diag::tlv::TYPE_LIST) {
+                    let n = usize::from(p.get(1).copied().unwrap_or(0));
+                    if let Some(t) = p.get(2..2 + n)
+                        && t.contains(&crate::diag::tlv::MAC_COUNTERS)
+                    {
+                        self.out.reset_counters = true;
+                    }
+                }
                 let _ = rsp.respond(Code::CHANGED, &[]);
             }
             Uri::DuaRegistrationNotify => {
@@ -256,6 +273,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                 env.session_id = session_id;
                 let o = mgmt::handle_set(ds, &mut env, now, t, cmd, req, rsp);
                 let _ = self.out.outcomes.push(o);
+                // OT `KeyManager::SetNetworkKey` resets the neighbors'
+                // frame counters right away.
+                if core::mem::take(&mut self.core.cfg.key_changed) {
+                    self.mle.reset_frame_counters();
+                }
             }
             #[cfg(feature = "ftd")]
             Uri::LeaderPetition | Uri::LeaderKeepAlive | Uri::CommissionerSet => {
@@ -357,7 +379,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let mut out = core::mem::take(&mut h.out);
         let relay = out.relay.take();
         match r {
-            TmfRx::Response { user, msg, .. } => {
+            TmfRx::Response { user, msg, peer } => {
                 if self.commissioning_response(now, user, Ok((msg.code(), msg.payload()))) {
                     // The Commissioner or the Border Agent took it.
                 } else {
@@ -375,7 +397,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                             if self.diag_in.is_full() {
                                 let _ = self.diag_in.pop_front();
                             }
-                            let _ = self.diag_in.push_back(v);
+                            let _ = self.diag_in.push_back((peer.addr, v));
                             self.core.push_event(crate::Event::DiagAnswer);
                         }
                     } else if self.bbrg.queue_outcome(

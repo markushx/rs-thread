@@ -595,7 +595,7 @@ impl<const C: usize> Mle<C> {
         let rloc = self.rloc16;
         let leader = self.leader_data;
         let link_fc = env.keys().frame_counter();
-        let mle_fc = self.mle_counter.current();
+        let mle_fc = self.mle_counter.current_for(env.keys().key_epoch());
         let conn = self.parent_side.info.connectivity;
         let dst = ipv6::link_local(&p.child);
         self.send(env, dst, Command::ParentResponse, |w| {
@@ -1166,7 +1166,7 @@ impl<const C: usize> Mle<C> {
         let rloc = self.rloc16;
         let leader = self.leader_data;
         let link_fc = env.keys().frame_counter();
-        let mle_fc = self.mle_counter.current();
+        let mle_fc = self.mle_counter.current_for(env.keys().key_epoch());
         let mut ch = [0u8; 8];
         let clen = challenge.map_or(0, |c| {
             let n = c.len().min(8);

@@ -102,6 +102,7 @@ impl<const C: usize> Mle<C> {
         } else {
             let mut info = env.load_network_info().ok_or(Error::NotFound)?;
             info.key_sequence = key_sequence;
+            info.device_mode = self.cfg.mode.to_bits() & 0x0b;
             info.mle_frame_counter = mle_fc;
             info.mac_frame_counter = mac_fc;
             info
@@ -179,6 +180,9 @@ impl<const C: usize> Mle<C> {
         let info = env.load_network_info().ok_or(Error::NotFound)?;
         env.keys_mut()
             .restore(info.key_sequence, info.mac_frame_counter);
+        // The restored key sequence is not a key switch: keep the stored
+        // counter.
+        self.mle_counter.sync(env.keys().key_epoch());
         self.mle_counter.restore(info.mle_frame_counter);
         if info.version != THREAD_VERSION {
             return Err(Error::InvalidState);
