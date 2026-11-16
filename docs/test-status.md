@@ -43,6 +43,48 @@ Packet verification (pktverify with `tshark`, `OPENTRUST_CERT_PKTVERIFY=1`): `th
 | Cert_5_3_10_AddressQuery | pass | 1,2,3,4,5 |  |
 | Cert_5_3_11_AddressQueryTimeoutIntervals | pass | 1,2,3 |  |
 
+## Commissioning and datasets (`Cert_8_*`, `Cert_9_2_*`)
+
+Run: `OPENTRUST_CERT=1 OPENTRUST_CERT_CASES=Cert_8_,Cert_9_2_ OPENTRUST_CERT_CONFIGS=ot,each,all cargo test -p opentrust-sim --test thread_cert` (CLI based assertions, no packet verification). 26 cases, 134 runs: **111 pass, 23 fail**; all 26 all-OpenThread baselines pass. `ot-cli-ftd` has commissioner, joiner and Border Router enabled; it logs through the CLI (`OT_LOG_OUTPUT=APP`, built by `openthread-sys` when its `cli` feature is on) because the cases read the `[THCI]` commissioning lines from the CLI output (before that, `Cert_8_1_01`, `8_1_06` and `8_2_05` failed with OpenThread nodes only). Rebuild `ot-cli-ftd` with `cargo build -p openthread-sys` after pulling this change.
+
+Everything in `Cert_8_*` (commissioning, Joiner Router, Commissioner petition) and `Cert_9_2_01` to `9_2_07`, `9_2_10`, `9_2_15` to `9_2_17` and `9_2_19` passes in every configuration (OpenTrust as each node, as all nodes). Open:
+
+- **`Cert_9_2_12` Announce Begin, `9_2_13` Energy Scan, `9_2_14` PAN ID Query:** the Commissioner commands `commissioner announce`, `commissioner energy` and `commissioner panid`, the `/c/er` and `/c/pc` report handlers and the servers `/c/ab`, `/c/es`, `/c/pq` are not wired into `opentrust-instance`. The state machines and request builders exist in `opentrust-meshcop` (`scan.rs`, tested in `sim_scan_tests.rs`); the instance has no TMF handlers, no Commissioner commands and no use of the MAC scans for them. OpenTrust passes only where the node is neither the Commissioner nor a scanned/announcing node (`9_2_12` node 4, `9_2_13` node 2, `9_2_14` nodes 2 and 4).
+- **`Cert_9_2_08` (node 3, all), `9_2_09` (all), `9_2_11` (nodes 2 and 3, all), `9_2_18` (every node):** a Pending Dataset with a Delay Timer is not applied at an OpenTrust node as the case expects: `9_2_08` node 3 (DUT after a reset) keeps PAN ID 0xface instead of the pending 0xafce; `9_2_09` (OpenTrust as ROUTER2) the partition of the new Leader stays 'leader' instead of merging as router; `9_2_11` the Commissioner (node 2) keeps the old Network Key after the key switch and with node 3 the ping after the switch fails; `9_2_18` the ping to the ED / SED after the Network Key switch fails whichever node is OpenTrust. Not analysed further.
+
+| case | all OT (baseline) | OpenTrust as node n: pass | OpenTrust as node n: fail | all OpenTrust |
+|---|---|---|---|---|
+| Cert_8_1_01_Commissioning | pass | 1,2 |  | pass |
+| Cert_8_1_02_Commissioning | pass | 1,2 |  | pass |
+| Cert_8_1_06_Commissioning | pass | 1,2 |  | pass |
+| Cert_8_2_01_JoinerRouter | pass | 1,2,3 |  | pass |
+| Cert_8_2_02_JoinerRouter | pass | 1,2,3 |  | pass |
+| Cert_8_2_05_JoinerRouter | pass | 1,2,3 |  | pass |
+| Cert_8_3_01_CommissionerPetition | pass | 1,2 |  | pass |
+| Cert_9_2_01_MGMTCommissionerGet | pass | 1,2 |  | pass |
+| Cert_9_2_02_MGMTCommissionerSet | pass | 1,2 |  | pass |
+| Cert_9_2_03_ActiveDatasetGet | pass | 1,2 |  | pass |
+| Cert_9_2_04_ActiveDataset | pass | 1,2 |  | pass |
+| Cert_9_2_05_ActiveDataset | pass | 1,2 |  | pass |
+| Cert_9_2_06_DatasetDissemination | pass | 1,2,3,4,5 |  | pass |
+| Cert_9_2_07_DelayTimer | pass | 1,2,3 |  | pass |
+| Cert_9_2_08_PersistentDatasets | pass | 1,2 | 3 | FAIL |
+| Cert_9_2_09_PendingPartition | pass | 1,2,3,4 |  | FAIL |
+| Cert_9_2_10_PendingPartition | pass | 1,2,3,4,5 |  | pass |
+| Cert_9_2_11_NetworkKey | pass | 1,4,5 | 2,3 | FAIL |
+| Cert_9_2_12_Announce | pass | 4 | 1,2,3 | FAIL |
+| Cert_9_2_13_EnergyScan | pass | 2 | 1,3,4 | FAIL |
+| Cert_9_2_14_PanIdQuery | pass | 2,4 | 1,3 | FAIL |
+| Cert_9_2_15_PendingPartition | pass | 1,2,3,4 |  | pass |
+| Cert_9_2_16_ActivePendingPartition | pass | 1,2,3,4 |  | pass |
+| Cert_9_2_17_Orphan | pass | 1,2,3 |  | pass |
+| Cert_9_2_18_RollBackActiveTimestamp | pass |  | 1,2,3,4,5 | FAIL |
+| Cert_9_2_19_PendingDatasetGet | pass | 1,2 |  | pass |
+
+In-process mixed tests (`crates/opentrust-sim/tests/commissioning_mixed.rs`, virtual time, `ot-cli-ftd` with `opentrust-cli-vt` / `opentrust-cli-vt-mtd`): 15 tests pass. OpenThread Commissioner with an OpenTrust FTD and with an MTD Joiner; OpenTrust Commissioner with an OpenThread Joiner (EUI-64 and `*`); the Joiner two hops away behind a Joiner Router of the other implementation (OpenThread JR with OpenTrust Commissioner and Joiner, OpenTrust JR with OpenThread Commissioner and Joiner, MTD Joiner behind an OpenThread JR, OpenTrust JR with OpenTrust Commissioner and OpenThread Joiner); wrong PSKd on both sides (Joiner fails, the Network Key does not reach it, the right PSKd works afterwards); Commissioner petition with either implementation as Leader (stays active through several keep-alive periods, a second Commissioner with another ID is refused, accepted after the first resigned); MGMT_ACTIVE_SET from a Commissioner of one implementation to a Leader of the other. Bugs found: the OpenTrust Leader never matched the Commissioner Session ID of an MGMT_ACTIVE_SET / PENDING_SET (every set from a Commissioner was rejected); the Joiner stopped on a Reject and the Commissioner withheld the KEK (see `OPENTRUST-OPENTHREAD-DIFFERENCES.md`); `joiner` was missing on the MTD build; `state leader` was refused while Thread was running. The 5.x suite after these changes: 273 of 273 pass.
+
+Nothing of this ran on hardware.
+
 ## Thread 1.2 (CSL, SSED), `v1_2_*` cases
 
 Run with `OPENTRUST_CERT_CASES=v1_2_LowPower_5_3_01_SSEDAttachment,v1_2_test_csl_transmission` and `OPENTRUST_CERT_CONFIGS=ot,each,all`.
