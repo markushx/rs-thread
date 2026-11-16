@@ -8,7 +8,6 @@ use opentrust_core::types::{Rloc16, ipv6};
 use opentrust_mesh::address;
 use opentrust_mesh::forwarder::DropReason;
 use opentrust_mesh::netdata::aloc::desired_alocs;
-use opentrust_mesh::netdata::anycast::Located;
 use opentrust_mesh::netdata::consumers::slaac_prefixes;
 use opentrust_mesh::netdata::notifier::{NotifierEvent, SyncInput, find_stale_child};
 use opentrust_mesh::netdata::publisher::PublishContext;
@@ -34,7 +33,6 @@ pub(crate) struct GlueState {
     pub src_match: Vec<(Rloc16, Option<opentrust_core::types::ExtAddress>), 16>,
     pub unsecure_ports: Vec<u16, 2>,
     pub last_drop: Option<DropReason>,
-    pub located: Option<Located>,
     pub addr_hash: u64,
     pub restoring_leader: bool,
     pub replay_drops: u32,

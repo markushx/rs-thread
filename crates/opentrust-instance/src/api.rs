@@ -889,6 +889,28 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         Ok(())
     }
 
+    /// Find the closest destination of an anycast address (OT
+    /// `otThreadLocateAnycastDestination`); the result is
+    /// [`Event::AnycastLocated`]. [`Error::InvalidState`] without an RLOC.
+    pub fn anycast_locate(&mut self, anycast: core::net::Ipv6Addr, now: Instant) -> Result<()> {
+        let own = self.mle.rloc16();
+        if own == Rloc16::INVALID {
+            return Err(Error::InvalidState);
+        }
+        self.core.now = now;
+        let src = self.core.cfg.cur.mesh_local_prefix.rloc(own);
+        let r = opentrust_mesh::netdata::anycast::send_anycast_locate(
+            &mut self.agent,
+            now,
+            &mut self.prng,
+            &mut self.sink,
+            src,
+            anycast,
+        );
+        self.poll(now);
+        r
+    }
+
     /// Remove a service from the local Network Data.
     pub fn remove_service(&mut self, enterprise_number: u32, service_data: &[u8]) -> Result<()> {
         self.local.remove_service(enterprise_number, service_data)?;

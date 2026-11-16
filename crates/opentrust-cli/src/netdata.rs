@@ -9,7 +9,9 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, R, hex, ln, out, parse_hex_padded, parse_prefix, parse_u32};
+use crate::util::{
+    Args, E, Ip6, R, hex, ln, out, parse_hex_padded, parse_ip6, parse_prefix, parse_u32,
+};
 
 /// A prefix as OT prints it: the words covered by the prefix length, then
 /// `::` (`fd00:dead:beef:cafe::/64`).
@@ -78,6 +80,41 @@ where
             "remove" => self.i.remove_service(ent, &sd[..n]).map_err(E::from),
             _ => Err(E::INVALID_COMMAND),
         }
+    }
+
+    /// `locate <anycast address>` (OT `Interpreter::Process<Cmd("locate")>`).
+    pub(crate) fn locate(&mut self, a: &Args<'_>) -> R {
+        if a.get(1).is_empty() {
+            return if self.st.locating {
+                ln!(self.o, "In Progress");
+                Ok(())
+            } else {
+                ln!(self.o, "Idle");
+                Ok(())
+            };
+        }
+        let addr = parse_ip6(a.get(1))?;
+        self.i.anycast_locate(addr, self.now)?;
+        self.st.locating = true;
+        Err(E::PENDING)
+    }
+
+    pub(crate) fn locate_done(
+        &mut self,
+        r: Result<(core::net::Ipv6Addr, u16), opentrust_core::Error>,
+    ) {
+        if !self.st.locating {
+            return;
+        }
+        self.st.locating = false;
+        let r = match r {
+            Ok((addr, rloc)) => {
+                ln!(self.o, "{} 0x{:04x}", Ip6(addr), rloc);
+                Ok(())
+            }
+            Err(e) => Err(E::from(e)),
+        };
+        crate::output_result(self.o, r);
     }
 
     pub(crate) fn netdata(&mut self, a: &Args<'_>) -> R {

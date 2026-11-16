@@ -415,7 +415,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                         && let Ok(l) =
                             anycast::parse_response(&msg, self.core.cfg.cur.mesh_local_prefix)
                     {
-                        self.glue.located = Some(l);
+                        self.core
+                            .push_event(crate::Event::AnycastLocated(Ok((l.ml_eid, l.rloc16.0))));
                     }
                 }
             }
@@ -494,7 +495,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.mle.address_solicit_reply(&mut self.core, now, r);
             return;
         }
-        if user == USER_SERVER_DATA {
+        if user == anycast::USER_ANYCAST_LOCATE {
+            self.core.push_event(crate::Event::AnycastLocated(Err(e)));
+        } else if user == USER_SERVER_DATA {
             self.notifier.response(now, false);
         } else if self.bbrg.queue_outcome(
             user,

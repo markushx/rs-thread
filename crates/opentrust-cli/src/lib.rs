@@ -74,6 +74,9 @@ pub(crate) struct State {
     pub reset: bool,
     /// A blocking `detach` waits for the end of the graceful detach.
     pub detaching: bool,
+    /// An anycast `locate` waits for its result.
+    #[cfg(feature = "netdata")]
+    pub locating: bool,
     #[cfg(feature = "dataset")]
     pub dataset: opentrust_meshcop::dataset::Dataset,
     #[cfg(feature = "ping")]
@@ -121,6 +124,8 @@ impl Cli {
                 legacy: basic::Legacy::default(),
                 reset: false,
                 detaching: false,
+                #[cfg(feature = "netdata")]
+                locating: false,
                 #[cfg(feature = "dataset")]
                 dataset: opentrust_meshcop::dataset::Dataset::new(),
                 #[cfg(feature = "ping")]
@@ -282,6 +287,7 @@ where
             "keysequence" => self.keysequence(a),
             "mliid" => self.mliid(a),
             "detach" => self.detach(a),
+            "radiofilter" => self.radiofilter(a),
             #[cfg(feature = "ftd")]
             "childmax" => self.childmax(a),
             #[cfg(feature = "ftd")]
@@ -333,6 +339,8 @@ where
             "netdata" => self.netdata(a),
             #[cfg(feature = "netdata")]
             "service" => self.service(a),
+            #[cfg(feature = "netdata")]
+            "locate" => self.locate(a),
             #[cfg(feature = "netdata")]
             "prefix" => self.prefix(a),
             #[cfg(feature = "netdata")]
@@ -392,6 +400,8 @@ where
                 channel_mask,
             } => self.pan_id_conflict(*pan_id, *channel_mask),
             Event::DetachedGracefully => self.detach_done(),
+            #[cfg(feature = "netdata")]
+            Event::AnycastLocated(r) => self.locate_done(*r),
             #[cfg(feature = "ftd")]
             Event::DatasetUpdateDone(r) => self.dataset_update_done(*r),
             _ => {}

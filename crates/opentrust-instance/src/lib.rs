@@ -270,6 +270,9 @@ pub enum Event {
     /// A graceful detach finished ([`Instance::detach_gracefully`]); Thread
     /// is stopped.
     DetachedGracefully,
+    /// An anycast locate request finished ([`Instance::anycast_locate`]): the
+    /// Mesh-Local EID and RLOC16 of the closest destination, or the error.
+    AnycastLocated(core::result::Result<(core::net::Ipv6Addr, u16), opentrust_core::Error>),
     /// A Dataset Updater request finished ([`Instance::dataset_updater_request`]).
     /// `Ok` when the Active Dataset has the requested values, `Err(Error::Already)`
     /// when a conflicting update won.
@@ -427,6 +430,9 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) scan: scan::ScanState,
     pub(crate) ip6_enabled: bool,
     pub(crate) started: bool,
+    /// Radio filter (OT `otLinkSetRadioFilterEnabled`): no frame is received
+    /// or transmitted.
+    pub(crate) radio_filter: bool,
 }
 
 impl<S, C: InstanceCrypto, R> core::fmt::Debug for Instance<S, C, R> {
@@ -595,6 +601,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).scan), scan::ScanState::default);
             addr_of_mut!((*p).ip6_enabled).write(false);
             addr_of_mut!((*p).started).write(false);
+            addr_of_mut!((*p).radio_filter).write(false);
             let inst = &mut *p;
             inst.restore_boot_identity();
             inst
@@ -606,6 +613,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Feed a received PSDU (with FCS) from the radio.
     pub fn handle_radio_rx(&mut self, psdu: &[u8], info: &PsduRxInfo, now: Instant) {
         self.core.now = now;
+        if self.radio_filter {
+            return;
+        }
         self.core.mac.on_rx(psdu, info, now);
     }
 
@@ -645,7 +655,43 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// [`poll`](Self::poll) until `None`.
     pub fn poll_radio_action(&mut self, now: Instant) -> Option<RadioAction> {
         self.core.now = now;
-        self.core.mac.poll_action(now)
+        loop {
+            let a = self.core.mac.poll_action(now)?;
+            if !self.radio_filter {
+                return Some(a);
+            }
+            // Radio filter: a frame completes at once, as without an
+            // acknowledgment when it asked for one (OT `SubMac::Send`).
+            if let RadioAction::Transmit(tx) = &a {
+                let ack = tx.psdu.first().is_some_and(|b| b & 0x20 != 0);
+                let outcome = if ack {
+                    TxOutcome::AckTimeout
+                } else {
+                    TxOutcome::Sent
+                };
+                self.core.mac.on_tx_done(outcome, now);
+                continue;
+            }
+            if matches!(a, RadioAction::EnergyScan { .. }) {
+                self.core
+                    .mac
+                    .on_energy_scan_done(opentrust_platform::radio::RSSI_INVALID, now);
+                continue;
+            }
+            return Some(a);
+        }
+    }
+
+    /// Enable or disable the radio filter (OT `otLinkSetRadioFilterEnabled`):
+    /// while enabled, no frame is received and every transmission completes
+    /// at once without an acknowledgment.
+    pub fn set_radio_filter(&mut self, enabled: bool) {
+        self.radio_filter = enabled;
+    }
+
+    /// The radio filter is enabled (OT `otLinkIsRadioFilterEnabled`).
+    pub fn is_radio_filter_enabled(&self) -> bool {
+        self.radio_filter
     }
 
     /// Run everything that is due at `now` and drain all internal queues.

@@ -167,6 +167,30 @@ where
             .map_err(E::from)
     }
 
+    /// `radiofilter [enable|disable]` (OT `Interpreter::Process<Cmd("radiofilter")>`).
+    pub(crate) fn radiofilter(&mut self, a: &Args<'_>) -> R {
+        match a.get(1) {
+            "" => {
+                let s = if self.i.is_radio_filter_enabled() {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                };
+                ln!(self.o, "{s}");
+                Ok(())
+            }
+            "enable" => {
+                self.i.set_radio_filter(true);
+                Ok(())
+            }
+            "disable" => {
+                self.i.set_radio_filter(false);
+                Ok(())
+            }
+            _ => Err(E::INVALID_ARGS),
+        }
+    }
+
     pub(crate) fn detach(&mut self, a: &Args<'_>) -> R {
         let asynchronous = a.get(1) == "async";
         self.i.detach_gracefully(self.now).map_err(E::from)?;
