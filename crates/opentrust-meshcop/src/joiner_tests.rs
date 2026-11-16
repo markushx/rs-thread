@@ -485,8 +485,11 @@ fn join_fin_rejected() {
     let mut srv = Server::new(PSKD);
     let app = srv.pump(&mut fx, peer);
     srv.answer(&mut fx, peer, &app[0], State::Reject);
-    assert_eq!(fx.done(), Some(Err(Error::Security)));
-    assert!(fx.io.kek.is_none());
+    // As in OpenThread the Joiner still waits for the Joiner Entrust.
+    assert_eq!(fx.j.state(), JoinerState::Entrust);
+    assert!(fx.done().is_none());
+    fx.advance(RESPONSE_TIMEOUT);
+    assert_eq!(fx.done(), Some(Err(Error::ResponseTimeout)));
 }
 
 /// No Joiner Entrust (or only one without the KEK): response timeout.

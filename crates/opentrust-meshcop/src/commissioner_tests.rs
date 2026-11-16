@@ -503,18 +503,16 @@ fn provisioning_url_mismatch_rejected() {
             .contains(&CommissionerEvent::JoinerFinalize(id, true))
     );
     assert_eq!(fx.c.joiners().count(), 1, "\"any\" is not removed");
-    // Another URL: rejected, the Joiner stops, no KEK is relayed.
+    // Another URL: rejected, but the KEK is relayed as well (OT, Thread
+    // 1.4.1 8.9.2.2) and the Joiner waits for the Joiner Entrust.
     let (mut j, mut jio, mut jrng) = joiner(PSKD, &any, Some("https://other"));
     let keks = relay(&mut fx, &mut j, &mut jio, &mut jrng, &id);
-    assert!(keks.is_empty(), "no KEK for a rejected Joiner");
+    assert!(!keks.is_empty(), "KEK relayed with a Reject");
     assert!(
         fx.events()
             .contains(&CommissionerEvent::JoinerFinalize(id, false))
     );
-    assert!(matches!(
-        jio.events.last(),
-        Some(JoinerEvent::Done(Err(Error::Security)))
-    ));
+    assert_eq!(j.state(), JoinerState::Entrust);
 }
 
 /// Wrong PSKd: the handshake fails, the session ends; an unknown Joiner

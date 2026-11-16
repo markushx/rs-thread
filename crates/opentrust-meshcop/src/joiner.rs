@@ -671,24 +671,19 @@ where
                 if Tlvs(msg.payload()).state().is_ok() {
                     crate::cert_log::cert_log(false, crate::cert_log::Msg::FinRsp, msg.payload());
                 }
-                match Tlvs(msg.payload()).state() {
-                    Ok(State::Accept) => Some(true),
-                    Ok(_) => Some(false),
-                    Err(_) => None,
-                }
+                Tlvs(msg.payload()).state().ok()
             }
             _ => return,
         };
         // OT disconnects after any JOIN_FIN response.
         self.close_dtls(io);
         io.set_unsecure_port(JOINER_UDP_PORT, false);
-        match accepted {
-            Some(true) => {
-                self.set_state(io, JoinerState::Entrust);
-                self.timer = Some(now.saturating_add(RESPONSE_TIMEOUT));
-            }
-            Some(false) => self.finish(io, Err(Error::Security)),
-            None => {}
+        // OT `HandleJoinerFinalizeResponse` goes to the Entrust state for
+        // any State value and waits for the Joiner Entrust: the Commissioner
+        // relays the KEK with a Reject as well.
+        if accepted.is_some() {
+            self.set_state(io, JoinerState::Entrust);
+            self.timer = Some(now.saturating_add(RESPONSE_TIMEOUT));
         }
     }
 

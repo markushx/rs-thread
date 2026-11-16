@@ -263,3 +263,42 @@ fn petition_ot_leader_opentrust_commissioner() {
 fn petition_opentrust_leader_ot_commissioner() {
     petition("petition-rust-leader", Rust, Ot, Rust);
 }
+
+/// MGMT_ACTIVE_SET from a Commissioner of one implementation changes the
+/// Active Dataset of a Leader of the other.
+fn mgmt_active_set(name: &str, leader: Kind, commissioner: Kind) {
+    let Some(mut e) = env(name, &[(1, leader), (2, commissioner)]) else {
+        return;
+    };
+    let sim = &mut e.sim;
+    let tlv = form(sim, 1);
+    join_as_router(sim, 2, &tlv);
+    start_commissioner(sim, 2);
+    ok(
+        sim,
+        2,
+        "dataset mgmtsetcommand active activetimestamp 101 channelmask 134215680 extpanid 000db70000000000 networkname GRL",
+    );
+    sim.run(5.0);
+    assert_eq!(ok(sim, 1, "networkname")[0], "GRL");
+    // The router learns the new dataset with the next network data update.
+    sim.run(60.0);
+    assert_eq!(ok(sim, 2, "networkname")[0], "GRL");
+    ok(sim, 2, "dataset mgmtgetcommand active networkname");
+    sim.run(2.0);
+}
+
+#[test]
+fn mgmt_active_set_opentrust_commissioner_ot_leader() {
+    mgmt_active_set("mgmt-set-rust-comm", Ot, Rust);
+}
+
+#[test]
+fn mgmt_active_set_rust_rust() {
+    mgmt_active_set("mgmt-set-rr", Rust, Rust);
+}
+
+#[test]
+fn mgmt_active_set_ot_commissioner_opentrust_leader() {
+    mgmt_active_set("mgmt-set-ot-comm", Rust, Ot);
+}

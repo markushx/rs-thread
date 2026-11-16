@@ -237,7 +237,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                     Uri::ActiveReplace => (DatasetType::Active, MgmtCommand::Replace),
                     _ => (DatasetType::Pending, MgmtCommand::Set),
                 };
+                // OT `FindCommissioningSessionId`: the Session ID of the
+                // Commissioning Data in the Network Data.
+                let session_id = opentrust_meshcop::leader::session_id(self.leader);
                 let (ds, mut env) = self.core.ds();
+                env.session_id = session_id;
                 let o = mgmt::handle_set(ds, &mut env, now, t, cmd, req, rsp);
                 let _ = self.out.outcomes.push(o);
             }

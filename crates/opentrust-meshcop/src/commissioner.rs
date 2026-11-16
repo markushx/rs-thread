@@ -893,14 +893,10 @@ where
         let Some(s) = self.session.as_mut() else {
             return;
         };
-        // The record carrying an accepting JOIN_FIN.rsp goes out with the
-        // KEK (OT `kSubTypeJoinerFinalizeResponse`); a rejected Joiner gets
-        // no KEK, so no Joiner Router sends it the Joiner Entrust.
-        let kek = if state == State::Accept {
-            s.dtls.kek().cloned()
-        } else {
-            None
-        };
+        // The record carrying the JOIN_FIN.rsp goes out with the KEK
+        // (OT `kSubTypeJoinerFinalizeResponse`; Thread 1.4.1 8.9.2.2: the
+        // Commissioner MUST include the KEK), also for a Reject.
+        let kek = s.dtls.kek().cloned();
         let mut tx = DtlsTx {
             session: &mut s.dtls,
             out: |d: &[u8]| relay(io, now, &iid, port, rloc, kek.as_ref(), d),
