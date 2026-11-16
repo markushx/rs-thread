@@ -162,6 +162,9 @@ OpenThread drives it through three platform APIs, all optional on the `Radio` tr
   "receiver on at `start` for `duration`, then off".
   The window is a fifth commanded state next to Sleep/Receive/Transmit/EnergyScan, entered from Sleep and left by the next command
   (OpenThread's `Sleep` at the window's end). While it lasts, the runner keeps calling `receive`, which MUST NOT switch the receiver on - a radio whose `receive` enters receive mode has to notice it is inside a window and only drain its queue.
+- **Lead time** (`RadioCaps::receive_at_lead_us`)
+  A radio that has to reserve its air time ahead (the nRF52840 driver, through an MPSL timeslot) refuses a window that starts within about a millisecond.
+  The stack hands the window over that long before its start; 0 for a radio that accepts a window at once.
 - **A radio clock** (`RadioCaps::clock`, `otPlatRadioGetNow`)
   Used for timing the window start, the frame timestamps (`PsduRxInfo::timestamp_us`) and the CSL sample time (`CslConfig::sample_time_us`).
   OpenThread's own microsecond alarm runs on this clock too, so all of its CSL arithmetic is in one time base.

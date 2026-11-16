@@ -852,6 +852,15 @@ Where OpenThread's output is lossy, malformed or undefined for an input, OpenTru
 
 - **Empty network name.** OT's `NetworkName::Set` accepts an empty name (its `TestNetworkName` sets one); `NetworkName::new` rejects it, as Thread 1.4.1 requires 1 to 16 bytes.
 
+## CSL on the nRF52840 (`opentrust-nrf` backend `radio-nrf802154`, [docs/csl-hardware.md](docs/csl-hardware.md))
+
+| Item | OpenThread | OpenTrust | Reason | Impact |
+|---|---|---|---|---|
+| Timed receive lead | `otPlatRadioReceiveAt` is called when the CSL timer fires, `kCslReceiveTimeAhead` (about 0.3 ms) before the window; the platform handles it | `RadioCaps::receive_at_lead_us`: the MAC arms the CSL window timer that much earlier; the Nordic backend asks for 3000 us and trims a window that starts sooner (the first one after CSL was switched on) | the nrf-802154 driver refuses `receive_at` less than about 1 ms ahead (MPSL timeslot reservation) | none; the window itself is where OpenThread's is |
+| Enhanced ACK CSL IE | `otPlatRadioEnableCsl` + the platform's ACK generator | the Nordic driver's ACK IE writer (`set_csl_period`, `set_csl_anchor_time`, `set_csl_ie_peer`); the MAC pushes the sample time again every period (`RadioAction::SetCsl`) | same API as OpenThread's nRF platform | none |
+| Window width | `GetCslWindowEdges` | same formula; parent accuracy from the Child ID Response, worst case before | equal | none |
+| Period change of a running CSL link | works | the parent does not hit the windows afterwards, a fresh `csl period` after the attach works | not diagnosed | open |
+
 ## Matter light (`examples/nrf52840-light`)
 
 - **Early acknowledgement of CASE Sigma1 and Sigma3.** The responder acknowledges both messages at once (standalone MRP ack, then a 30 ms pause so the transport and the Thread driver send it) before the crypto starts. rs-matter 95e4110 has this as a TODO (`MRP_STANDALONE_ACK_TIMEOUT_MS`) and acknowledges only with the reply; on the Cortex-M4 (software P-256, no executor yield during the crypto) the reply came 1.3 to 1.5 s later and chip-tool (MRP 500/300 ms) retransmitted Sigma1 once or twice and Sigma3 up to three times. The Matter SDK acknowledges after 200 ms if no reply is ready; this stack acknowledges unconditionally (one extra 26 byte frame per handshake). Implemented as a patched copy of `rs-matter-sc` in `third_party/rs-matter-sc` (see its `README.OPENTRUST.md`), taken in through `[patch]`.
