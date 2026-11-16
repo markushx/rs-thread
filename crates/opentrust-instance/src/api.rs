@@ -629,6 +629,38 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         r
     }
 
+    /// Request a change of parts of the Active Dataset through a Pending
+    /// Dataset (OT `otDatasetUpdaterRequestUpdate`). `changes` holds the TLVs
+    /// to change; the end is [`Event::DatasetUpdateDone`].
+    #[cfg(feature = "ftd")]
+    pub fn dataset_updater_request(&mut self, changes: &Dataset, now: Instant) -> Result<()> {
+        self.core.now = now;
+        let mut ticks = [0u32; 2];
+        for t in &mut ticks {
+            *t = self.core.rng.next_u32();
+        }
+        let r = {
+            let (ds, mut env) = self.core.ds();
+            self.updater
+                .request_update(ds, &mut env, now, changes, ticks)
+        };
+        self.sync_key_reset();
+        self.poll(now);
+        r
+    }
+
+    /// Forget a Dataset Updater request (OT `otDatasetUpdaterCancelUpdate`).
+    #[cfg(feature = "ftd")]
+    pub fn dataset_updater_cancel(&mut self) {
+        self.updater.cancel_update();
+    }
+
+    /// A Dataset Updater request is pending (OT `otDatasetUpdaterIsUpdateOngoing`).
+    #[cfg(feature = "ftd")]
+    pub fn dataset_updater_is_ongoing(&self) -> bool {
+        self.updater.is_update_ongoing()
+    }
+
     /// The Active Dataset, if there is one.
     pub fn active_dataset(&self, now: Instant) -> Option<Dataset> {
         self.core.datasets.read(DatasetType::Active, now)

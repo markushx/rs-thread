@@ -17,7 +17,7 @@ use crate::frame_security::{FrameSecurity, RxSecurityInfo};
 /// Default `thrKeyRotation` in hours (Thread §7.1.2, Table 7-2).
 pub const DEFAULT_KEY_ROTATION_HOURS: u16 = 672;
 /// Minimum `thrKeyRotation` in hours (Thread §7.1.2: "SHALL be 1 hour").
-pub const MIN_KEY_ROTATION_HOURS: u16 = 1;
+pub const MIN_KEY_ROTATION_HOURS: u16 = 2;
 /// `thrKeySwitchGuardTime = floor(0.93 * thrKeyRotation)` (Thread §7.1.7).
 pub const KEY_SWITCH_GUARD_PERCENT: u32 = 93;
 /// How far ahead of the used outgoing frame counter the persisted value is

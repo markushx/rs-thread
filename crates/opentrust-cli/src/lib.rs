@@ -390,6 +390,8 @@ where
                 channel_mask,
             } => self.pan_id_conflict(*pan_id, *channel_mask),
             Event::DetachedGracefully => self.detach_done(),
+            #[cfg(feature = "ftd")]
+            Event::DatasetUpdateDone(r) => self.dataset_update_done(*r),
             _ => {}
         }
     }

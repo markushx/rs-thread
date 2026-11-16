@@ -813,13 +813,14 @@ fn key_rotation_timer() {
     assert!(k.on_rx_key_sequence(2, t(119)));
     assert_eq!(k.next_deadline(), Some(t(129)));
 
-    // Shorter policy: rotation is due immediately.
+    // Shorter policy: the rotation time is raised to the minimum, which is
+    // due at once (the rotation period started at 119).
     k.set_key_rotation_hours(0);
     assert_eq!(k.key_rotation_hours(), MIN_KEY_ROTATION_HOURS);
-    assert_eq!(k.key_switch_guard_hours(), 0);
-    assert!(k.poll(t(120)));
+    assert_eq!(k.key_switch_guard_hours(), 1);
+    assert!(k.poll(t(121)));
     assert_eq!(k.key_sequence(), 3);
-    assert!(!k.guard_active(t(120)), "guard time 0");
+    assert!(k.guard_active(t(121)), "guard time 1");
 
     k.stop();
     assert_eq!(k.next_deadline(), None);

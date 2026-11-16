@@ -251,6 +251,8 @@ where
                     _ => Err(E::INVALID_ARGS),
                 }
             }
+            #[cfg(feature = "ftd")]
+            "updater" => self.updater(a),
             #[cfg(feature = "commissioning")]
             "mgmtsetcommand" => self.mgmt_set(a),
             #[cfg(feature = "commissioning")]
@@ -280,6 +282,41 @@ where
             | "networkname" | "panid" | "pskc" | "securitypolicy" => self.component(a),
             _ => Err(E::INVALID_COMMAND),
         }
+    }
+
+    /// `dataset updater [start|cancel]` (OT `Dataset::Process<Cmd("updater")>`).
+    #[cfg(feature = "ftd")]
+    fn updater(&mut self, a: &Args<'_>) -> R {
+        match a.get(2) {
+            "" => {
+                let s = if self.i.dataset_updater_is_ongoing() {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                };
+                ln!(self.o, "{s}");
+                Ok(())
+            }
+            "start" => self
+                .i
+                .dataset_updater_request(&self.st.dataset, self.now)
+                .map_err(E::from),
+            "cancel" => {
+                self.i.dataset_updater_cancel();
+                Ok(())
+            }
+            _ => Err(E::INVALID_ARGS),
+        }
+    }
+
+    #[cfg(feature = "ftd")]
+    pub(crate) fn dataset_update_done(&mut self, r: Result<(), opentrust_core::Error>) {
+        let name = match r {
+            Ok(()) => "OK",
+            Err(opentrust_core::Error::Already) => "Already",
+            Err(_) => "Failed",
+        };
+        ln!(self.o, "Dataset update complete: {name}");
     }
 
     fn show(&mut self, opt: &str, d: &Dataset) -> R {

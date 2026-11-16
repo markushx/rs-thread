@@ -104,6 +104,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         while let Some(e) = self.core.cfg.ds_events.pop_front() {
             busy = true;
+            #[cfg(feature = "ftd")]
+            if let Some(o) = self.updater.handle_event(&self.core.datasets, now, e) {
+                self.core.push_event(Event::DatasetUpdateDone(match o {
+                    opentrust_meshcop::updater::UpdateOutcome::Done => Ok(()),
+                    opentrust_meshcop::updater::UpdateOutcome::Conflict => {
+                        Err(opentrust_core::Error::Already)
+                    }
+                }));
+            }
             self.core.push_event(match e {
                 DatasetEvent::ActiveChanged => Event::ActiveDatasetChanged,
                 DatasetEvent::PendingChanged => Event::PendingDatasetChanged,

@@ -270,6 +270,10 @@ pub enum Event {
     /// A graceful detach finished ([`Instance::detach_gracefully`]); Thread
     /// is stopped.
     DetachedGracefully,
+    /// A Dataset Updater request finished ([`Instance::dataset_updater_request`]).
+    /// `Ok` when the Active Dataset has the requested values, `Err(Error::Already)`
+    /// when a conflicting update won.
+    DatasetUpdateDone(core::result::Result<(), opentrust_core::Error>),
     /// The key sequence counter changed (rotation, adopted from a neighbor or
     /// the dataset).
     KeySequenceChanged(u32),
@@ -412,6 +416,8 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) glue: netdata_glue::GlueState,
     pub(crate) dnssrp: dns_srp::DnsSrp,
     pub(crate) dhcp6: dhcp6::Dhcp6,
+    #[cfg(feature = "ftd")]
+    pub(crate) updater: opentrust_meshcop::updater::DatasetUpdater,
     pub(crate) bbrg: bbr::BbrGlue,
     pub(crate) diag_in: Deque<diag::Answer, 2>,
     pub(crate) diag_query_id: u16,
@@ -576,6 +582,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).glue), netdata_glue::GlueState::default);
             put(addr_of_mut!((*p).dnssrp), dns_srp::DnsSrp::new);
             put(addr_of_mut!((*p).dhcp6), dhcp6::Dhcp6::new);
+            #[cfg(feature = "ftd")]
+            put(
+                addr_of_mut!((*p).updater),
+                opentrust_meshcop::updater::DatasetUpdater::new,
+            );
             put(addr_of_mut!((*p).bbrg), bbr::BbrGlue::new);
             put(addr_of_mut!((*p).diag_in), Deque::new);
             addr_of_mut!((*p).diag_query_id).write((prng_seed >> 16) as u16);

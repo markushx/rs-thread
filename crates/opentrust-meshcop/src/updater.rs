@@ -2,7 +2,7 @@
 //!
 //! Changes parts of the Operational Dataset of a running network: the
 //! requested TLVs are merged into the Active Dataset, both timestamps are
-//! advanced by random ticks, a Delay Timer (default five minutes) is added
+//! advanced by random ticks, a Delay Timer (default 30 seconds) is added
 //! and the result is saved as Pending Dataset, which the dataset manager
 //! sends to the leader (`MGMT_PENDING_SET`). The update is finished when
 //! the Active Dataset contains the requested TLVs.
@@ -19,7 +19,10 @@ use opentrust_mle::Role;
 use crate::dataset::{Dataset, DatasetType};
 use crate::manager::{DatasetEnv, DatasetEvent, Datasets};
 use crate::timestamp::{self, Timestamp, compare};
-use crate::tlv::{DEFAULT_DELAY_MS, ty};
+use crate::tlv::ty;
+
+/// Delay Timer of an update without one (OT `OPENTHREAD_CONFIG_DATASET_UPDATER_DEFAULT_DELAY`).
+pub const DEFAULT_DELAY_MS: u32 = 30_000;
 
 /// How a requested update ended (the OT `UpdaterCallback` error).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
