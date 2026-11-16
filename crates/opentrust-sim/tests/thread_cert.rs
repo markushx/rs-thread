@@ -26,7 +26,9 @@
 //!   created with `python3 -m venv` and `pip install` if missing).
 //! - `OPENTHREAD_SRC`: OpenThread source tree (default the vendored one).
 //! - `OT_CLI_PATH`: `ot-cli-ftd` (default `<target dir>/ot-sim/ot-cli-ftd`,
-//!   built by `cargo build -p openthread-sys` when missing).
+//!   built by `cargo build -p openthread-sys` when missing). Nodes with
+//!   `'version': '1.1'` run `ot-cli-ftd-1.1` (a Thread 1.1 build next to it)
+//!   in every configuration.
 //!
 //! Packet verification (`PACKET_VERIFICATION`, needs `tshark`) is off unless
 //! `OPENTRUST_CERT_PKTVERIFY=1`: the cases then also verify the captured packets.
@@ -210,6 +212,22 @@ fn run_case(
         p.set_mode(0o755);
         std::fs::set_permissions(&wrapper, p).unwrap();
     }
+    // Thread 1.1 nodes of the interoperability cases (`'version': '1.1'`)
+    // always run OpenThread's Thread 1.1 build, next to `ot-cli-ftd`.
+    let wrapper11 = dir.join("ot-cli-ftd-1.1");
+    let ot11 = s.ot.with_file_name("ot-cli-ftd-1.1");
+    std::fs::write(
+        &wrapper11,
+        format!("#!/bin/sh\nexec \"{}\" \"$1\"\n", ot11.display()),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut p = std::fs::metadata(&wrapper11).unwrap().permissions();
+        p.set_mode(0o755);
+        std::fs::set_permissions(&wrapper11, p).unwrap();
+    }
     let nodes: Vec<String> = rust_nodes.iter().map(u32::to_string).collect();
     let mtd: Vec<String> = mtd_nodes.iter().map(u32::to_string).collect();
     let mut child = Command::new(&s.py)
@@ -222,6 +240,7 @@ fn run_case(
             if cfg!(target_os = "macos") { "1" } else { "0" },
         )
         .env("OT_CLI_PATH", &wrapper)
+        .env("OT_CLI_PATH_1_1", &wrapper11)
         .env("OT_CLI_FTD", &s.ot)
         .env("OPENTRUST_CLI_VT", &s.rust)
         .env("OPENTRUST_NODES", nodes.join(","))

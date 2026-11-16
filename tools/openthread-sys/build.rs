@@ -92,6 +92,7 @@ fn main() {
             "-DOT_SRP_SERVER=ON",
             "-DOT_UPTIME=ON",
             "-DOT_DUA=ON",
+            "-DOT_BACKBONE_ROUTER=ON",
             "-DOT_MLR=ON",
             "-DOT_CSL_RECEIVER=ON",
             "-DOT_LINK_METRICS_INITIATOR=ON",
@@ -112,6 +113,52 @@ fn main() {
     conf.arg("-S").arg(&src).arg("-B").arg(&build);
     run(&mut conf, "cmake configure");
 
+    // A Thread 1.1 reference node for the interoperability cases
+    // (`OT_CLI_PATH_1_1`): Thread 1.2 scenarios mix 1.1 and 1.2 devices.
+    let build11 = out.join("ot-build-1.1");
+    if cfg!(feature = "cli") {
+        let mut conf = Command::new("cmake");
+        conf.args(["-GNinja", "-DCMAKE_BUILD_TYPE=MinSizeRel"])
+            .arg("-DOT_PLATFORM=simulation")
+            .args([
+                "-DBUILD_TESTING=OFF",
+                "-DOT_SIMULATION_VIRTUAL_TIME=ON",
+                "-DOT_SIMULATION_INFRA_IF=OFF",
+                "-DOT_THREAD_VERSION=1.1",
+                "-DOT_FTD=ON",
+                "-DOT_MTD=OFF",
+                "-DOT_RCP=OFF",
+                "-DOT_APP_NCP=OFF",
+                "-DOT_APP_RCP=OFF",
+                "-DOT_COMPILE_WARNING_AS_ERROR=OFF",
+                "-DOT_LOG_OUTPUT=APP",
+                "-DOT_REFERENCE_DEVICE=ON",
+                "-DOT_BORDER_ROUTER=ON",
+                "-DOT_COMMISSIONER=ON",
+                "-DOT_JOINER=ON",
+                "-DOT_SERVICE=ON",
+                "-DOT_ANYCAST_LOCATOR=ON",
+                "-DOT_COAP=ON",
+                "-DOT_DIAGNOSTIC=ON",
+                "-DOT_PING_SENDER=ON",
+                "-DOT_UPTIME=ON",
+                "-DOT_MAC_FILTER=ON",
+                "-DOT_ECDSA=ON",
+                "-DOT_COAPS=ON",
+                "-DOT_COAP_BLOCK=ON",
+                "-DOT_COAP_OBSERVE=ON",
+            ]);
+        conf.arg("-S").arg(&src).arg("-B").arg(&build11);
+        run(&mut conf, "cmake configure (Thread 1.1)");
+        run(
+            Command::new("ninja")
+                .arg("-C")
+                .arg(&build11)
+                .arg("ot-cli-ftd"),
+            "ninja (Thread 1.1)",
+        );
+    }
+
     let mut targets = vec!["ot-cli-ftd"];
     if mtd {
         targets.push("ot-cli-mtd");
@@ -131,6 +178,11 @@ fn main() {
     for t in &targets {
         let from = build.join("examples/apps/cli").join(t);
         fs::copy(&from, bin_dir.join(t))
+            .unwrap_or_else(|e| panic!("cannot copy {}: {e}", from.display()));
+    }
+    if cfg!(feature = "cli") {
+        let from = build11.join("examples/apps/cli/ot-cli-ftd");
+        fs::copy(&from, bin_dir.join("ot-cli-ftd-1.1"))
             .unwrap_or_else(|e| panic!("cannot copy {}: {e}", from.display()));
     }
     println!("cargo:bin_dir={}", bin_dir.display());
