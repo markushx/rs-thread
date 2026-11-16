@@ -61,6 +61,7 @@ fn main() {
             // Features the thread-cert scripts rely on (as OpenThread's
             // `script/test build`).
             "-DOT_ANYCAST_LOCATOR=ON",
+            "-DOT_BORDER_ROUTER=ON",
             "-DOT_DNS_CLIENT=ON",
             "-DOT_DNS_DSO=OFF",
             "-DOT_ECDSA=ON",
