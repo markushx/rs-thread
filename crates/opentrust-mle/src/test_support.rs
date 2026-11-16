@@ -88,6 +88,8 @@ pub struct TestEnv {
     pub short: Rloc16,
     pub rx_on: bool,
     pub poll: Option<Duration>,
+    /// Candidate the receiver polls while attaching or restoring.
+    pub attach_polling: Option<ExtAddress>,
     /// CSL parameters set by the core: period, channel, parent.
     pub csl: Option<(u16, u8, ExtAddress, Rloc16)>,
     pub csl_accuracy: Option<crate::tlv::CslClockAccuracy>,
@@ -149,6 +151,7 @@ impl TestEnv {
             out: Vec::new(),
             short: Rloc16::INVALID,
             rx_on: true,
+            attach_polling: None,
             poll: None,
             csl: None,
             csl_accuracy: None,
@@ -362,6 +365,9 @@ impl MleEnv for TestEnv {
     }
     fn set_poll_period(&mut self, period: Option<Duration>) {
         self.poll = period;
+    }
+    fn set_attach_polling(&mut self, candidate: Option<ExtAddress>) {
+        self.attach_polling = candidate;
     }
     fn set_csl(&mut self, period: u16, channel: u8, parent: Option<(ExtAddress, Rloc16)>) {
         self.csl = parent

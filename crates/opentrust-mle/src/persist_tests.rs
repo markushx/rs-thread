@@ -131,6 +131,20 @@ fn restore_reattaches_with_child_update() {
 }
 
 #[test]
+fn restored_sleepy_child_polls_for_the_answer() {
+    // The parent holds the Child Update Response of a sleepy child until it
+    // polls: the restoring child polls the restored parent at once.
+    let (_child, _env, p, t, settings) = persisted_child(SLEEPY);
+    let (mut child2, mut env2) = restart(settings, SLEEPY);
+    child2.restore(&mut env2, t).unwrap();
+    assert_eq!(env2.attach_polling, Some(p.env.ext));
+    let (_child, _env, _p, t, settings) = persisted_child(RX_ON);
+    let (mut child3, mut env3) = restart(settings, RX_ON);
+    child3.restore(&mut env3, t).unwrap();
+    assert_eq!(env3.attach_polling, None);
+}
+
+#[test]
 fn restore_with_wrong_challenge_response_is_rejected() {
     let (_child, _env, mut p, t, settings) = persisted_child(RX_ON);
     let (mut child2, mut env2) = restart(settings, RX_ON);

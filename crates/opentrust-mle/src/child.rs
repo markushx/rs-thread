@@ -306,9 +306,20 @@ impl<const C: usize> Mle<C> {
             env.set_rx_on_when_idle(true);
         } else {
             env.set_rx_on_when_idle(false);
-            // A CSL child is reached in its sample windows; no fast attach
-            // polling.
-            env.set_poll_attach_mode(!self.is_csl_enabled());
+            if detached {
+                // Restore after a reset: the parent keeps the answer for a
+                // sleepy child until it polls for it, and no poll runs yet
+                // (it starts with the child state). Also for a CSL child: the
+                // restoring request carries no CSL TLVs, so the parent does
+                // not know the sample windows yet.
+                if let Some(p) = &self.parent {
+                    env.set_attach_polling(Some(p.router.neighbor.ext_address));
+                }
+            } else {
+                // A CSL child is reached in its sample windows; no fast
+                // attach polling.
+                env.set_poll_attach_mode(!self.is_csl_enabled());
+            }
         }
         Ok(())
     }
