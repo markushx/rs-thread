@@ -1298,6 +1298,12 @@ impl<
         self.poll.period()
     }
 
+    /// The parent supports the enhanced keep-alive (Thread 1.2 and later, OT
+    /// `Neighbor::IsEnhancedKeepAliveSupported`).
+    pub fn set_parent_enhanced_keep_alive(&mut self, on: bool) {
+        self.poll.parent_enhanced_keep_alive = on;
+    }
+
     /// Secure data polls (default `true`, as Thread requires).
     pub fn set_poll_security(&mut self, on: bool) {
         self.poll.secure = on;
@@ -2510,6 +2516,12 @@ impl<
                     // resynchronizes it: it replaces the next keep-alive
                     // poll (OpenThread `Mac::ResetKeepAliveTimer`).
                     self.poll.reset_keep_alive(now);
+                } else if let (Ok(s), true) = (&res, tx.ack_request) {
+                    // Thread 1.2 enhanced keep-alive: a secured data frame
+                    // that the parent acknowledged does the poll's job.
+                    if tx.frame.first().is_some_and(|b| b & 0x08 != 0) {
+                        self.poll.handle_acked_data(s.frame_pending, now);
+                    }
                 }
                 if res.is_err() {
                     c.tx_direct_max_retry_expiry += 1;

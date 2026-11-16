@@ -744,6 +744,29 @@ impl<const C: usize> Mle<C> {
         Ok(())
     }
 
+    /// A secured data frame (key ID mode 1) arrived from `src`: from a
+    /// sleepy child of Thread version 1.2 or later it counts as a keep-alive
+    /// (OT `Mac::ProcessReceiveSecurity`, enhanced keep-alive).
+    pub fn data_frame_received(&mut self, src: opentrust_mac::frame::Address, now: Instant) {
+        use opentrust_mac::frame::Address;
+        let idx = match src {
+            Address::Short(s) => self
+                .children
+                .index_by_rloc(Rloc16(s.0), crate::neighbor::StateFilter::Valid),
+            Address::Extended(e) => self
+                .children
+                .iter(crate::neighbor::StateFilter::Valid)
+                .position(|c| c.neighbor.ext_address == e),
+            Address::None => None,
+        };
+        if let Some(c) = idx.and_then(|i| self.children.get_mut(i))
+            && !c.neighbor.is_rx_on_when_idle()
+            && c.neighbor.version >= crate::consts::THREAD_VERSION_1_2
+        {
+            c.neighbor.last_heard = now;
+        }
+    }
+
     /// The network key changed: the key sequence restarts at 0 and the
     /// peers' outgoing frame counters restart with it, so forget the
     /// incoming key sequence and frame counters of the parent, the routers

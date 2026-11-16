@@ -410,6 +410,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.glue.replay_drops = self.glue.replay_drops.wrapping_add(1);
             return;
         }
+        if link_security {
+            self.mle.data_frame_received(src, now);
+        }
         self.core.rx_link = LinkRxInfo {
             rss: rx.rssi,
             lqi: rx.lqi,
@@ -887,6 +890,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Keep the MAC's short -> extended address map and the source match
     /// table in line with the neighbor tables and the indirect queues.
     pub(crate) fn sync_mac_neighbors(&mut self) {
+        let keep_alive = self.mle.parent().is_some_and(|p| {
+            p.router.neighbor.version >= opentrust_mle::consts::THREAD_VERSION_1_2
+        });
+        self.core.mac.set_parent_enhanced_keep_alive(keep_alive);
         let mut want: Vec<(u16, [u8; 8]), 40> = Vec::new();
         if let Some(p) = self.mle.parent() {
             let n = &p.router.neighbor;

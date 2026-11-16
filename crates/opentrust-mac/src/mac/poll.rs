@@ -32,6 +32,9 @@ pub(crate) struct PollSender {
     attach_mode: bool,
     /// CSL period (zero: CSL off), the retransmission period never exceeds it.
     csl_period: Duration,
+    /// The parent supports the enhanced keep-alive (Thread 1.2 and later): a
+    /// secured data frame acknowledged by it replaces the next poll.
+    pub parent_enhanced_keep_alive: bool,
 }
 
 impl Default for PollSender {
@@ -50,6 +53,7 @@ impl Default for PollSender {
             fast_remaining: 0,
             attach_mode: false,
             csl_period: Duration::ZERO,
+            parent_enhanced_keep_alive: false,
         }
     }
 }
@@ -121,6 +125,20 @@ impl PollSender {
         if self.enabled && self.deadline.is_some() && !self.retx_mode && self.fast_remaining == 0 {
             self.timer_start = now;
             self.deadline = Some(now.saturating_add(self.period));
+        }
+    }
+
+    /// OT `DataPollSender::ProcessTxDone` for a secured data frame that the
+    /// parent acknowledged: the poll timeout count restarts and, unless the
+    /// ACK announced pending data (the caller polls then), the keep-alive
+    /// poll is postponed.
+    pub fn handle_acked_data(&mut self, frame_pending: bool, now: Instant) {
+        if !self.enabled || !self.parent_enhanced_keep_alive {
+            return;
+        }
+        self.timeouts = 0;
+        if !frame_pending {
+            self.reset_keep_alive(now);
         }
     }
 
@@ -253,5 +271,29 @@ impl PollSender {
         }
         self.timeouts = 0;
         frame_pending
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acked_data_frame_postpones_the_keep_alive_poll() {
+        let t = |s: u64| Instant::from_secs(s);
+        let mut p = PollSender::default();
+        p.start(Address::None, t(0));
+        p.set_default_period(Duration::from_secs(26), t(0));
+        let due = p.deadline().unwrap();
+        // Parents before Thread 1.2 do not count data frames.
+        p.handle_acked_data(false, t(10));
+        assert_eq!(p.deadline(), Some(due));
+        p.parent_enhanced_keep_alive = true;
+        p.handle_acked_data(false, t(10));
+        assert_eq!(p.deadline(), Some(t(10) + Duration::from_secs(26)));
+        // Pending data: the caller polls, the timer stays.
+        let d = p.deadline();
+        p.handle_acked_data(true, t(12));
+        assert_eq!(p.deadline(), d);
     }
 }
