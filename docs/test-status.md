@@ -110,3 +110,7 @@ End-to-end CSL tests in `crates/opentrust-sim/tests/csl.rs` (virtual time, mixed
 ## Host tests
 
 `cargo test --workspace --exclude openthread-sys`: 980 pass (the CSL work added the virtual radio tests in `opentrust_sim::vt`, the MAC `csl_child_sample` test and the five tests of `opentrust-sim/tests/csl.rs`). The mixed OpenThread / OpenTrust network tests (`crates/opentrust-sim/tests/mixed.rs`: OT leader with OpenTrust router and the reverse, router tables, pings both ways) run when `ot-cli-ftd` is built and are skipped otherwise.
+
+## Gaps closed (key handling, diagnostics, Thread 1.2)
+
+Regression `Cert_5_` to `Cert_9_`, `ot,each,all`: 706 runs, 704 pass; the two failures are the known `Cert_6_5_02` (node 3, all). Newly passing: 5.7.1 to 5.7.3 (`networkdiagnostic` CLI), 6.2.2 (did not reproduce), `test_mle_msg_key_seq_jump`, `test_router_downgrade_on_sec_policy_change`, `v1_2_test_enhanced_frame_pending`, `v1_2_test_enhanced_keep_alive`, `v1_2_test_single_probe`. Open: `test_key_rotation_and_key_guard_time` and `test_dataset_updater` need `dataset updater`; the LowPower link metrics cases still fail (`mac send emptydata`, subject side).
