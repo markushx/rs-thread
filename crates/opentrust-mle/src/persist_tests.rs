@@ -138,6 +138,9 @@ fn restored_sleepy_child_polls_for_the_answer() {
     let (mut child2, mut env2) = restart(settings, SLEEPY);
     child2.restore(&mut env2, t).unwrap();
     assert_eq!(env2.attach_polling, Some(p.env.ext));
+    // By short address: the parent's source match entry for the child is a
+    // short address one.
+    assert_eq!(env2.restore_poll_rloc, Some(child2.rloc16().parent()));
     let (_child, _env, _p, t, settings) = persisted_child(RX_ON);
     let (mut child3, mut env3) = restart(settings, RX_ON);
     child3.restore(&mut env3, t).unwrap();

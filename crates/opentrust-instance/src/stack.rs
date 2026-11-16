@@ -630,6 +630,15 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         }
     }
 
+    fn set_restore_polling(&mut self, _parent_ext: ExtAddress, parent_rloc16: Rloc16) {
+        // The parent addresses a restored child as it did before the reset:
+        // by short address.
+        self.mac.set_poll_while_rx_on(true);
+        self.mac
+            .start_polling(Address::Short(parent_rloc16.into()), self.now);
+        self.mac.set_poll_attach_mode(true, self.now);
+    }
+
     fn set_poll_attach_mode(&mut self, fast: bool) {
         self.mac.set_poll_attach_mode(fast, self.now);
     }

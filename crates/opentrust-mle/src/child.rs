@@ -313,7 +313,10 @@ impl<const C: usize> Mle<C> {
                 // restoring request carries no CSL TLVs, so the parent does
                 // not know the sample windows yet.
                 if let Some(p) = &self.parent {
-                    env.set_attach_polling(Some(p.router.neighbor.ext_address));
+                    env.set_restore_polling(
+                        p.router.neighbor.ext_address,
+                        p.router.neighbor.rloc16,
+                    );
                 }
             } else {
                 // A CSL child is reached in its sample windows; no fast

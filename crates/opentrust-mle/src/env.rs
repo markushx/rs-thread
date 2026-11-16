@@ -355,6 +355,16 @@ pub trait MleEnv {
     /// a parent that sends the response directly is heard too. Default:
     /// no-op.
     fn set_attach_polling(&mut self, _candidate: Option<ExtAddress>) {}
+    /// A sleepy device that restored its state after a reset waits for the
+    /// Child Update Response of its parent: poll it at the attach poll period
+    /// with the addressing the parent knows the child by (short addresses:
+    /// the parent's source match entry for the child is a short address one,
+    /// and a poll by extended address would not be acknowledged with the
+    /// frame pending bit). Default: [`set_attach_polling`](Self::set_attach_polling)
+    /// by extended address.
+    fn set_restore_polling(&mut self, parent_ext: ExtAddress, _parent_rloc16: Rloc16) {
+        self.set_attach_polling(Some(parent_ext));
+    }
     /// Poll quickly while attaching (OT `DataPollSender::SetAttachMode`).
     fn set_poll_attach_mode(&mut self, _fast: bool) {}
     /// Poll the parent a few times at the fast poll period, e.g. after a
