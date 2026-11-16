@@ -430,6 +430,7 @@ Security-relevant decisions for the review before M4:
     - [ ] BBR / DUA / MLR (Thread 1.2): needs a sim `ot-cli-ftd` with `OT_BACKBONE_ROUTER` to get a baseline; MATN, BBR 5.11.1 and the `border_router` scripts need an OTBR / backbone harness
     - [ ] OpenThread functional tests that fail with all-OpenTrust nodes: SRP (CLI), DNS-SD, diag, history, radio filter, anycast locator, child supervision, detach, route table (list in the status file)
     - [ ] pktverify with `tshark` 4.6 is unreliable (dissection differs); pin the Wireshark version the scripts were written for
+    - [ ] pktverify passes with OpenThread but fails with OpenTrust for 15 cases (5.2.4, 5.3.5, 5.3.8, 5.8.2, 5.8.3, 6.1.3, 6.1.7, 6.2.2, 6.5.1, 6.5.2, 6.6.1, 6.6.2, 9.2.12, 9.2.17, LowPower 5.3.1): analyse the packet differences
 
 ## Open questions
 
