@@ -74,5 +74,15 @@ a count.
 - A sleepy attach (`mode -` set before `thread start`) takes 15 to 45 s (Parent
   Requests, the radio sends bursts of 16 identical 74-byte broadcasts 82 ms apart between
   rounds); the non-sleepy attach takes a few seconds.
+  In the simulation (`opentrust-sim/tests/sleepy_attach.rs`) an OpenTrust SED attaches as
+  fast as an OpenThread one (1.2 s), also with the CSL period set first, and its Parent
+  Request rounds have OpenThread's timing. The bursts are not retransmissions: after the
+  Parent Request rounds OpenThread and OpenTrust both send an MLE Announce per channel
+  (16 frames, 82 ms apart, a new sequence number each). A radio that transmits from sleep
+  has to listen on the transmit channel afterwards (contract C4); the embassy backend
+  of `opentrust-nrf` did not (fixed, and the simulated radio now transmits from sleep
+  and does the same). The `radio-nrf802154` backend does not transmit from sleep, so this
+  does not explain the measurement: needs hardware (log the radio actions and the rx
+  state of the first Parent Request round).
 - The window could be shortened (the 5.5 ms after-time is OpenThread's conservative
   choice) to lower the duty cycle.

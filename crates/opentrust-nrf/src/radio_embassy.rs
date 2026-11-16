@@ -204,7 +204,13 @@ impl Radio for NrfRadio<'_> {
         self.tx.copy_from_slice(psdu);
         // Dropping this future mid-frame is fine: the driver's next
         // operation disables the radio first.
-        match self.hw.try_send(&mut self.tx).await {
+        let sent = self.hw.try_send(&mut self.tx).await;
+        // The radio listens on the transmit channel afterwards (contract C4),
+        // also when it transmitted from sleep (`SLEEP_TO_TX`): a sleepy device
+        // sends its Parent Requests that way and has to hear the answer.
+        self.rx_channel = channel;
+        self.receiving = true;
+        match sent {
             Ok(()) => Ok(None),
             Err(_) => Err(RadioErrorKind::TxFailed),
         }

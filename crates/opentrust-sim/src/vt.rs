@@ -295,7 +295,7 @@ pub type VtInstance = Instance<FileSettings, SoftCrypto, SimRng>;
 /// [`set_clock`]) and builds the (enhanced) ACKs itself.
 pub fn caps() -> RadioCaps {
     RadioCaps {
-        phy: Capabilities::ENERGY_SCAN,
+        phy: Capabilities::ENERGY_SCAN | Capabilities::SLEEP_TO_TX,
         mac: MacCapabilities::TX_ACK | MacCapabilities::SRC_MATCH,
         clock: Some(RadioClock(radio_clock)),
         csl_accuracy_ppm: 0,
@@ -739,6 +739,9 @@ impl VtRadio {
                     );
                     return;
                 }
+                // The radio is in receive on the transmit channel afterwards,
+                // also when it transmitted from sleep.
+                self.state = RxState::Receive(tx.channel);
                 self.tx = Some(PendingTx {
                     psdu,
                     seq,
