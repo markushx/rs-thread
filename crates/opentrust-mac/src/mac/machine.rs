@@ -2215,14 +2215,18 @@ impl<
             // Polled with Frame Pending but nothing queued (src-match
             // overflow or a pinned entry): answer with an empty frame so the
             // child can go back to sleep (OpenThread `PrepareEmptyFrame`).
-            match self.build_empty_frame(src) {
-                Ok(mut frame) => match self.prepare_frame(&mut frame, true) {
-                    Ok(p) => {
-                        self.start_frame(TxKind::Indirect(None), frame, self.channel, true, p, now)
-                    }
-                    Err(_) => self.finish_operation(),
-                },
-                Err(_) => self.finish_operation(),
+            // Secured when the device has keys, as OT does; without keys
+            // (no network key yet) the frame goes out unsecured.
+            let prepared = [true, false].into_iter().find_map(|secured| {
+                let mut frame = self.build_empty_frame(src, secured).ok()?;
+                let p = self.prepare_frame(&mut frame, true).ok()?;
+                Some((frame, p))
+            });
+            match prepared {
+                Some((frame, p)) => {
+                    self.start_frame(TxKind::Indirect(None), frame, self.channel, true, p, now);
+                }
+                None => self.finish_operation(),
             }
             return;
         };
@@ -2344,16 +2348,25 @@ impl<
         FrameBuf::from_slice(&buf[..n]).map_err(|_| Error::NoBufs)
     }
 
-    fn build_empty_frame(&self, dst: Address) -> Result<FrameBuf> {
+    fn build_empty_frame(&self, dst: Address, secured: bool) -> Result<FrameBuf> {
         let mut buf = [0u8; MAX_FRAME_LEN];
-        let n = FrameBuilder::new(&mut buf)
+        let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::Data)
             .version(FrameVersion::V2006)
             .pan_id(self.pan_id)
             .dst(dst)
             .src(self.own_src_for(dst))
-            .ack_request(true)
-            .build()?;
+            .ack_request(true);
+        // Secured like OT `PrepareEmptyFrame`: a sleepy child counts the
+        // frame as a sign of life of its parent (supervision listener).
+        if secured {
+            b = b.security(SecurityHeader::new(
+                SecurityLevel::EncMic32,
+                0,
+                KeyIdentifier::Index(0),
+            ));
+        }
+        let n = b.build()?;
         FrameBuf::from_slice(&buf[..n]).map_err(|_| Error::NoBufs)
     }
 

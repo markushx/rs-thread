@@ -143,6 +143,12 @@ pub struct ChildInfo {
     pub rx_on_when_idle: bool,
     /// Full Thread device.
     pub full_thread_device: bool,
+    /// Network Data version the child last received.
+    pub network_data_version: u8,
+    /// Supervision interval the child asked for, seconds (0 = none).
+    pub supervision_interval: u16,
+    /// CSL transmissions of the child are synchronized.
+    pub csl_synchronized: bool,
 }
 
 /// An entry of the router table (OT `otRouterInfo`).
@@ -515,6 +521,9 @@ where
                 average_rssi: c.neighbor.link_info.average_rss(),
                 rx_on_when_idle: c.neighbor.mode.rx_on_when_idle(),
                 full_thread_device: c.neighbor.mode.full_thread_device(),
+                network_data_version: c.network_data_version,
+                supervision_interval: c.supervision_interval,
+                csl_synchronized: c.csl_synchronized,
             });
         }
         v

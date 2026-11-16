@@ -952,6 +952,9 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
         sink: &mut S,
     ) -> Result<PollOutcome> {
         let child = Self::poll_child(r, mac_src).ok_or(Error::NotFound)?;
+        // An empty answer to the poll is no message: it does not restart the
+        // supervision interval of the child.
+        let queued = self.indirect.count(child) > 0;
         let out = self.indirect.handle_data_poll(
             child,
             r.mle.rloc16(),
@@ -959,7 +962,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
             MAX_FRAME_PAYLOAD,
             sink,
         );
-        if matches!(out, Ok(PollOutcome::Sent { .. })) {
+        if queued && matches!(out, Ok(PollOutcome::Sent { .. })) {
             self.note_child_message_sent(child);
         }
         out

@@ -80,8 +80,12 @@ impl ChildCtx {
         }
     }
 
+    /// Back to the initial state; the supervision failure counter stays
+    /// (OT `SupervisionListener::mCounter` is only cleared on request).
     pub fn reset(&mut self) {
+        let failures = self.supervision_failures;
         *self = Self::new();
+        self.supervision_failures = failures;
     }
 }
 

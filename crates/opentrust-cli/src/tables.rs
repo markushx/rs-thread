@@ -58,18 +58,18 @@ where
                 out!(self.o, "| {:3} ", c.rloc16.0 & 0x1ff);
                 out!(self.o, "| 0x{:04x} ", c.rloc16.0);
                 out!(self.o, "| {:10} ", c.timeout_secs);
-                // Age, LQ In, C_VN, CSL, QMsgCnt and Suprvsn are not tracked
-                // per child by the instance API.
+                // Age, LQ In and QMsgCnt are not tracked per child by the
+                // instance API.
                 out!(self.o, "| {:10} ", 0);
                 out!(self.o, "| {:5} ", 0);
-                out!(self.o, "| {:4} ", 0);
+                out!(self.o, "| {:4} ", c.network_data_version);
                 out!(self.o, "|{:1}", u8::from(c.rx_on_when_idle));
                 out!(self.o, "|{:1}", u8::from(c.full_thread_device));
                 out!(self.o, "|{:1}", u8::from(c.full_thread_device));
                 out!(self.o, "|{:3}", NEIGHBOR_VERSION);
-                out!(self.o, "| {:1} ", 0);
+                out!(self.o, "| {:1} ", u8::from(c.csl_synchronized));
                 out!(self.o, "| {:5} ", 0);
-                out!(self.o, "| {:5} ", 0);
+                out!(self.o, "| {:5} ", c.supervision_interval);
                 out!(self.o, "| ");
                 hex(self.o, &c.ext.0);
                 ln!(self.o, " |");
