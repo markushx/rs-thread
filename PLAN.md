@@ -412,10 +412,10 @@ Security-relevant decisions for the review before M4:
   - [x] Mixed OT/OpenTrust network in OT's virtual-time simulation (`opentrust-sim/tests/mixed.rs`), OpenTrust as leader and as router
   - [x] `thread-cert` harness (`opentrust-sim/tests/thread_cert.rs`)
   - [x] Core 5.1 / 5.2 / 5.3 cases pass with OpenTrust in every role (273 of 273 runs: all OpenThread, each node OpenTrust, all OpenTrust; MTD build for the MED / SED nodes; `docs/test-status.md`). The five baseline failures were an `ot-cli-ftd` built without Border Router support, then DHCPv6 (5.3.8, 5.3.9)
-- [ ] **M4 – Commissioning & Matter**: Joiner + Commissioner interop with OT; SRP client; rs-matter device reachable over a Rust Thread node in sim
+- [x] **M4 – Commissioning & Matter**: Joiner + Commissioner interop with OT; SRP client; rs-matter device reachable over a Rust Thread node in sim
   - [x] SRP client (against the OTBR SRP server on hardware)
   - [x] rs-matter device reachable over a Rust Thread node in sim (`opentrust-matter/tests/light.rs`) and on the nRF52840 through an OTBR
-  - [ ] Joiner + Commissioner interop with OT nodes (in sim or on hardware)
+  - [x] Joiner + Commissioner interop with OT nodes in sim (`opentrust-sim/tests/commissioning_mixed.rs`: OT Commissioner with an OpenTrust FTD / MTD Joiner, OpenTrust Commissioner with an OT Joiner, Joiner two hops away behind a Joiner Router of the other implementation, wrong PSKd on both sides, petition / keep-alive / resign and a refused second Commissioner, MGMT_ACTIVE_SET; thread-cert `Cert_8_*` pass in all configurations, `Cert_9_2_*` with the gaps listed in `docs/test-status.md`; not run on hardware)
 - [ ] **M5 – Hardware**: nRF52840 + ESP32-C6 nodes join an OT/OTBR network
   - [x] nRF52840: joins OT nodes and an OTBR network (router, child, leader; Matter light commissioned through the OTBR)
   - [ ] ESP32-C6 (Phase 14)

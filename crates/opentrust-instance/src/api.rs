@@ -116,6 +116,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// `otThreadBecomeLeader`).
     #[cfg(feature = "ftd")]
     pub fn become_leader(&mut self, now: Instant) -> Result<()> {
+        if self.mle.role() != Role::Disabled {
+            // Thread is running (detached or attached): a new partition
+            // with this device as its leader (OT `Mle::BecomeLeader`).
+            self.core.now = now;
+            self.mle.become_leader(&mut self.core, now, false)?;
+            self.poll(now);
+            return Ok(());
+        }
         self.start_inner(now, true)
     }
 

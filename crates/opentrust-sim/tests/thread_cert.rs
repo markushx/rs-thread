@@ -8,7 +8,10 @@
 //!
 //! - `OPENTRUST_CERT=1`: run.
 //! - `OPENTRUST_CERT_CASES`: comma-separated substrings of case file names
-//!   (default: `Cert_5_1_`, `Cert_5_2_`, `Cert_5_3_`).
+//!   (default: `Cert_5_1_`, `Cert_5_2_`, `Cert_5_3_`; the commissioning and
+//!   dataset cases are `Cert_8_`, `Cert_9_2_`). The cases read the `[THCI]`
+//!   commissioning lines from the CLI output, so `ot-cli-ftd` must log
+//!   through the CLI (`openthread-sys` builds it with `OT_LOG_OUTPUT=APP`).
 //! - `OPENTRUST_CERT_CONFIGS`: which nodes are OpenTrust, comma-separated:
 //!   `ot` (all OpenThread, the baseline), `each` (one run per node of the
 //!   case with only that node OpenTrust), `all` (all OpenTrust), `mtd:3`
