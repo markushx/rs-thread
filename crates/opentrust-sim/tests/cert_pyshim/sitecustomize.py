@@ -69,3 +69,22 @@ if os.environ.get("OPENTRUST_FAKE_LINUX_UNAME") == "1":
     import importlib.util
 
     sys.meta_path.insert(0, _PatchLayerFields())
+
+    # The same for the list parsers (`_list(_auto)`) that captured the
+    # original parser: report booleans as "1" / "0" from the field itself.
+    try:
+        import pyshark.packet.fields as _pf
+
+        _orig_default_value = _pf.LayerField.get_default_value
+
+        def _default_value(self):
+            v = _orig_default_value(self)
+            if v == "True":
+                return "1"
+            if v == "False":
+                return "0"
+            return v
+
+        _pf.LayerField.get_default_value = _default_value
+    except ImportError:
+        pass
