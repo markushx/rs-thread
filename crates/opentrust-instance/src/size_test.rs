@@ -27,7 +27,7 @@ const TOTAL_BOUND: usize = 113_800;
 ))]
 const TOTAL_BOUND: usize = 87_500;
 #[cfg(not(feature = "ftd"))]
-const TOTAL_BOUND: usize = 79_000;
+const TOTAL_BOUND: usize = 64_700;
 
 fn row<T>(name: &str, v: &T) {
     std::println!("{:>8} {}", size_of_val(v), name);

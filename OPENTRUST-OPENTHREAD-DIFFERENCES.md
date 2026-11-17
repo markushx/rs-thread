@@ -1016,3 +1016,8 @@ key-value store) explicitly; the stack knows nothing of that store.
 - **OpenTrust:** `PHY_RSSI` is a 1 ms energy scan (the `Radio` trait has no instantaneous RSSI); `MAC_SCAN_STATE` energy scans run inline and block the RCP (no frames are received meanwhile); `RESET` does not restart the processor, it clears the RCP state and reports `RESET_SOFTWARE`.
 - **OpenTrust:** the source match table is configured as a whole (`SrcMatchConfig`, 16 short and 16 extended entries); more entries answer `NOMEM`.
 - **OpenTrust:** `opentrust-rcp-sim` reports RSSI -20 dBm for every frame and energy -100 dBm for every energy scan (as the OpenThread simulation) and runs in real time only: a posix host cannot drive it in virtual time.
+
+## End-device sizing (`opentrust-instance` `config` module)
+
+- **OpenThread:** an MTD build drops the parent-role code at compile time (`OPENTHREAD_FTD`: the MPL buffered-message set in `ip6_mpl.cpp`, the child table, the indirect queue); capacities are config macros.
+- **OpenTrust:** the code stays in the crates, the capacities do not. With `default-features = false`, `config` sets the child table, the forwarder's indirect queue and its pool, the held datagrams, the MPL buffered-message set (the seed set stays, as OT `MplSeed` handling is not FTD-only), and the MAC indirect queue and CSL child table to size 0. The MAC poll-request queue keeps one slot (`heapless::Deque` cannot be empty) and the MAC short-to-extended address map has 4 entries instead of 32. The parent-role code paths remain compiled but find empty tables.

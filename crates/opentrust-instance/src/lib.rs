@@ -35,10 +35,15 @@
 //! # End-device builds
 //!
 //! `default-features = false` is a real end-device build: no router,
-//! leader, Router ID, indirect queue or commissioner code. The forwarder
-//! sends everything except link-local traffic to the parent and drops mesh
-//! header frames (OT `mesh_forwarder_mtd.cpp`); `become_leader` does not
-//! exist.
+//! leader, Router ID or commissioner code. The forwarder sends everything
+//! except link-local traffic to the parent and drops mesh header frames (OT
+//! `mesh_forwarder_mtd.cpp`); `become_leader` does not exist. The tables of
+//! the parent role are sized zero in [`config`]: no child table
+//! (`CHILDREN = 0`), no indirect queue or hold buffers in the forwarder, no
+//! MPL buffered-message set (the seed set stays), and no MAC indirect, CSL
+//! child or poll-request storage (the poll request queue keeps its one slot
+//! because `heapless::Deque` cannot be empty). The MAC neighbour map has four
+//! entries.
 //!
 //! # SRP and DNS clients
 //!
@@ -549,7 +554,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             let c = addr_of_mut!((*p).core);
             put(addr_of_mut!((*c).mac), || {
                 let keys = KeyManager::new(crypto.clone(), api::placeholder_key());
-                Mac::new(config.radio, ext, keys, MacRng::new(mac_seed))
+                Mac::with_capacities(config.radio, ext, keys, MacRng::new(mac_seed))
             });
             let cur = opentrust_meshcop::manager::CurrentConfig {
                 channel: (*c).mac.channel(),
