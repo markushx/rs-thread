@@ -980,3 +980,9 @@ Thread starts, so the address persists through the network information only.
 The firmware no longer keeps its own copy in flash (the CLI and node examples
 use the sentinel). The Matter light keeps passing its persisted address (its
 key-value store) explicitly; the stack knows nothing of that store.
+
+## Address Registration order
+
+No deviation: like OT `AppendAddressRegistrationTlv`, the Domain Unicast Address is
+registered right after the ML-EID (before the other unicast addresses), so a Thread 1.1
+parent with room for few addresses keeps it.

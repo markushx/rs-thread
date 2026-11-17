@@ -680,7 +680,24 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
 
     fn registered_addresses(&self, f: &mut dyn FnMut(Ipv6Addr)) {
         let ml_eid = self.ml_eid_addr();
+        let mlp = self.cfg.cur.mesh_local_prefix;
+        // The Domain Unicast Address is not an address of the Thread
+        // interface's own kind: a Thread-origin address in the Domain Prefix.
+        let domain = opentrust_mesh::netdata::backbone::domain_prefix(&self.netdata.view());
+        let is_dua = |a: &opentrust_net::netif::UnicastAddress| {
+            a.origin == AddressOrigin::Thread
+                && a.valid
+                && !a.rloc
+                && a.addr != ml_eid
+                && domain.is_some_and(|d| d.contains(&a.addr))
+        };
         let mut n = 0;
+        // OT `AppendAddressRegistrationTlv`: after the ML-EID, the DUA is
+        // prioritized so a parent with room for few addresses keeps it.
+        if let Some(a) = self.ip6.netif.unicast_addresses().find(|a| is_dua(a)) {
+            n += 1;
+            f(a.addr);
+        }
         for a in self.ip6.netif.unicast_addresses() {
             if n >= MAX_REGISTERED_ADDRESSES {
                 break;
@@ -688,15 +705,11 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             if a.rloc
                 || !a.valid
                 || a.addr == ml_eid
+                || is_dua(a)
                 || a.addr.is_unicast_link_local()
                 || (a.origin == AddressOrigin::Thread
-                    && (opentrust_net::addr::is_anycast_locator(
-                        &a.addr,
-                        &self.cfg.cur.mesh_local_prefix,
-                    ) || opentrust_net::addr::is_routing_locator(
-                        &a.addr,
-                        &self.cfg.cur.mesh_local_prefix,
-                    )))
+                    && (opentrust_net::addr::is_anycast_locator(&a.addr, &mlp)
+                        || opentrust_net::addr::is_routing_locator(&a.addr, &mlp)))
             {
                 continue;
             }
