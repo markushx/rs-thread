@@ -12,8 +12,8 @@ harness are in [test-status.md](test-status.md).
 
 - Harness: `crates/opentrust-sim/tests/thread_cert.rs` (`OPENTRUST_CERT=1`), virtual time, OpenThread
   `simulator.py`, `THREAD_VERSION=1.4`, `ot-cli-ftd` from `cargo build -p openthread-sys`
-  (`OT_BORDER_ROUTER`, `OT_DUA`, `OT_MLR`, `OT_CSL_RECEIVER`, link metrics, SRP client and server; **no**
-  `OT_BACKBONE_ROUTER`).
+  (`OT_BORDER_ROUTER`, `OT_DUA`, `OT_MLR`, `OT_BACKBONE_ROUTER`, `OT_CSL_RECEIVER`, link metrics, SRP client and
+  server; plus `ot-cli-ftd-1.1`, a Thread 1.1 build for the nodes with `'version': '1.1'`).
 - Configurations per case: `ot` (all nodes OpenThread, the baseline), `each` (one run per node of the
   topology with only that node `opentrust-cli-vt`), `all` (all nodes OpenTrust). The "runs passed" column
   counts these runs (without the MTD runs). The MTD column lists runs with the MED / SED nodes of the
@@ -214,7 +214,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | SRP | 15 | 0 | 0 | 14 | 1 | 0 |
 | DNS / DNS-SD | 3 | 0 | 0 | 3 | 0 | 0 |
 | CoAP / CoAPS | 4 | 2 | 0 | 1 | 0 | 1 |
-| Backbone router / DUA / MLR (Thread 1.2) | 7 | 0 | 0 | 0 | 7 | 0 |
+| Backbone router / DUA / MLR (Thread 1.2) | 7 | 3 | 4 | 0 | 0 | 0 |
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
 | Link metrics / enhanced ack (Thread 1.2) | 5 | 0 | 3 | 2 | 0 | 0 |
 | Python unit tests of the cert libraries (no nodes) | 8 | 0 | 0 | 0 | 0 | 8 |
@@ -261,13 +261,13 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 | script | status | runs passed | detail |
 |---|---|---|---|
-| `test_pbbr_aloc` | baseline-fail | 0/2 | all-OT: FAIL FAILED (errors=1); baseline: no `OT_BACKBONE_ROUTER` |
-| `v1_2_test_backbone_router_service` | baseline-fail | 0/5 | all-OT: FAIL FAILED (errors=1); baseline: sim `ot-cli-ftd` has no `OT_BACKBONE_ROUTER`; needs a backbone link |
-| `v1_2_test_domain_unicast_address` | baseline-fail | 0/7 | all-OT: FAIL FAILED (errors=1); baseline: no `OT_BACKBONE_ROUTER` |
-| `v1_2_test_domain_unicast_address_registration` | baseline-fail | 0/11 | all-OT: FAIL FAILED (errors=1); baseline: no `OT_BACKBONE_ROUTER` |
-| `v1_2_test_dua_handle_address_error` | baseline-fail | 0/6 | all-OT: FAIL FAILED (errors=1); baseline: no `OT_BACKBONE_ROUTER` |
-| `v1_2_test_multicast_listener_registration` | baseline-fail | 0/10 | all-OT: FAIL FAILED (errors=11); baseline: no `OT_BACKBONE_ROUTER` |
-| `v1_2_test_multicast_registration` | baseline-fail | 0/10 | all-OT: FAIL FAILED (failures=1); baseline: no `OT_BACKBONE_ROUTER` |
+| `test_pbbr_aloc` | pass | 5/5 | all-OT, each, all pass |
+| `v1_2_test_backbone_router_service` | pass | 6/6 | all-OT, each, all pass |
+| `v1_2_test_domain_unicast_address` | partial | 5/7 | each node 5 (SED with a Thread 1.1 parent) and all: the BBR cannot ping its DUA (registration through the BBR service ALOC works, `v1_2_test_domain_unicast_address_registration` passes) |
+| `v1_2_test_domain_unicast_address_registration` | pass | 11/11 | all-OT, each, all pass |
+| `v1_2_test_dua_handle_address_error` | partial | 5/6 | each passes; `all` not rerun after the FTD-child all-routers fix (a run before it failed pinging the FED DUA) |
+| `v1_2_test_multicast_listener_registration` | partial | 5/10 | all-OT passes; the commissioner role (`mlr reg`, Commissioner Session ID / Timeout TLVs) is not implemented, so each node 1, 3, 5, 6 and all fail |
+| `v1_2_test_multicast_registration` | pass | 10/10 | all-OT, each, all pass |
 
 #### CSL
 

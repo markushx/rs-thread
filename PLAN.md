@@ -241,8 +241,9 @@ Security-relevant decisions for the review before M4:
 ## Phase 9 – Thread 1.2 / 1.3 / 1.4 features
 
 - [x] Domain Unicast Address & Backbone Router client support (1.2): `netdata::backbone`, `dua` (generation with persisted DAD counter, `/n/dr` registration, retry / reregistration, duplicate handling, proxy registration for children), mesh-simulator tests with a fake Primary BBR
-  - [ ] Backbone Router server role (`BackboneRouter::Local` / `Manager`: BBR service publication, DUA ND proxying, `/b/bq`, `/b/ba`, `/b/bmr`, MLR on the backbone link)
-  - [ ] Thread 1.1 parents (registration through the BBR service ALOC)
+  - [x] Backbone Router role without a backbone link (`opentrust_mesh::bbr_server`, instance feature `bbr-server`: BBR service, Primary selection, `/n/dr` and `/n/mr` answers, PBBR ALOC, `bbr`/`bbr mgmt`/`dua iid`/`fake /a/an` CLI)
+  - [ ] Backbone link: DAD, ND proxying, `/b/bq`, `/b/ba`, `/b/bmr`, multicast routing
+  - [x] Thread 1.1 parents (registration through the BBR service ALOC)
   - [x] Device glue in the `Instance` (`opentrust-instance::bbr`): `BackboneRouterLeader` from Network Data, `DuaManager` (DAD counter persisted under `DadInfo`, DUA registered with the address registration, proxy registration for children), `MlrManager` (external multicast and children); sim test `crates/opentrust-sim/tests/bbr.rs` with a fake Backbone Router as `Instance::set_tmf_extension`
 - [x] Multicast Listener Registration (MLR) (1.2): `mlr` (device and child groups, `/n/mr`, timeouts, reregistration, failed addresses, `MlrState` in `Child`)
   - [ ] Commissioner MLR (Commissioner Session ID / Timeout TLVs)
@@ -433,7 +434,7 @@ Security-relevant decisions for the review before M4:
     - [ ] 6.2.2 (OpenTrust as Router 1 after the merge)
     - [x] 6.5.2 (the DUT reported a random extended address after a reset, so the script allow-listed the wrong one at the leader; the stored identity is now restored when the instance is created, also for the MTD build)
     - [ ] LowPower 7.1.1, 7.1.2, 7.2.1 and the link-metrics functional tests: `linkmetrics` CLI / enhanced-ack probing / forward tracking
-    - [ ] BBR / DUA / MLR (Thread 1.2): needs a sim `ot-cli-ftd` with `OT_BACKBONE_ROUTER` to get a baseline; MATN, BBR 5.11.1 and the `border_router` scripts need an OTBR / backbone harness
+    - [~] BBR / DUA / MLR (Thread 1.2): sim `ot-cli-ftd` now has `OT_BACKBONE_ROUTER`, all 7 scripts pass all-OT, 3 pass fully, 4 partly (see test-plan-status.md); MATN, BBR 5.11.1 and the `border_router` scripts need an OTBR / backbone harness
     - [ ] OpenThread functional tests that fail with all-OpenTrust nodes: SRP (CLI), DNS-SD, diag, history, radio filter, anycast locator, child supervision, detach, route table (list in the status file)
     - [ ] pktverify with `tshark` 4.6 is unreliable (dissection differs); pin the Wireshark version the scripts were written for
     - [ ] pktverify passes with OpenThread but fails with OpenTrust for 15 cases (5.2.4, 5.3.5, 5.3.8, 5.8.2, 5.8.3, 6.1.3, 6.1.7, 6.2.2, 6.5.1, 6.5.2, 6.6.1, 6.6.2, 9.2.12, 9.2.17, LowPower 5.3.1): analyse the packet differences
