@@ -141,6 +141,7 @@ pub(crate) struct DnsSrp {
     attached: bool,
     nd_hash: Option<u64>,
     addr_hash: Option<u64>,
+    slaac_hash: Option<u64>,
     #[cfg(feature = "srp-server")]
     pub(crate) srpd: crate::srp_server::SrpServerCtx,
 }
@@ -160,6 +161,7 @@ impl DnsSrp {
             attached: false,
             nd_hash: None,
             addr_hash: None,
+            slaac_hash: None,
             #[cfg(feature = "srp-server")]
             srpd: crate::srp_server::SrpServerCtx::new(),
         }
@@ -624,14 +626,28 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         // Interface addresses.
         let mut ah = 0xcbf2_9ce4_8422_2325u64;
-        for a in self.auto_addrs() {
-            fnv(&mut ah, &a.octets());
+        // Added or removed addresses (not a change of their preferred flag,
+        // OT only reacts to additions and removals) trigger a refresh.
+        let mlp = self.core.cfg.cur.mesh_local_prefix;
+        for a in self.core.ip6.netif.unicast_addresses().filter(|a| a.valid) {
+            let ll = a.addr.segments()[0] & 0xffc0 == 0xfe80;
+            if !ll && !opentrust_net::addr::is_mesh_local(&a.addr, &mlp) {
+                fnv(&mut ah, &a.addr.octets());
+            }
         }
-        if self.dnssrp.addr_hash != Some(ah) {
+        let mut sh = 0xcbf2_9ce4_8422_2325u64;
+        for a in self.core.ip6.netif.unicast_addresses() {
+            if a.origin == opentrust_net::netif::AddressOrigin::Slaac {
+                fnv(&mut sh, &a.addr.octets());
+            }
+        }
+        if self.dnssrp.addr_hash != Some(ah) || self.dnssrp.slaac_hash != Some(sh) {
             let first = self.dnssrp.addr_hash.is_none();
+            let slaac = self.dnssrp.slaac_hash != Some(sh);
             self.dnssrp.addr_hash = Some(ah);
+            self.dnssrp.slaac_hash = Some(sh);
             if !first {
-                self.with_srp(now, |c, e| c.on_addresses_changed(e));
+                self.with_srp(now, |c, e| c.on_addresses_changed(e, slaac));
                 busy = true;
             }
         }

@@ -859,13 +859,15 @@ impl<const S: usize> SrpClient<S> {
     }
 
     /// The interface addresses changed: refresh the registration if the
-    /// auto host addresses differ from the registered ones.
-    pub fn on_addresses_changed<E: Env>(&mut self, env: &mut E) {
+    /// auto host addresses differ from the registered ones. `slaac`: a
+    /// SLAAC address was added or removed, which asks for the longer
+    /// transmit jitter (OT `HandleUnicastAddressEvent`).
+    pub fn on_addresses_changed<E: Env>(&mut self, env: &mut E, slaac: bool) {
         if !self.host.auto {
             return;
         }
         let now = env.now();
-        if self.is_running() && !self.guard_running(now) {
+        if slaac && self.is_running() && !self.guard_running(now) {
             self.request_jitter(JitterReason::SlaacAddr, now);
         }
         let cur = self.auto_address_list(env);

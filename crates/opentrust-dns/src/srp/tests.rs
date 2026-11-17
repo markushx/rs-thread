@@ -621,11 +621,13 @@ fn address_change_triggers_refresh() {
         &resp
     ));
     // No change: nothing happens.
-    with_env!(&mut r, tx, |c, env| c.on_addresses_changed(&mut env));
+    with_env!(&mut r, tx, |c, env| c.on_addresses_changed(&mut env, true));
     assert_eq!(r.c.state(), ClientState::Updated);
     r.ctx.auto.push("2001:db8:1::2".parse().unwrap());
-    with_env!(&mut r, tx, |c, env| c.on_addresses_changed(&mut env));
+    with_env!(&mut r, tx, |c, env| c.on_addresses_changed(&mut env, false));
     assert_eq!(r.c.state(), ClientState::ToUpdate);
+    // A manually added address gets the default transmit jitter.
+    assert!(r.c.next_deadline().unwrap().as_millis() <= tx.as_millis() + 500);
     let (u2, _) = drive_until_sent(&mut r, tx.as_millis());
     assert_eq!(count(&u2, rtype::AAAA, class::IN), 2);
     // Without usable addresses the ML-EID is registered.
