@@ -167,6 +167,11 @@ pub trait FrameSink {
     /// Send an ICMPv6 destination unreachable (no route) about `invoking`
     /// (the start of the offending IPv6 datagram) to its source.
     fn dest_unreachable(&mut self, _invoking: &[u8]) {}
+    /// All frames of a datagram were handed to [`transmit`](Self::transmit):
+    /// `head` is the start of the datagram (at least the IPv6 header and
+    /// eight bytes of the upper layer), `dst` the MAC destination of its
+    /// frames (for the History Tracker).
+    fn datagram_sent(&mut self, _head: &[u8], _dst: MacDest, _security: LinkSecurity) {}
     /// A frame for `dest` came from the router it would be sent to: tell
     /// the MLE layer to invalidate the route (OT `ResolveRoutingLoops`).
     fn routing_loop(&mut self, _from: Rloc16, _dest: Rloc16) {}
@@ -690,6 +695,7 @@ impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS:
                 radio: self.select_radio(dst),
             })?;
         }
+        sink.datagram_sent(&datagram[..datagram.len().min(48)], dst, security);
         Ok(())
     }
 

@@ -158,6 +158,10 @@ pub(crate) fn sink_for_tests<S, C: CryptoBackend, R>(
 pub(crate) struct FwdNotes {
     pub unreachable: Vec<Vec<u8, 48>, 2>,
     pub loops: Vec<(Rloc16, Rloc16), 2>,
+    /// Datagrams handed to the MAC: the first 48 bytes, the MAC destination
+    /// and whether link security was used.
+    #[cfg(feature = "history-tracker")]
+    pub sent: Vec<(Vec<u8, 48>, MacDest, bool), 4>,
 }
 
 pub(crate) struct Sink<'a, 'b, C: CryptoBackend> {
@@ -168,6 +172,15 @@ pub(crate) struct Sink<'a, 'b, C: CryptoBackend> {
 impl<C: CryptoBackend> FrameSink for Sink<'_, '_, C> {
     fn transmit(&mut self, f: &TxFrame<'_>) -> Result<()> {
         self.mac.transmit(f)
+    }
+    #[cfg(feature = "history-tracker")]
+    fn datagram_sent(&mut self, head: &[u8], dst: MacDest, security: LinkSecurity) {
+        if let Ok(h) = Vec::from_slice(head) {
+            let _ = self
+                .notes
+                .sent
+                .push((h, dst, security != LinkSecurity::None));
+        }
     }
     fn dest_unreachable(&mut self, invoking: &[u8]) {
         if let Ok(v) = Vec::from_slice(invoking) {
@@ -555,6 +568,27 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let _ = forwarded;
         self.after_forwarder(now, events, notes);
         if dg_len > 0 {
+            #[cfg(feature = "history-tracker")]
+            {
+                let neighbor = match src {
+                    Address::Short(s) => s.0,
+                    Address::Extended(e) => self
+                        .glue
+                        .neighbors
+                        .iter()
+                        .find(|(_, x)| *x == e.0)
+                        .map_or(0xfffe, |(r, _)| *r),
+                    Address::None => 0xfffe,
+                };
+                self.glue.history.record_message(
+                    now,
+                    false,
+                    &dg[..dg_len],
+                    neighbor,
+                    rx.rssi,
+                    link_security,
+                );
+            }
             #[cfg(feature = "ftd")]
             if let (Some(ms), Ok(h)) = (mesh_src, Ipv6Header::parse(&dg[..dg_len])) {
                 self.mle.remove_child_that_moved(&mut self.core, &h.src, ms);
@@ -578,6 +612,22 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     ) {
         for e in events {
             self.handle_resolver_event(now, e);
+        }
+        #[cfg(feature = "history-tracker")]
+        for (head, dst, secure) in &notes.sent {
+            let neighbor = match dst {
+                MacDest::Short(s) => s.0,
+                MacDest::Broadcast => 0xffff,
+                MacDest::Extended(e) => self
+                    .glue
+                    .neighbors
+                    .iter()
+                    .find(|(_, x)| *x == e.0)
+                    .map_or(0xfffe, |(r, _)| *r),
+            };
+            self.glue
+                .history
+                .record_message(now, true, head, neighbor, None, *secure);
         }
         for inv in notes.unreachable {
             let mut out = [0u8; 256];
@@ -940,6 +990,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         });
         if let SendResult::Dropped(d) = r {
             self.glue.last_drop = Some(d);
+        }
+        #[cfg(feature = "history-tracker")]
+        if let SendResult::Indirect(c) = r {
+            self.glue.history.record_message(
+                now,
+                true,
+                dg,
+                c.0,
+                None,
+                link_security != LinkSecurity::None,
+            );
         }
         self.after_forwarder(now, events, notes);
         self.sync_src_match();

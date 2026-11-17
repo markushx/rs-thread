@@ -38,6 +38,8 @@ mod diag;
 #[cfg(feature = "dns")]
 mod dns;
 #[cfg(feature = "joiner")]
+#[cfg(feature = "history")]
+mod history;
 mod joiner;
 #[cfg(feature = "linkmetrics")]
 mod linkmetrics;
@@ -344,6 +346,8 @@ where
             "mac" => self.mac_cmd(a),
             #[cfg(feature = "ping")]
             "ping" => self.ping_cmd(a),
+            #[cfg(feature = "history")]
+            "history" => self.history(a),
             #[cfg(feature = "tables")]
             "child" => self.child(a),
             #[cfg(all(feature = "tables", feature = "ftd"))]

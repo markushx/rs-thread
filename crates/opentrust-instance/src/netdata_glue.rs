@@ -45,6 +45,13 @@ pub(crate) struct GlueState {
     /// [`crate::diag::role_index`]).
     pub role_ms: [u64; 5],
     pub role_time_mark: u64,
+    /// The History Tracker lists.
+    #[cfg(feature = "history-tracker")]
+    pub history: crate::history::HistoryTracker,
+    /// Network information changed since the last record (one entry per
+    /// batch of events, as OT's notifier signals them together).
+    #[cfg(feature = "history-tracker")]
+    pub history_dirty: bool,
     /// Next one-second tick of the Border Router router role upgrade wait.
     pub br_tick: Option<Instant>,
     /// What the last scheduling decision was based on.
@@ -107,6 +114,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         while let Some(ev) = self.core.mle_events.pop_front() {
             busy = true;
             self.dispatch_mle_event(now, ev);
+        }
+        #[cfg(feature = "history-tracker")]
+        if core::mem::take(&mut self.glue.history_dirty) {
+            self.history_record_net_info(now);
         }
         while let Some(c) = self.core.child_changes.pop_front() {
             busy = true;
@@ -179,6 +190,16 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         });
         for e in evs {
             self.handle_resolver_event(now, e);
+        }
+        #[cfg(feature = "history-tracker")]
+        if matches!(
+            ev,
+            MleEvent::RoleChanged { .. }
+                | MleEvent::Rloc16Changed(_)
+                | MleEvent::PartitionChanged { .. }
+                | MleEvent::LeaderStarted { .. }
+        ) {
+            self.glue.history_dirty = true;
         }
         match ev {
             MleEvent::RoleChanged { old, new } => {
@@ -348,6 +369,24 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// OT `IsExpectedToBecomeRouterSoon`.
+    /// Record the network information in the History Tracker (OT
+    /// `RecordNetworkInfo`).
+    #[cfg(feature = "history-tracker")]
+    pub(crate) fn history_record_net_info(&mut self, now: Instant) {
+        let m = self.mle.device_mode();
+        self.glue
+            .history
+            .record_net_info(crate::history::NetInfoEntry {
+                at: now,
+                role: self.mle.role(),
+                rx_on_when_idle: m.rx_on_when_idle(),
+                full_thread_device: m.full_thread_device(),
+                full_network_data: m.full_network_data(),
+                rloc16: self.mle.rloc16(),
+                partition_id: self.mle.leader_data().partition_id,
+            });
+    }
+
     /// OT `Notifier::ScheduleRouterRoleUpgradeIfEligible` and `HandleTimeTick`:
     /// a child that is a Border Router asks for the router role (reason
     /// `BorderRouterRequest`) after a random wait of 1 to 10 seconds, once

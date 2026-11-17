@@ -59,6 +59,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "factoryreset",
     "fake",
     "help",
+    "history",
     "ifconfig",
     "ipaddr",
     "ipmaddr",
@@ -120,6 +121,7 @@ where
         for c in COMMANDS {
             let enabled = match *c {
                 "child" | "counters" | "neighbor" => cfg!(feature = "tables"),
+                "history" => cfg!(feature = "history"),
                 "router" => cfg!(all(feature = "tables", feature = "ftd")),
                 "routerselectionjitter"
                 | "routerupgradethreshold"

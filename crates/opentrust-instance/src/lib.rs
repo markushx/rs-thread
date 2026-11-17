@@ -100,6 +100,8 @@ mod datapath;
 mod dhcp6;
 mod diag;
 mod dns_srp;
+#[cfg(feature = "history-tracker")]
+pub mod history;
 #[cfg(feature = "link-metrics-manager")]
 mod lmm;
 mod netdata_glue;

@@ -121,6 +121,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.ip6_enabled
     }
 
+    /// The History Tracker lists (OT `otHistoryTracker*`).
+    #[cfg(feature = "history-tracker")]
+    pub fn history(&self) -> &crate::history::HistoryTracker {
+        &self.glue.history
+    }
+
     /// The device mode (receiver on when idle, FTD, full Network Data).
     pub fn link_mode(&self) -> DeviceMode {
         self.mle.device_mode()
@@ -129,7 +135,13 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Change the device mode (OT `otThreadSetLinkMode`).
     pub fn set_link_mode(&mut self, mode: DeviceMode, now: Instant) -> Result<()> {
         self.core.now = now;
+        #[cfg(feature = "history-tracker")]
+        let old = self.mle.device_mode();
         self.mle.set_device_mode(&mut self.core, now, mode)?;
+        #[cfg(feature = "history-tracker")]
+        if old != self.mle.device_mode() {
+            self.history_record_net_info(now);
+        }
         self.poll(now);
         Ok(())
     }

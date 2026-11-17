@@ -27,6 +27,9 @@ tcat = ["opentrust-meshcop/tcat"]
 scan-servers = []
 # The Link Metrics Manager (OT `Utils::LinkMetricsManager`).
 link-metrics-manager = []
+# The History Tracker (OT `Utils::HistoryTracker`): recent network information
+# and IPv6 messages sent and received. Costs RAM; off in firmware.
+history-tracker = []
 # IPv6 fragmentation and reassembly above 6LoWPAN (OT
 # `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`): UDP datagrams of up to 1952
 # bytes. Costs RAM (reassembly slots, larger buffers); off in firmware.
