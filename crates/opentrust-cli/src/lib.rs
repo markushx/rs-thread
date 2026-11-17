@@ -236,6 +236,7 @@ impl Cli {
 
     /// The next time [`poll`](Self::poll) has work.
     pub fn next_deadline(&self) -> Option<Instant> {
+        #[allow(unused_mut)]
         let mut next: Option<Instant> = None;
         #[cfg(feature = "ping")]
         if let Some(p) = &self.st.ping {
