@@ -10,7 +10,7 @@ OpenThread serves as design reference (module boundaries, constants, timing), so
 License: Apache-2.0.
 Spec: `spec/Threadv1.4.1SpecificationFinal_5345_1.pdf` (chapter refs below as "§n").
 
-Legend: `[ ]` todo · `[~]` in progress · `[x]` done
+Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` not planned
 
 ## Guiding principles
 
@@ -125,7 +125,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] TMF agent on UDP 61631 (`opentrust_coap::tmf`): URI list, DSCP/priority mapping, `IsTmfMessage` filtering, handler dispatcher, `UdpSockets` receiver registration
   - [ ] Registering more TMF resources than the agent's capacity must return an error (today `register_uris` / `set_tmf_extension` in `opentrust-instance` ignore the failure, and the extra URIs are silently not served; found when the Network Diagnostics URIs pushed the agent past 16 resources)
   - [x] `/a/aq`, `/a/an`, `/a/ae` wired to `resolver::ResolverEvent` and `/a/as`, `/a/ar` handlers (Phase 7a, `opentrust-mesh`)
-  - [ ] MeshCoP and Network Data handlers (`/a/sd`, `/c/*`, `/n/*`; Phases 7-8)
+  - [x] MeshCoP and Network Data handlers (`/a/sd`, `/c/*`, `/n/*`) wired in `opentrust-instance/src/tmf.rs`
 - [x] Phase 5b: DTLS 1.2 + EC-JPAKE (CoAPS for commissioning, ADR 0001): `opentrust_core::crypto::ecjpake` (feature `ecjpake`, RustCrypto `p256`, all mbedTLS self-test vectors), crate `opentrust-dtls` (sans-IO DTLS 1.2, `TLS_ECJPAKE_WITH_AES_128_CCM_8` only, client + server, cookies, retransmission, fragmentation, KEK) and `opentrust_dtls::coaps::Coaps` behind `opentrust_coap::endpoint::SecureTransport`; manually interop-tested against mbedTLS 3.6.0 `ssl_server2`/`ssl_client2`
   - [ ] Automated differential/interop handshakes against `openthread-sys` / mbedTLS (Joiner and Commissioner, both roles, lossy links) (Phase 11)
   - [ ] Hardware P-256 backends for the `ecjpake::P256` trait (CryptoCell, CRACEN) and an rs-matter `EcPoint`/`EcScalar` adapter (Phase 12; ESP ECC in Phase 14)
@@ -214,7 +214,7 @@ Phase 8b (security part; features `ftd`, `commissioner`, `border-agent`, all def
 - [x] Wire the roles into a full stack (`opentrust-instance`): the `Instance` owns the Joiner, Joiner Router, leader commissioner session, Commissioner and Border Agent (`InstanceCrypto` with the EC-JPAKE curve type), per-frame link security classes (`LinkSecurity`: none, mode 1, KEK / mode 0, mode 2) in the forwarder and 6LoWPAN reassembly, the Joiner Entrust in key ID mode 0, KEK frames routed only to `handle_kek_datagram`, the Joiner UDP port relay, public API (`joiner_*`, `commissioner_*`, `border_agent_*`, ePSKc) and full-stack tests over the real MAC (`opentrust-sim/tests/commissioning.rs`)
 - [x] ML-EID of a joined node: not a dataset hand-over bug (the Joiner, like OT, saves only network key, channel and PAN ID from the Joiner Entrust; prefix, ext PAN ID, name and timestamp come from the parent in the Child ID Response, and the joined node's Active Dataset matches the leader's). A router-capable child is not resolvable by ML-EID (OT address query skips full-function children) and its RLOC changes on the router upgrade; once a router with converged routes, address queries resolve in both directions (`commissioning.rs` asserts this)
 - [ ] Border Agent UDP proxy receive (`handle_proxy_rx`) for datagrams to the Commissioner ALOC, Joiner Router events and `/c/dc` to an external Commissioner in the `Instance`; DNS-SD service publication hook
-- [ ] Interop of Joiner / Commissioner / Border Agent against OpenThread (`openthread-sys`) nodes (Phase 11)
+- [x] Interop of Joiner / Commissioner against OpenThread in simulation (`opentrust-sim/tests/commissioning_mixed.rs`, Cert 8.x / 9.2 pass); hardware open (OTBR commissioner on macOS, see Phase 12)
 
 Security-relevant decisions for the review before M4:
 
@@ -254,11 +254,11 @@ Security-relevant decisions for the review before M4:
   - [x] `v1_2_test_csl_transmission` with the leader OpenThread and the SSED OpenTrust ends at the last step: after the leader was away for longer than the timeout and came back, no Child Update Request of the SSED is seen within 5 s (the child counted no link failures of its parent: data polls without ACK now count, 4 in a row, 15 with CSL, and the child detaches and attaches anew like OT `UpdateNeighborOnSentFrame`; the data frames to the parent do not count yet)
   - [x] Live CSL period change on the nRF52840: the timed receive windows started 0.4 to 0.9 ms late (the backend moved a window handed over less than 3 ms ahead; the executor latency from the MAC timer to the driver call ate the margin), so the parent's frames were missed after the attach and after every change; the MAC timer lead of the Nordic backend is 5000 us now; 500 -> 100 -> 200 -> 1000 -> 500 ms, 50 of 50 pings at each period, no unacked parent frame (docs/csl-hardware.md)
   - [x] Slow sleepy attach on the nRF52840 (15 to 45 s): not a sleepy or radio problem. The OpenThread parent drops the Parent Requests of a reset RAM-settings CLI node while it still holds the child entry of the previous attach (MLE frame counter restarted at 0, replay check); with a fresh extended address the attach takes 1.0 to 1.8 s for SED, SSED and non-sleepy (10 attaches each). Parent loss: SED left after 6.2 s, SSED after 9.7 s (3 s poll period), both attached again 15 to 18 s after the parent restarted (docs/csl-hardware.md)
-  - [ ] The CLI firmware does not keep the frame counters over a reset (noinit RAM or flash store), so repeated resets against one OpenThread parent need a new extended address or the child timeout
+  - [x] CLI firmware keeps the frame counters (and the other Thread settings) over a reset in the `opentrust-flash` log
 - [x] Link Metrics (initiator & subject, Thread 1.2): Management / Query / Report / Link Probe, Forward Tracking Series per neighbor, Enhanced-ACK probing with the Thread IE in the MAC's enh-ACKs, `linkmetrics request|config|probe` and `linkmetricsmgr` CLI, `mac send emptydata|datarequest`, Link Metrics Manager (`Instance::link_metrics_manager_set_enabled`, feature `link-metrics-manager`); LowPower 7.1.1, 7.1.2, 7.2.1 and the link metrics functional tests pass (docs/test-plan-status.md)
 - [x] SRP client (RFC 9665) & DNS-SD client (1.3) — **pulled forward**: required by Matter for operational discovery (`_matter._tcp`); target M4 (`opentrust-dns`: `wire` / `rdata` DNS codec with name compression, TXT, KEY / SIG(0), OPT Update Lease; `client` DNS / DNS-SD client: AAAA, browse, SRV+TXT resolve; `srp` SRP client with SIG(0) ECDSA P-256 signing (`opentrust_core::crypto::ecdsa`), lease refresh, OT retry backoff, Network Data auto-start with unicast / anycast selection and server switching; tests against a scripted fake server, no simulator end-to-end test yet)
   - [x] CLI gaps for the OT functional scripts: `dataset updater`, `service`, `locate`, `radiofilter`, child supervision (secured empty frames, interval and failure counter), ND agent ALOC, loopback of echo replies to own addresses; `test_dataset_updater`, `test_key_rotation_and_key_guard_time`, `test_anycast`, `test_anycast_locator`, `test_service`, `test_reed_address_solicit_rejected`, `test_radio_filter`, `test_child_supervision` pass with all nodes OpenTrust
-  - [ ] Open functional scripts: `history`, `diag`, `coaps`, `test_detach` (a router restarting after a graceful detach waits for the first Link Request of the role restorer), `test_route_table`, `test_inform_previous_parent_on_reattach`, `test_br_upgrade_router_role`, `test_ipv6_fragmentation`, `test_netdata_publisher`
+  - [ ] Open functional scripts: `history`, `diag`, `coaps`, netdata publisher, BR router-role upgrade, inform previous parent on reattach, IPv6 fragmentation (`test_detach` and `test_route_table` pass)
   - [x] SRP server (`opentrust_dns::srp::server`, instance feature `srp-server`: signed update processing with ECDSA P-256 verification, key-bound names, lease / key lease / TTL limits and timers, unicast / anycast / unicast-force-add publishing, persisted port), DNS-SD answers from the registrations (PTR / SRV / TXT / AAAA / KEY), CLI `srp server ...`, full `srp client ...` and `dns config|resolve|browse|service|servicehost|query`; the 15 `test_srp_*` (except `register_500_services`, baseline fail) and 3 DNS-SD scripts pass with all OpenTrust nodes
   - [ ] SRP server, open: advertising proxy / service update handler, auto-enable and fast start, response counters, DNS-SD SOA / NS, upstream forwarding and discovery proxy, mDNS, DNS over TCP, NAT64 (A record) queries; storage is bounded (8 hosts, 16 services)
 - [x] TREL hooks (optional, 1.3; feature `trel` of `opentrust-mesh`, default off): `trel::Trel` sans-IO link (packet header codec, peer table fed by the platform's DNS-SD results, TXT data `xa` / `xp`, unicast with deferred acks and ack timeouts, broadcast), `TrelPlatform` (UDP send, service registration), `TrelSecurity` (MAC frame security with the TREL key and its own frame counter, `FrameSecurity` impl), `RadioSelector` + `TxFrame::radio` in the forwarder
@@ -311,22 +311,22 @@ Security-relevant decisions for the review before M4:
   - [x] Light on real hardware, nRF52840 DK (`examples/nrf52840-light`): `radio-nrf802154`, embassy-time `Alarm` / `Clock`, flash-backed Thread settings and rs-matter KV (`opentrust-flash`, wear levelling), RNG entropy, RustCrypto `Crypto`, BLE commissioning (`opentrust_matter::ble`, `ThreadCoexRunner`), commissioned with chip-tool over BLE (`pairing ble-thread`) and on-network through `ot-br-posix`; 62 min soak with 123/123 toggles, random resets, factory reset back to BLE advertising (`docs/thread-border-router.md`, `docs/memory-budget.md`)
   - Light on ESP32-C6: see Phase 14
 - [x] OT-compatible CLI (`ot-cli` command subset) — required to drive OT test scripts: `crates/opentrust-cli` (`no_std`, no alloc, feature-gated command groups, sim tests driving 1 to 3 nodes by CLI strings only; see OPENTRUST-OPENTHREAD-DIFFERENCES.md for what is missing)
-- [ ] Spinel/NCP (`docs/spinel.md`): optional, enables `ot-br-posix` interop
+- [~] Spinel (`docs/spinel.md`): RCP mode (enables `ot-br-posix` interop); NCP not planned
   - [x] `opentrust-spinel` (`no_std`, no alloc): HDLC-lite, Spinel data types, frame header and parsing, constants; unit tests with the OpenThread `test_hdlc` vectors
   - [x] RCP: any `Radio` behind the Spinel radio property set of `RadioSpinel` (`opentrust_ncp::rcp::Rcp`; software frame retries and transmit security for radios without them); `opentrust-rcp-sim` (stdio + OpenThread's real-time simulation radio); interop with the OpenThread posix host: network formed with the OpenTrust RCP, an `ot-cli-ftd` joins, pings both ways, and the reverse (`crates/opentrust-rcp-sim/tests/posix_host.rs`, `openthread-sys` feature `posix-host`); subset of OpenThread's `posix-*.exp` scripts
   - [x] RCP firmware for the nRF52840 DK (`examples/nrf52840-leader --bin rcp`, builds: about 105 KB flash, 16 KB RAM)
   - [ ] RCP, open: run on hardware (DK VCOM link, `ot-br-posix`), USB CDC transport for the Dongle, enhanced ACK probing (`RCP_ENH_ACK_PROBING`), CSL IE phase of CSL child frames and enhanced ACKs in the simulation RCP, coexistence, power tables, counters, multi-PAN
-  - [ ] NCP (the OpenTrust stack behind Spinel for `spinel-cli.py` / `wpantund`-style hosts): `NET_*`, `THREAD_*`, `IPV6_*`, `STREAM_NET` on `opentrust-instance`
+  - [-] NCP mode: not planned (user decision 2026-11-17: NCP is no longer used; OTBR uses RCP + posix host)
 
 ## Phase 11 – Simulation & testing (reuse OpenThread test framework)
 
 - [x] `opentrust-sim`: OT's virtual-time simulation protocol (`opentrust_sim::vt`: UDP event socket, radio with ACK, energy scan, settings file) so Rust nodes and OT nodes share one virtual network; `opentrust_sim::vtsim`: Rust port of thread-cert's `VirtualTime` simulator driving `ot-cli-ftd` / Rust node processes (mixed-network test `crates/opentrust-sim/tests/mixed.rs`: OT leader + OpenTrust router and the reverse, router tables, pings both ways; skipped without `ot-cli-ftd`)
 - [x] `opentrust-cli-vt` (`opentrust-cli --features sim`): `ot-cli-ftd`-compatible node (argv: node id; stdin/stdout CLI with echo and prompt; `PORT_OFFSET`/`PORT_BASE`; settings in `tmp/<offset>_<id>.flash`); the MTD variant (`ot-cli-mtd`) is not built
-- [ ] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
+- [x] `cargo test` harness (`tests/thread_cert.rs`, custom harness `harness = false`) that:
   - [x] builds OT reference nodes from `openthread-sys/vendor/openthread` (simulation platform): `cargo build -p openthread-sys` (build script, about 25 s, 11 MB build tree)
   - [x] runs `thread-cert` cases Cert_5_1_*, 5_2_*, 5_3_* with OpenTrust nodes in place of OT nodes (`crates/opentrust-sim/tests/thread_cert.rs`, `OPENTRUST_CERT=1`): 273 of 273 runs pass (all-OT, each node, all OpenTrust), details in `docs/test-status.md`; pktverify runs with a macOS workaround, 9 of the 12 cases that pass with OpenThread also pass with OpenTrust
   - [x] OT SED attach to an OpenTrust parent (Child ID Response queued for the poll)
-  - [ ] cert failures open: five cases fail with OpenThread only
+  - [x] cert baseline failures fixed (`ot-cli-ftd` built with `OT_BORDER_ROUTER`, `OT_LOG_OUTPUT=APP`, `OT_BACKBONE_ROUTER`, plus a Thread 1.1 node); 5.x-9.x and v1.2: 819 of 819 runs pass (all-OT, each node, all OpenTrust; harness default now `ot,half,all`)
   - [x] manages Python venv (`.venv`, created / completed with pip: pexpect, pycryptodome, pyshark 0.4.6, lxml)
 - [x] Port OT C++ unit-test vectors (`tests/unit/*.cpp`: mac frame, lowpan, mle, crypto, dataset, network data, coap) into Rust `#[test]`s (inventory and status per test in `docs/ot-unit-test-port.md`; the rest is OT-internal framework, IPv4/NAT64, Spinel/HDLC and platform tests with no OpenTrust counterpart)
 - [x] Differential tests: same input to `openthread-sys` (FFI) and Rust impl, compare outputs (codecs, crypto, KDF): `crates/opentrust-difftest` (feature `ot`; C++ shim `tools/openthread-sys/shim/diff_shim.cpp`, feature `diff-shim`) compares crypto / KDF, 6LoWPAN, MAC frames, MeshCoP datasets, Network Data and MLE TLV lookup with seeded random inputs; skipped without the feature; coverage and findings in `docs/differential-tests.md`, deviations in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`; five OpenTrust defects found and fixed
@@ -360,7 +360,7 @@ Security-relevant decisions for the review before M4:
   - [x] CLI over UART on the nRF52840 DK (`examples/nrf52840-leader --bin cli --features cli-all`, UARTE0 on the J-Link VCOM, prompt `> `, echo and CR/LF as OT's UART CLI, settings in RAM): interop against `ot-cli-ftd` on a second DK on channel 25 with CLI commands only (OT forms / OpenTrust joins by `dataset set active`, OpenTrust forms / OT joins; `state`, `ping` and `udp` both ways to ML-EID and RLOC, `router table`, `child table`, `neighbor table`, `netdata show`, `ipaddr`, `dataset active` identical in format). Flash 447 KB with no command group, 501 KB with all, RAM 98 / 106 KB (per group: dataset +8 KB, scan +3, ping +4, tables +10, netdata +5, srp +5, dns +2, udp +3, commissioning +16 KB flash and +7 KB RAM)
   - [x] CLI firmware persistent settings: the `cli` and `node` binaries keep the Thread settings (datasets, network info with the frame counters stored ahead, parent / child info, random extended address) in the Thread region of the `opentrust-flash` log; `factoryreset` and Button 1 at boot erase it (hardware: ten resets in a row against an OpenThread parent, no growth of the attach time)
   - [x] CSL receive window after-time configurable per radio (`RadioCaps::csl_receive_on_after_us`, default the OpenThread 5.5 ms `MIN_RECEIVE_ON_AFTER`), unit test in `opentrust-mac`
-  - [ ] CLI firmware, open: commissioner / joiner against OpenThread on hardware (needs an `ot-cli-ftd` built with `OT_COMMISSIONER` and `OT_JOINER`), `child <id>`, `counters mle`, `dataset mgmtsetcommand` / `mgmtgetcommand`
+  - [ ] CLI firmware, open: commissioner / joiner against OpenThread on hardware (OTBR commissioner on macOS blocked), `child <id>`, `counters mle` (`dataset mgmtsetcommand` / `mgmtgetcommand` done)
 - [ ] Footprint budgets (flash/RAM per role) and power measurements for SED/SSED
 - [x] Hardware-in-loop interop with an OT RCP / `ot-br-posix` border router (manual, on a Mac with an nRF52840 Dongle RCP; `docs/thread-border-router.md`): the light registers over SRP, is commissioned on-network and over BLE, and is controlled by chip-tool through the BR
   - [ ] Automate it (scripted BR + chip-tool run)
@@ -438,16 +438,16 @@ Security-relevant decisions for the review before M4:
   - [ ] ESP32-C6 (Phase 14)
 - [ ] **M6 – Thread 1.2–1.4 features** and certification test-plan coverage
   - [ ] Test-plan gaps found by `docs/test-plan-status.md` (OpenThread `thread-cert` scripts, simulation only):
-    - [ ] 9.2.8, 9.2.9, 9.2.11 to 9.2.14, 9.2.18 fail with OpenTrust nodes (being fixed)
-    - [ ] 5.7.1 to 5.7.3: the OpenTrust DUT does not answer Network Diagnostic Get (no diagnostic server / `networkdiagnostic` CLI)
-    - [ ] 6.2.2 (OpenTrust as Router 1 after the merge)
+    - [x] 9.2.8, 9.2.9, 9.2.11 to 9.2.14, 9.2.18 pass (pending dataset delay, key switch frame counters, restore, scan servers)
+    - [x] 5.7.1 to 5.7.3 pass (`networkdiagnostic` CLI, diagnostic server fixes)
+    - [x] 6.2.2 passes
     - [x] 6.5.2 (the DUT reported a random extended address after a reset, so the script allow-listed the wrong one at the leader; the stored identity is now restored when the instance is created, also for the MTD build)
     - [x] LowPower 7.1.1, 7.1.2, 7.2.1 and the link-metrics functional tests (7.1.2: a 2 s ping with a 2 s poll period needs the keep-alive reset only at the default poll period; 7.2.1: data requests and LQI-less frames count in the series); the MTD build does not apply (the cases are not `is_mtd`)
     - [x] `v1_2_test_enhanced_keep_alive` node 2 (parent restore after `thread stop` / `start`: OT attaches from scratch, OpenTrust restores and sends a Child Update Request; failed already before the link metrics work; fixed: the stored network information is restored only at the first start after instance creation, as OT)
-    - [~] BBR / DUA / MLR (Thread 1.2): sim `ot-cli-ftd` now has `OT_BACKBONE_ROUTER`, all 7 scripts pass all-OT, ot/each/all pass for every one (see test-plan-status.md); MATN, BBR 5.11.1 and the `border_router` scripts need an OTBR / backbone harness
-    - [ ] OpenThread functional tests that fail with all-OpenTrust nodes: SRP (CLI), DNS-SD, diag, history, radio filter, anycast locator, child supervision, detach, route table (list in the status file)
+    - [x] BBR / DUA / MLR (Thread 1.2): all 7 scripts pass (ot, each, all) with the sim `ot-cli-ftd` built with `OT_BACKBONE_ROUTER`; the Backbone link (DAD, ND proxy, multicast routing), MATN, BBR 5.11.1 and the `border_router` scripts need an OTBR / backbone harness (listed under Phase 9)
+    - [~] OpenThread functional tests: SRP (14 of 15; 500 services needs more storage, fails all-OT too), DNS-SD, radio filter, anycast locator, child supervision, detach, route table, dataset updater, key rotation, service pass; open: `diag`, `history`, `coaps`, netdata publisher, BR router-role upgrade, inform previous parent on reattach, IPv6 fragmentation (141 of 152 runs, ot/all)
     - [ ] pktverify with `tshark` 4.6 is unreliable (dissection differs); pin the Wireshark version the scripts were written for
-    - [ ] pktverify passes with OpenThread but fails with OpenTrust for 15 cases (5.2.4, 5.3.5, 5.3.8, 5.8.2, 5.8.3, 6.1.3, 6.1.7, 6.2.2, 6.5.1, 6.5.2, 6.6.1, 6.6.2, 9.2.12, 9.2.17, LowPower 5.3.1): analyse the packet differences
+    - [x] pktverify: the 15 cases that passed with OpenThread only now pass with OpenTrust too; 47 cases pass with both
 
 ## Open questions
 
