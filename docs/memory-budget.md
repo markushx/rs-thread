@@ -8,11 +8,20 @@ the test asserts an upper bound per feature set (`src/size_test.rs`).
 
 ## Total per feature set
 
-| Feature set | Before pooling | Now |
-|---|---|---|
-| default (ftd + commissioner + border-agent) | 150000 | 107424 |
-| `ftd` only | 116240 | 82816 |
-| MTD (`--no-default-features`) | 102800 | 74864 |
+| Feature set | Before pooling | Pooled, then new features | Capacities per role |
+|---|---|---|---|
+| default (ftd + commissioner + border-agent, without `srp-server`) | 150000 | 114512 | 114512 |
+| `ftd` only | 116240 | 87200 | 87200 |
+| MTD (`--no-default-features`) | 102800 | 78976 | 64672 |
+
+The "Capacities per role" column is the `opentrust_instance::config` module:
+with `default-features = false` the parent-role tables are zero-sized (child
+table 10 to 0, forwarder indirect queue and held datagrams, MPL buffered
+messages 4 to 0, MAC indirect queue, CSL child table, poll queue 4 to 1, MAC
+neighbour map 32 to 4). MTD saves 14304 bytes: MLE 4120 to 840, core 27088 to
+19928 (IPv6 5768 to 520, MAC 5880 to 3968), forwarder 7824 to 3960. The
+full-device sets did not change. The per-component table below is for the
+default set; the "Before pooling" figures of the first column are historic.
 
 ## Per component (default feature set)
 
@@ -64,8 +73,8 @@ Notes, no optimisation done:
 - The bump allocator (65536 bytes here, the size rs-matter's examples use for
   an unoptimised build) holds the pinned futures of the stack. An optimised
   embedded build needs much less: 26760 bytes were measured on the nRF52840 (see below).
-- Levers that exist already: an MTD / `ftd`-less `Instance` (74864 against
-  107424 bytes), fewer subscriptions / fabrics / responders (rs-matter
+- Levers that exist already: an MTD / `ftd`-less `Instance` (64672 against
+  114512 bytes), fewer subscriptions / fabrics / responders (rs-matter
   features `stack-max-*`, `max-fabrics-*`), a smaller bump.
 - The ESP32-C6 (512 kB) and ESP32-H2 (320 kB) have room.
 
