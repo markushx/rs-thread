@@ -17,8 +17,10 @@
 //!   case with only that node OpenTrust), `all` (all OpenTrust), `mtd:3`
 //!   or `mtd:3+4` (those nodes run `opentrust-cli-vt-mtd`, the build without
 //!   router, commissioner and Border Agent; OpenThread for the others),
-//!   `set:2+4` (exactly those nodes OpenTrust, the others OpenThread).
-//!   Default `ot,each`.
+//!   `set:2+4` (exactly those nodes OpenTrust, the others OpenThread),
+//!   `half` (every other node of the case OpenTrust, starting with the first:
+//!   about 50 %), `half2` (the other half).
+//!   Default `ot,half,all` (0 %, 50 %, 100 % OpenTrust).
 //! - `OPENTRUST_CERT_TIMEOUT`: seconds per run (default 300).
 //! - `OPENTRUST_CERT_ALLOW_FAIL=1`: report failures but exit 0.
 //! - `OPENTRUST_CERT_REPORT=<file>`: write the result table (markdown) there.
@@ -364,7 +366,7 @@ fn main() {
         .map(str::to_string)
         .collect();
     let configs: Vec<String> = std::env::var("OPENTRUST_CERT_CONFIGS")
-        .unwrap_or_else(|_| "ot,each".into())
+        .unwrap_or_else(|_| "ot,half,all".into())
         .split(',')
         .map(str::to_string)
         .collect();
@@ -387,6 +389,15 @@ fn main() {
             match c.as_str() {
                 "ot" => runs.push(("all OT".into(), vec![], vec![])),
                 "all" => runs.push(("all OpenTrust".into(), nodes.clone(), vec![])),
+                // About 50 % OpenTrust: every other node (and its complement).
+                "half" | "half2" => {
+                    let first = usize::from(c == "half2");
+                    let ids: Vec<u32> = nodes.iter().copied().skip(first).step_by(2).collect();
+                    if !ids.is_empty() {
+                        let label = ids.iter().map(u32::to_string).collect::<Vec<_>>().join("+");
+                        runs.push((format!("nodes {label} OpenTrust"), ids, vec![]));
+                    }
+                }
                 "each" => {
                     for &n in &nodes {
                         runs.push((format!("node {n} OpenTrust"), vec![n], vec![]));

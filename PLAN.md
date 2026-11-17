@@ -395,6 +395,7 @@ Security-relevant decisions for the review before M4:
 - [ ] Check what can/needs to be disabled on embedded devices
 - [ ] Check for remaining TODOs
 - [ ] Review no_std compliance
+- [ ] Check whether to change things for `cargo --release`
 - [ ] Check that all OpenTrust tooling is Rust based (no Perl, Python, node, ...) (except for OpenThread tooling)
 
 ## Phase 16 – Port ot-br-posix
