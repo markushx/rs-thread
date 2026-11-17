@@ -113,9 +113,13 @@ fn now_us() -> u64 {
 }
 
 fn main() {
+    // The node ID is the last numeric argument (`ot-rcp` takes options such as
+    // `--sleep-to-tx`, `-E` and `-L<address>` before it; they are accepted and
+    // ignored: the radio always supports energy scans and sleep to TX).
     let node_id: u16 = std::env::args()
-        .nth(1)
-        .and_then(|a| a.parse().ok())
+        .skip(1)
+        .filter_map(|a| a.parse().ok())
+        .next_back()
         .unwrap_or(1);
     let radio = match SimRadio::new(
         node_id,

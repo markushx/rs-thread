@@ -429,3 +429,83 @@ fn reset_and_noop() {
     run(&mut rcp, &mut host);
     assert_eq!(host.frames[1][3..], [0]);
 }
+
+/// A radio without `TRANSMIT_SEC` gets frames the RCP secured: frame counter
+/// and key index assigned, payload encrypted with the current key.
+#[test]
+fn software_transmit_security() {
+    use opentrust_core::crypto::CryptoBackend;
+    use opentrust_core::types::ExtAddress;
+    use opentrust_mac::security::open_psdu;
+
+    let mut rcp = new_rcp();
+    let mut host = Host::new(9);
+    enable(&mut host);
+    host.push(&req(5, cmd::PROP_VALUE_SET, prop::MAC_15_4_LADDR, |w| {
+        w.array(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88])
+            .unwrap()
+    }));
+    host.push(&req(6, cmd::PROP_VALUE_SET, prop::RCP_MAC_KEY, |w| {
+        w.u8(8).unwrap();
+        w.u8(5).unwrap();
+        for k in [1u8, 2, 3] {
+            w.data(&[k; 16]).unwrap();
+        }
+    }));
+    host.push(&req(
+        7,
+        cmd::PROP_VALUE_SET,
+        prop::RCP_MAC_FRAME_COUNTER,
+        |w| w.u32(100).unwrap(),
+    ));
+    // Secured data frame: header (15 bytes, ENC-MIC-32, key ID mode 1),
+    // payload, room for the MIC and the FCS.
+    let mut psdu = std::vec![
+        0x49, 0x98, 0x18, 0x08, 0xa3, 0xff, 0xff, 0x00, 0xe8, 0x0d, 0, 0, 0, 0, 0,
+    ];
+    psdu.extend([0xaa, 0xbb, 0xcc]);
+    psdu.extend([0; 4 + 2]);
+    host.push(&req(9, cmd::PROP_VALUE_SET, prop::STREAM_RAW, |w| {
+        w.data(&psdu).unwrap();
+        w.u8(15).unwrap();
+        w.u8(4).unwrap();
+        w.u8(15).unwrap();
+        w.bool(true).unwrap();
+        w.bool(false).unwrap(); // header not updated
+        w.bool(false).unwrap();
+        w.bool(false).unwrap(); // security not processed
+    }));
+    run(&mut rcp, &mut host);
+    let mut rec = None;
+    while let Some(r) = rcp.radio().pop_tx() {
+        rec = Some(r);
+    }
+    let rec = rec.unwrap();
+    assert!(rec.info.header_updated && rec.info.security_processed);
+    let mut sealed = rec.psdu.to_vec();
+    let n = sealed.len() - 2;
+    assert_eq!(&sealed[10..14], &100u32.to_le_bytes());
+    assert_eq!(sealed[14], 5);
+    assert_ne!(&sealed[15..18], &[0xaa, 0xbb, 0xcc]);
+    let cipher = SoftCrypto.aes128(&[2; 16]);
+    let source = ExtAddress([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
+    open_psdu(&cipher, &mut sealed[..n], &source).unwrap();
+    assert_eq!(&sealed[15..18], &[0xaa, 0xbb, 0xcc]);
+    // The transmit-done carries the assigned key ID and frame counter.
+    let (_, _, _, v) = parsed(host.frames.last().unwrap());
+    let mut r = Reader::new(&v);
+    assert_eq!(r.packed().unwrap(), status::OK);
+    assert!(!r.bool().unwrap());
+    assert!(r.bool().unwrap(), "header updated");
+    let _ack = (
+        r.data().unwrap(),
+        r.i8().unwrap(),
+        r.i8().unwrap(),
+        r.u16().unwrap(),
+    );
+    r.structure().unwrap();
+    r.structure().unwrap();
+    r.structure().unwrap();
+    assert_eq!(r.u8().unwrap(), 5);
+    assert_eq!(r.u32().unwrap(), 100);
+}
