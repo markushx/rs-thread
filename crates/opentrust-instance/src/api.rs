@@ -730,6 +730,27 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     // ------------------------------------------------------------ Network Data
 
+    /// Local Network Data changes are registered with the leader only when
+    /// [`register_netdata`](Self::register_netdata) is called (OT: the
+    /// `otBorderRouterAdd*` / `otServerAdd*` calls do not register), instead of
+    /// at once. The default is to register at once.
+    pub fn set_manual_netdata_registration(&mut self, manual: bool) {
+        self.glue.manual_netdata_registration = manual;
+    }
+
+    /// Register the local Network Data with the leader (OT
+    /// `otBorderRouterRegister`, `otServerRegister`).
+    pub fn register_netdata(&mut self) {
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+    }
+
+    fn local_netdata_changed(&mut self) {
+        if !self.glue.manual_netdata_registration {
+            self.register_netdata();
+        }
+    }
+
     /// Add an on-mesh prefix to the local Network Data (OT
     /// `otBorderRouterAddOnMeshPrefix`); the notifier registers it with the
     /// leader.
@@ -741,8 +762,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             return self.bbr_set_domain_prefix(cfg);
         }
         self.local.add_on_mesh_prefix(cfg)?;
-        self.notifier
-            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        self.local_netdata_changed();
         Ok(())
     }
 
@@ -750,8 +770,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// `otBorderRouterAddRoute`).
     pub fn add_external_route(&mut self, cfg: ExternalRouteConfig) -> Result<()> {
         self.local.add_external_route(cfg)?;
-        self.notifier
-            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        self.local_netdata_changed();
         Ok(())
     }
 
@@ -767,8 +786,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             r => return r,
         }
         self.local.remove_on_mesh_prefix(prefix)?;
-        self.notifier
-            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        self.local_netdata_changed();
         Ok(())
     }
 
@@ -779,8 +797,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
     ) -> Result<()> {
         self.local.remove_external_route(prefix)?;
-        self.notifier
-            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        self.local_netdata_changed();
         Ok(())
     }
 
@@ -914,8 +931,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         cfg: opentrust_mesh::netdata::local::ServiceConfig,
     ) -> Result<()> {
         self.local.add_service(cfg)?;
-        self.notifier
-            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        self.local_netdata_changed();
         Ok(())
     }
 
@@ -944,8 +960,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Remove a service from the local Network Data.
     pub fn remove_service(&mut self, enterprise_number: u32, service_data: &[u8]) -> Result<()> {
         self.local.remove_service(enterprise_number, service_data)?;
-        self.notifier
-            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        self.local_netdata_changed();
         Ok(())
     }
 

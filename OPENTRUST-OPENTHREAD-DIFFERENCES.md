@@ -950,3 +950,7 @@ Where OpenThread's output is lossy, malformed or undefined for an input, OpenTru
 - **`rloc16` while disabled** reports the RLOC16 restored from the settings after a reset, as OT does.
 - **Commissioner MLR** (Commissioner Session ID and Timeout TLVs, `mlr reg`) is not implemented on the device side; the BBR side handles the TLVs.
 - **Thread 1.1 devices of the cert scripts.** `openthread-sys` builds a second reference node, `ot-cli-ftd-1.1` (`OT_THREAD_VERSION=1.1`), the harness runs the nodes with `'version': '1.1'` on it in every configuration (`each` / `all` do not replace them).
+
+## Registering local Network Data
+
+- **API default.** `Instance::add_on_mesh_prefix`, `add_external_route`, `add_service` and their `remove` calls register the change with the leader at once. OT does not: `otBorderRouterAdd*` and `otServerAdd*` only change the local data and `otBorderRouterRegister` / `otServerRegister` start the registration. A device that adds two prefixes and then registers therefore sends one Server Data request in OT and two here. `Instance::set_manual_netdata_registration(true)` gives the OT behaviour (`Instance::register_netdata` registers); the simulator CLI node (`opentrust-cli-vt`) uses it, so that `netdata register` is not a no-op there. The default stays automatic so that applications need no extra call.

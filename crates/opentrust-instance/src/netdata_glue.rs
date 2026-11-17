@@ -35,6 +35,9 @@ pub(crate) struct GlueState {
     pub last_drop: Option<DropReason>,
     pub addr_hash: u64,
     pub restoring_leader: bool,
+    /// Local Network Data changes are registered only by
+    /// `register_netdata` (OT `otBorderRouterRegister`).
+    pub manual_netdata_registration: bool,
     pub replay_drops: u32,
     pub commissioner_aloc: Option<u16>,
     pub key_sequence: Option<u32>,

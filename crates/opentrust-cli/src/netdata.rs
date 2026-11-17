@@ -250,8 +250,10 @@ where
                 ln!(self.o);
                 Ok(())
             }
-            // Local changes are registered with the leader by the instance.
-            "register" => Ok(()),
+            "register" => {
+                self.i.register_netdata();
+                Ok(())
+            }
             _ => Err(E::INVALID_COMMAND),
         }
     }

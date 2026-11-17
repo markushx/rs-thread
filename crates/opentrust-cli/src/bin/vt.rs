@@ -270,7 +270,12 @@ pub fn main() {
         id,
         seed,
         radio: VtRadio::new(link),
-        inst: new_instance(id, settings, seed),
+        inst: {
+            let mut i = new_instance(id, settings, seed);
+            // As in OT, `netdata register` registers the local Network Data.
+            i.set_manual_netdata_registration(true);
+            i
+        },
         cli: Cli::new(),
         now_us: 0,
         out: String::new(),
