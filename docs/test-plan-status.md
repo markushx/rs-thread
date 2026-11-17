@@ -214,7 +214,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | SRP | 15 | 0 | 0 | 14 | 1 | 0 |
 | DNS / DNS-SD | 3 | 0 | 0 | 3 | 0 | 0 |
 | CoAP / CoAPS | 4 | 2 | 0 | 1 | 0 | 1 |
-| Backbone router / DUA / MLR (Thread 1.2) | 7 | 3 | 4 | 0 | 0 | 0 |
+| Backbone router / DUA / MLR (Thread 1.2) | 7 | 7 | 0 | 0 | 0 | 0 |
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
 | Link metrics / enhanced ack (Thread 1.2) | 5 | 0 | 3 | 2 | 0 | 0 |
 | Python unit tests of the cert libraries (no nodes) | 8 | 0 | 0 | 0 | 0 | 8 |
@@ -262,11 +262,11 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | script | status | runs passed | detail |
 |---|---|---|---|
 | `test_pbbr_aloc` | pass | 5/5 | all-OT, each, all pass |
-| `v1_2_test_backbone_router_service` | pass | 6/6 | all-OT, each, all pass |
-| `v1_2_test_domain_unicast_address` | partial | 5/7 | each node 5 (SED with a Thread 1.1 parent) and all: the BBR cannot ping its DUA (registration through the BBR service ALOC works, `v1_2_test_domain_unicast_address_registration` passes) |
+| `v1_2_test_backbone_router_service` | pass | 5/5 | all-OT, each, all pass |
+| `v1_2_test_domain_unicast_address` | pass | 7/7 | all-OT, each, all pass (a SED behind a Thread 1.1 parent: the DUA is registered right after the ML-EID, like OT, so the parent keeps it) |
 | `v1_2_test_domain_unicast_address_registration` | pass | 11/11 | all-OT, each, all pass |
-| `v1_2_test_dua_handle_address_error` | partial | 5/6 | each passes; `all` not rerun after the FTD-child all-routers fix (a run before it failed pinging the FED DUA) |
-| `v1_2_test_multicast_listener_registration` | partial | 5/10 | all-OT passes; the commissioner role (`mlr reg`, Commissioner Session ID / Timeout TLVs) is not implemented, so each node 1, 3, 5, 6 and all fail |
+| `v1_2_test_dua_handle_address_error` | pass | 6/6 | all-OT, each, all pass |
+| `v1_2_test_multicast_listener_registration` | pass | 10/10 | all-OT, each, all pass (Commissioner `mlr reg` with Session ID / Timeout TLVs, end devices with a Thread 1.1 parent register through the service ALOC, 75 listeners) |
 | `v1_2_test_multicast_registration` | pass | 10/10 | all-OT, each, all pass |
 
 #### CSL
