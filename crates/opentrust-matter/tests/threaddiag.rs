@@ -141,9 +141,9 @@ fn diagnostics_of_a_leader_and_a_child() {
                 Ok(())
             })
             .unwrap();
-            // The router table lists the other routers only (the instance does
-            // not report the node's own entry): none in this network.
-            assert!(routes.is_empty(), "{routes:?}");
+            // The router table lists every allocated router ID, the node's own
+            // entry included (OT `otThreadGetRouterInfo`): only the leader here.
+            assert_eq!(routes, [(ots[0].rloc16().0, true)], "{routes:?}");
 
             // A sleepy child is reported as such.
             IcdFollower::new(ots[1]).set_sleepy(true).unwrap();
