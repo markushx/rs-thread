@@ -260,7 +260,16 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// RLOC16 ([`Rloc16::INVALID`] while detached).
     pub fn rloc16(&self) -> Rloc16 {
-        self.mle.rloc16()
+        let r = self.mle.rloc16();
+        // After a reset OpenThread still reports the RLOC16 it restored
+        // from the settings while the Thread protocol is disabled.
+        if r == Rloc16::INVALID
+            && self.mle.role() == Role::Disabled
+            && let Some(i) = opentrust_mle::MleEnv::load_network_info(&self.core)
+        {
+            return i.rloc16;
+        }
+        r
     }
 
     /// Partition ID.
