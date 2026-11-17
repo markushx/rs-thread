@@ -49,3 +49,19 @@ from a security point of view. Each entry is a candidate for a later review
   (`EnergyScanServer::scan_failed`, `PanIdQueryServer::scan_failed`).
 - **Options for later:** answer the request with an empty list after a number of
   retries.
+
+## DHCPv6 server lists the prefixes in reverse Network Data order
+
+- **OpenThread:** `Dhcp6::Server::AddPrefixAgent` walks the agent slots without
+  stopping at the first free one, so a new prefix agent lands in the last free
+  slot. `AppendIaAddressOptions` then walks the slots in ascending order. For
+  prefixes 2001::/64, 2002::/64, 2003::/64 (added in this order) the Reply carries
+  the addresses 2003, 2002, 2001, and the client's `ipaddr` lists them as
+  2001, 2002, 2003 (newest first).
+- **Assessment:** harmless but accidental; the order is not specified. The
+  certification case Cert_5_3_08 verifies its pings in the order of the `ipaddr`
+  listing, so the order is observable.
+- **OpenTrust:** copies the order (`crates/opentrust-instance/src/dhcp6.rs`,
+  Reply): the prefixes this node serves in reverse Network Data order. A server
+  that removed and re-added prefixes may order differently from OpenThread (the
+  slot positions are not modelled).

@@ -624,7 +624,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         // Status Code: success.
         ia[12..18].copy_from_slice(&[0, OPT_STATUS_CODE as u8, 0, 2, 0, 0]);
         let mut n = 18;
-        for (i, a) in agents.iter().enumerate() {
+        // OT keeps the prefix agents in slots and puts a new agent into the
+        // last free slot, so the Reply lists the prefixes in the reverse of
+        // the Network Data order (see OPENTHREAD-OBSERVATIONS.md).
+        for (i, a) in agents.iter().enumerate().rev() {
             if mask != 0 && mask & (1 << i) == 0 {
                 continue;
             }
