@@ -33,6 +33,7 @@ opentrust-embassy = { path = "crates/opentrust-embassy", version = "0.1.0" }
 opentrust-matter = { path = "crates/opentrust-matter", version = "0.1.0" }
 opentrust-cli = { path = "crates/opentrust-cli", version = "0.1.0" }
 opentrust-ncp = { path = "crates/opentrust-ncp", version = "0.1.0" }
+opentrust-spinel = { path = "crates/opentrust-spinel", version = "0.1.0" }
 opentrust-instance = { path = "crates/opentrust-instance", version = "0.1.0", default-features = false }
 opentrust-sim = { path = "crates/opentrust-sim", version = "0.1.0", default-features = false }
 opentrust-flash = { path = "crates/opentrust-flash", version = "0.1.0" }
