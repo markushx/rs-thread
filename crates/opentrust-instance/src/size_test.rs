@@ -83,7 +83,9 @@ fn instance_size_breakdown() {
     row("cm.ba", &i.cm.ba);
     #[cfg(feature = "border-agent")]
     row("cm.ba_out", &i.cm.ba_out);
+    #[cfg(feature = "srp-client")]
     row("dnssrp.srp", &i.dnssrp.srp);
+    #[cfg(feature = "dns-client")]
     row("dnssrp.dns", &i.dnssrp.dns);
     #[cfg(feature = "srp-server")]
     row("dnssrp.srpd", &i.dnssrp.srpd);

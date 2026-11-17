@@ -317,6 +317,7 @@ pub fn new_instance(node_id: u16, settings: FileSettings, seed: u64) -> Box<VtIn
     let cfg = Config::router(node_ext_address(node_id), caps());
     #[cfg(not(feature = "ftd"))]
     let cfg = Config::end_device(node_ext_address(node_id), caps());
+    #[cfg_attr(not(feature = "srp-client"), allow(unused_mut))]
     let mut inst = Box::new(Instance::new(
         cfg,
         settings,
@@ -324,6 +325,7 @@ pub fn new_instance(node_id: u16, settings: FileSettings, seed: u64) -> Box<VtIn
         SimRng::new(seed ^ (u64::from(node_id) << 16) ^ 0x5eed),
     ));
     // OT starts the SRP client with auto-start enabled.
+    #[cfg(feature = "srp-client")]
     inst.srp_enable_auto_start(opentrust_core::time::Instant::ZERO);
     inst
 }

@@ -5,7 +5,14 @@
 use opentrust_core::crypto::ecdsa::{PUBLIC_KEY_LEN, SIGNATURE_LEN};
 use opentrust_core::{Error, Result};
 
-use crate::wire::{Name, Record, Writer, class, rtype};
+use crate::wire::{MAX_LABEL_LEN, Name, Record, Writer, class, rtype};
+
+/// Longest dotted name (service type or host name) a query may use.
+pub const MAX_NAME: usize = 128;
+/// Longest instance label.
+pub const MAX_LABEL: usize = MAX_LABEL_LEN + 1;
+/// Longest TXT rdata kept in a resolved or registered service.
+pub const MAX_TXT: usize = 256;
 
 // --------------------------------------------------------------------- TXT
 

@@ -13,10 +13,13 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd"]
+default = ["ftd", "srp-client", "dns-client"]
 # Router-capable nodes with the commissioner and Border Agent compiled in.
 # Without it the virtual-time node is a minimal thread device (MTD) build.
 ftd = ["opentrust-instance/ftd", "opentrust-instance/bbr-server", "opentrust-instance/commissioner", "opentrust-instance/border-agent", "opentrust-instance/scan-servers"]
+# The SRP and DNS clients of the simulated instances.
+srp-client = ["opentrust-instance/srp-client"]
+dns-client = ["opentrust-instance/dns-client"]
 # The async test harness (`testing` module): an in-memory 802.15.4 medium,
 # a lock-step virtual-time driver for `opentrust_embassy::OpenTrust::run`
 # futures and a virtual `embassy-time` driver (one per test binary).

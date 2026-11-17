@@ -13,10 +13,14 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "commissioner", "border-agent"]
+default = ["ftd", "commissioner", "border-agent", "srp-client", "dns-client"]
 ftd = ["opentrust-instance/ftd"]
 commissioner = ["ftd", "opentrust-instance/commissioner"]
 border-agent = ["commissioner", "opentrust-instance/border-agent"]
+# The SRP client and the DNS client of the instance (OT
+# `OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE`, `OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE`).
+srp-client = ["opentrust-instance/srp-client"]
+dns-client = ["opentrust-instance/dns-client"]
 edge-nal = ["dep:edge-nal"]
 openthread-compat = ["dep:bitflags"]
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-platform/defmt", "opentrust-mac/defmt", "opentrust-net/defmt", "opentrust-mle/defmt", "opentrust-mesh/defmt", "opentrust-meshcop/defmt", "opentrust-instance/defmt"]
@@ -44,7 +48,7 @@ log = { workspace = true, optional = true }
 # Enables the `edge-nal` feature for the tests (feature unification).
 opentrust-embassy = { path = ".", features = ["edge-nal", "openthread-compat"] }
 opentrust-sim = { workspace = true, features = ["testing", "ftd"] }
-opentrust-dns = { workspace = true }
+opentrust-dns = { workspace = true, features = ["srp-client", "dns-client"] }
 
 [lints]
 workspace = true

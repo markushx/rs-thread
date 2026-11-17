@@ -4,37 +4,62 @@
 //!
 //! OpenThread: `Srp::Client` (`otSrpClient*`), `Dns::Client` (`otDnsClient*`).
 
-use core::net::{Ipv6Addr, SocketAddrV6};
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use core::net::SocketAddrV6;
 
-use heapless::{Deque, String, Vec};
-use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
-use opentrust_core::crypto::ecdsa::SecretKey;
-use opentrust_core::settings::SettingsKey;
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use heapless::Deque;
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use opentrust_core::Result;
 use opentrust_core::time::Instant;
-use opentrust_core::{Error, Result};
+use opentrust_net::udp::SocketHandle;
+
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use heapless::Vec;
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use opentrust_core::Error;
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use opentrust_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use opentrust_net::udp::UdpSendOpts;
+use opentrust_platform::SettingsStore;
+use rand_core::{CryptoRng, Rng};
+use crate::{Instance, InstanceCrypto};
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use crate::MAX_UDP_PAYLOAD;
+#[cfg(feature = "dns-client")]
+use heapless::String;
+#[cfg(feature = "dns-client")]
 use opentrust_dns::client::{
     DnsClient, DnsContext, DnsError, DnsResult, MAX_LABEL, QueryConfig, QueryId, ResolvedAddresses,
     ResolvedService,
 };
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use core::net::Ipv6Addr;
+#[cfg(feature = "srp-client")]
+use opentrust_core::crypto::ecdsa::SecretKey;
+#[cfg(feature = "srp-client")]
+use opentrust_core::settings::SettingsKey;
+#[cfg(feature = "srp-client")]
 use opentrust_dns::srp::discovery::NetDataService;
+#[cfg(feature = "srp-client")]
 use opentrust_dns::srp::{
     ItemState, MAX_HOST_ADDRS, ServiceConfig, ServiceId, SrpClient, SrpContext, SrpEnv, SrpError,
     SrpEvent, filter_auto_addresses,
 };
+#[cfg(feature = "srp-client")]
 use opentrust_mesh::netdata::ServiceEntry;
-use opentrust_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
-use opentrust_net::udp::{SocketHandle, UdpSendOpts};
-use opentrust_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
-
-use crate::InstanceCrypto;
-
-use crate::{Event, Instance, MAX_UDP_PAYLOAD};
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use crate::Event;
 
 /// Instances reported by one browse result.
+#[cfg(feature = "dns-client")]
 pub const MAX_BROWSE_INSTANCES: usize = 4;
 
 /// One instance of a browse result.
+#[cfg(feature = "dns-client")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrowseInstance {
     /// Instance label.
@@ -46,6 +71,7 @@ pub struct BrowseInstance {
 
 /// The owned result of a DNS query ([`Event::DnsResult`],
 /// [`Instance::dns_take_result`]).
+#[cfg(feature = "dns-client")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[allow(clippy::large_enum_variant)] // no allocation: the result is a plain value
@@ -65,11 +91,11 @@ pub enum DnsOutcome {
 }
 
 /// Largest response kept for an arbitrary record query.
-#[cfg(feature = "srp-server")]
+#[cfg(all(feature = "dns-client", feature = "srp-server"))]
 pub const RECORDS_MSG: usize = 512;
 
 /// The records of a [`DnsOutcome::Records`] message.
-#[cfg(feature = "srp-server")]
+#[cfg(all(feature = "dns-client", feature = "srp-server"))]
 pub fn records_of(
     msg: &[u8],
 ) -> impl Iterator<
@@ -81,12 +107,16 @@ pub fn records_of(
     opentrust_dns::client::RecordsResponse::from_message(msg).records()
 }
 
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Which {
+    #[cfg(feature = "srp-client")]
     Srp,
+    #[cfg(feature = "dns-client")]
     Dns,
 }
 
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
 #[derive(Debug)]
 struct Dgram {
     which: Which,
@@ -95,6 +125,7 @@ struct Dgram {
     buf: [u8; MAX_UDP_PAYLOAD],
 }
 
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
 /// Queue of datagrams of the clients; the payloads are chains of buffers of
 /// a pool (`NoBufs` when it is exhausted).
 #[derive(Debug, Default)]
@@ -103,6 +134,7 @@ struct DgramQueue {
     pool: BufPool<12, POOL_BUF_SIZE>,
 }
 
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
 impl DgramQueue {
     fn push(&mut self, which: Which, dst: SocketAddrV6, p: &[u8]) -> Result<()> {
         if self.q.is_full() {
@@ -136,32 +168,45 @@ impl DgramQueue {
 /// the default is six; the features `srp-services-8` and `srp-services-12`
 /// raise it. Each slot costs about the size of a `ServiceConfig` plus its
 /// update state (see `docs/memory-budget.md`).
-#[cfg(feature = "srp-services-12")]
+#[cfg(all(feature = "srp-client", feature = "srp-services-12"))]
 pub const SRP_SERVICES: usize = 12;
 /// See above.
-#[cfg(all(feature = "srp-services-8", not(feature = "srp-services-12")))]
+#[cfg(all(feature = "srp-client", feature = "srp-services-8", not(feature = "srp-services-12")))]
 pub const SRP_SERVICES: usize = 8;
 /// See above.
-#[cfg(not(any(feature = "srp-services-8", feature = "srp-services-12")))]
+#[cfg(all(feature = "srp-client", not(any(feature = "srp-services-8", feature = "srp-services-12"))))]
 pub const SRP_SERVICES: usize = 6;
 
 /// State of the SRP and DNS clients.
 #[derive(Debug)]
 pub(crate) struct DnsSrp {
+    #[cfg(feature = "srp-client")]
     pub(crate) srp: SrpClient<SRP_SERVICES>,
+    #[cfg(feature = "dns-client")]
     pub(crate) dns: DnsClient<4>,
+    #[cfg(feature = "srp-client")]
     srp_sock: Option<SocketHandle>,
+    #[cfg(feature = "dns-client")]
     dns_sock: Option<SocketHandle>,
+    #[cfg(any(feature = "srp-client", feature = "dns-client"))]
     out: DgramQueue,
+    #[cfg(feature = "srp-client")]
     srp_events: Deque<SrpEvent, 4>,
     /// The last failed update, until the application takes it.
+    #[cfg(feature = "srp-client")]
     srp_failure: Option<SrpError>,
+    #[cfg(feature = "dns-client")]
     results: Deque<(QueryId, DnsOutcome), 2>,
     /// Results already announced with an event.
+    #[cfg(feature = "dns-client")]
     notified: usize,
+    #[cfg(feature = "srp-client")]
     attached: bool,
+    #[cfg(feature = "srp-client")]
     nd_hash: Option<u64>,
+    #[cfg(feature = "srp-client")]
     addr_hash: Option<u64>,
+    #[cfg(feature = "srp-client")]
     slaac_hash: Option<u64>,
     #[cfg(feature = "srp-server")]
     pub(crate) srpd: crate::srp_server::SrpServerCtx,
@@ -170,18 +215,31 @@ pub(crate) struct DnsSrp {
 impl DnsSrp {
     pub(crate) fn new() -> Self {
         Self {
+            #[cfg(feature = "srp-client")]
             srp: SrpClient::new(),
+            #[cfg(feature = "dns-client")]
             dns: DnsClient::new(),
+            #[cfg(feature = "srp-client")]
             srp_sock: None,
+            #[cfg(feature = "dns-client")]
             dns_sock: None,
+            #[cfg(any(feature = "srp-client", feature = "dns-client"))]
             out: DgramQueue::default(),
+            #[cfg(feature = "srp-client")]
             srp_events: Deque::new(),
+            #[cfg(feature = "srp-client")]
             srp_failure: None,
+            #[cfg(feature = "dns-client")]
             results: Deque::new(),
+            #[cfg(feature = "dns-client")]
             notified: 0,
+            #[cfg(feature = "srp-client")]
             attached: false,
+            #[cfg(feature = "srp-client")]
             nd_hash: None,
+            #[cfg(feature = "srp-client")]
             addr_hash: None,
+            #[cfg(feature = "srp-client")]
             slaac_hash: None,
             #[cfg(feature = "srp-server")]
             srpd: crate::srp_server::SrpServerCtx::new(),
@@ -189,25 +247,41 @@ impl DnsSrp {
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
+        let d: Option<Instant> = None;
         #[cfg(feature = "srp-server")]
-        let server = self.srpd.next_deadline();
-        #[cfg(not(feature = "srp-server"))]
-        let server = None;
-        [self.srp.next_deadline(), self.dns.next_deadline(), server]
-            .into_iter()
-            .flatten()
-            .min()
+        let d = d.or(self.srpd.next_deadline());
+        #[cfg(feature = "srp-client")]
+        let d = [d, self.srp.next_deadline()].into_iter().flatten().min();
+        #[cfg(feature = "dns-client")]
+        let d = [d, self.dns.next_deadline()].into_iter().flatten().min();
+        d
     }
 
     pub(crate) fn has_pending_work(&self) -> bool {
-        !self.out.is_empty() || !self.srp_events.is_empty() || self.results.len() > self.notified
+        #[allow(unused_mut)]
+        let mut busy = false;
+        #[cfg(any(feature = "srp-client", feature = "dns-client"))]
+        {
+            busy |= !self.out.is_empty();
+        }
+        #[cfg(feature = "srp-client")]
+        {
+            busy |= !self.srp_events.is_empty();
+        }
+        #[cfg(feature = "dns-client")]
+        {
+            busy |= self.results.len() > self.notified;
+        }
+        busy
     }
 }
 
+#[cfg(feature = "srp-client")]
 /// Settings value of `SrpClientInfo`: server address and port (OT
 /// `SrpClientInfo`: `mServerAddress`, `mServerPort`).
 const SERVER_INFO_LEN: usize = 18;
 
+#[cfg(feature = "srp-client")]
 struct SrpCtx<'a, S> {
     out: &'a mut DgramQueue,
     events: &'a mut Deque<SrpEvent, 4>,
@@ -216,10 +290,12 @@ struct SrpCtx<'a, S> {
     ml_eid: Ipv6Addr,
 }
 
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
 fn queue(out: &mut DgramQueue, which: Which, dst: SocketAddrV6, p: &[u8]) -> Result<()> {
     out.push(which, dst, p)
 }
 
+#[cfg(feature = "srp-client")]
 impl<S: SettingsStore> SrpContext for SrpCtx<'_, S> {
     fn send(&mut self, server: SocketAddrV6, payload: &[u8]) -> Result<()> {
         queue(self.out, Which::Srp, server, payload)
@@ -277,11 +353,13 @@ impl<S: SettingsStore> SrpContext for SrpCtx<'_, S> {
     }
 }
 
+#[cfg(feature = "dns-client")]
 struct DnsCtx<'a> {
     out: &'a mut DgramQueue,
     results: &'a mut Deque<(QueryId, DnsOutcome), 2>,
 }
 
+#[cfg(feature = "dns-client")]
 impl DnsContext for DnsCtx<'_> {
     fn send(&mut self, server: SocketAddrV6, payload: &[u8]) -> Result<()> {
         queue(self.out, Which::Dns, server, payload)
@@ -334,6 +412,7 @@ impl DnsContext for DnsCtx<'_> {
     }
 }
 
+#[cfg(feature = "srp-client")]
 fn adapt(e: ServiceEntry<'_>) -> NetDataService<'_> {
     NetDataService {
         service_id: e.service_id,
@@ -344,13 +423,16 @@ fn adapt(e: ServiceEntry<'_>) -> NetDataService<'_> {
     }
 }
 
+#[cfg(feature = "srp-client")]
 fn fnv(h: &mut u64, b: &[u8]) {
     for x in b {
         *h = (*h ^ u64::from(*x)).wrapping_mul(0x0000_0100_0000_01b3);
     }
 }
 
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
+    #[cfg(feature = "srp-client")]
     fn auto_addrs(&self) -> Vec<Ipv6Addr, MAX_HOST_ADDRS> {
         let mut v = Vec::new();
         let mlp = self.core.cfg.cur.mesh_local_prefix;
@@ -368,6 +450,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// Run `f` on the SRP client with its environment.
+    #[cfg(feature = "srp-client")]
     fn with_srp<T>(
         &mut self,
         now: Instant,
@@ -398,6 +481,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         r
     }
 
+}
+
+#[cfg(feature = "srp-client")]
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ SRP API
 
     /// Set the host name to register (OT `otSrpClientSetHostName`).
@@ -536,6 +623,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.dnssrp.srp.is_running()
     }
 
+}
+
+#[cfg(feature = "dns-client")]
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ DNS API
 
     /// The server for queries without a configuration (OT
@@ -552,12 +643,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Set the default query configuration; unset fields take the defaults
     /// (OT `otDnsClientSetDefaultConfig`).
     pub fn dns_set_default_config(&mut self, c: opentrust_dns::client::PartialConfig) {
+        #[cfg(feature = "srp-client")]
         let srp = self
             .dnssrp
             .srp
             .is_server_selected_by_auto_start()
             .then(|| self.dnssrp.srp.server().map(|s| *s.ip()))
             .flatten();
+        #[cfg(not(feature = "srp-client"))]
+        let srp = None;
         self.dnssrp.dns.set_default_config(c, srp);
     }
 
@@ -677,12 +771,75 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         found
     }
 
+}
+
+impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     // ------------------------------------------------------------ driving
 
     /// Feed the clients: attach state, Network Data, addresses, timers,
     /// outgoing datagrams, events. Returns `true` if something happened.
     #[inline(never)]
     pub(crate) fn service_dns_srp(&mut self, now: Instant) -> bool {
+        #[allow(unused_mut)] // no client and no server: nothing to drive
+        let mut busy = false;
+        #[cfg(feature = "srp-client")]
+        {
+            busy |= self.service_srp_client_inputs(now);
+        }
+        #[cfg(feature = "dns-client")]
+        if self.dnssrp.dns.next_deadline().is_some_and(|d| d <= now) {
+            let (st, core) = (&mut self.dnssrp, &mut self.core);
+            let mut ctx = DnsCtx {
+                out: &mut st.out,
+                results: &mut st.results,
+            };
+            st.dns.poll(now, &mut core.rng, &mut ctx);
+            busy = true;
+        }
+        #[cfg(feature = "srp-server")]
+        {
+            busy |= self.service_srp_server(now);
+        }
+        // Events.
+        #[cfg(feature = "srp-client")]
+        while let Some(ev) = self.dnssrp.srp_events.pop_front() {
+            busy = true;
+            #[cfg(feature = "dns-client")]
+            if let SrpEvent::ServerSelected(s) = ev {
+                self.dnssrp.dns.on_srp_server_selected(s.map(|s| *s.ip()));
+            }
+            if let SrpEvent::Failed(e) = ev {
+                self.dnssrp.srp_failure = Some(e);
+            }
+            self.core.push_event(Event::SrpClient(ev));
+        }
+        #[cfg(feature = "dns-client")]
+        while self.dnssrp.notified < self.dnssrp.results.len() {
+            let id = self
+                .dnssrp
+                .results
+                .iter()
+                .nth(self.dnssrp.notified)
+                .map(|(i, _)| *i);
+            self.dnssrp.notified += 1;
+            if let Some(id) = id {
+                self.core.push_event(Event::DnsResult(id));
+            }
+            busy = true;
+        }
+        // Outgoing datagrams.
+        #[cfg(any(feature = "srp-client", feature = "dns-client"))]
+        while let Some(d) = self.dnssrp.out.pop_front() {
+            busy = true;
+            let _ = self.send_dns_srp(now, &d);
+        }
+        let _ = now;
+        busy
+    }
+
+    /// Attach state, Network Data, interface addresses and the SRP timer.
+    #[cfg(feature = "srp-client")]
+    fn service_srp_client_inputs(&mut self, now: Instant) -> bool {
         let mut busy = false;
         let attached = self.mle.role().is_attached();
         if attached != self.dnssrp.attached {
@@ -737,54 +894,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.with_srp(now, |c, e| c.poll(e));
             busy = true;
         }
-        if self.dnssrp.dns.next_deadline().is_some_and(|d| d <= now) {
-            let (st, core) = (&mut self.dnssrp, &mut self.core);
-            let mut ctx = DnsCtx {
-                out: &mut st.out,
-                results: &mut st.results,
-            };
-            st.dns.poll(now, &mut core.rng, &mut ctx);
-            busy = true;
-        }
-        #[cfg(feature = "srp-server")]
-        {
-            busy |= self.service_srp_server(now);
-        }
-        // Events.
-        while let Some(ev) = self.dnssrp.srp_events.pop_front() {
-            busy = true;
-            if let SrpEvent::ServerSelected(s) = ev {
-                self.dnssrp.dns.on_srp_server_selected(s.map(|s| *s.ip()));
-            }
-            if let SrpEvent::Failed(e) = ev {
-                self.dnssrp.srp_failure = Some(e);
-            }
-            self.core.push_event(Event::SrpClient(ev));
-        }
-        while self.dnssrp.notified < self.dnssrp.results.len() {
-            let id = self
-                .dnssrp
-                .results
-                .iter()
-                .nth(self.dnssrp.notified)
-                .map(|(i, _)| *i);
-            self.dnssrp.notified += 1;
-            if let Some(id) = id {
-                self.core.push_event(Event::DnsResult(id));
-            }
-            busy = true;
-        }
-        // Outgoing datagrams.
-        while let Some(d) = self.dnssrp.out.pop_front() {
-            busy = true;
-            let _ = self.send_dns_srp(now, &d);
-        }
         busy
     }
 
+    #[cfg(any(feature = "srp-client", feature = "dns-client"))]
     fn send_dns_srp(&mut self, now: Instant, d: &Dgram) -> Result<()> {
         let slot = match d.which {
+            #[cfg(feature = "srp-client")]
             Which::Srp => self.dnssrp.srp_sock,
+            #[cfg(feature = "dns-client")]
             Which::Dns => self.dnssrp.dns_sock,
         };
         let sock = match slot {
@@ -797,7 +915,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     return Err(e);
                 }
                 match d.which {
+                    #[cfg(feature = "srp-client")]
                     Which::Srp => self.dnssrp.srp_sock = Some(s),
+                    #[cfg(feature = "dns-client")]
                     Which::Dns => self.dnssrp.dns_sock = Some(s),
                 }
                 s
@@ -816,17 +936,35 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// A datagram queued on socket `h`: consumed here if it belongs to the
-    /// SRP or DNS client.
+    /// SRP or DNS client or to the SRP server.
     pub(crate) fn dns_srp_rx(&mut self, now: Instant, h: SocketHandle) -> bool {
         #[cfg(feature = "srp-server")]
         if self.srp_server_rx(now, h) {
             return true;
         }
-        let which = if self.dnssrp.srp_sock == Some(h) {
-            Which::Srp
-        } else if self.dnssrp.dns_sock == Some(h) {
-            Which::Dns
-        } else {
+        #[cfg(any(feature = "srp-client", feature = "dns-client"))]
+        {
+            self.client_rx(now, h)
+        }
+        #[cfg(not(any(feature = "srp-client", feature = "dns-client")))]
+        {
+            let _ = (now, h);
+            false
+        }
+    }
+
+    #[cfg(any(feature = "srp-client", feature = "dns-client"))]
+    fn client_rx(&mut self, now: Instant, h: SocketHandle) -> bool {
+        let mut which = None;
+        #[cfg(feature = "srp-client")]
+        if self.dnssrp.srp_sock == Some(h) {
+            which = Some(Which::Srp);
+        }
+        #[cfg(feature = "dns-client")]
+        if self.dnssrp.dns_sock == Some(h) {
+            which = Some(Which::Dns);
+        }
+        let Some(which) = which else {
             return false;
         };
         let mut buf = [0u8; MAX_UDP_PAYLOAD];
@@ -837,9 +975,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             let from = info.meta.peer;
             let payload = &buf[..info.len];
             match which {
+                #[cfg(feature = "srp-client")]
                 Which::Srp => {
                     self.with_srp(now, |c, e| c.handle_datagram(e, from, payload));
                 }
+                #[cfg(feature = "dns-client")]
                 Which::Dns => {
                     let (st, _) = (&mut self.dnssrp, &mut self.core);
                     let mut ctx = DnsCtx {
@@ -850,11 +990,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 }
             }
         }
+        let _ = now;
         true
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "srp-client"))]
 mod ot_vector_tests {
     extern crate std;
 

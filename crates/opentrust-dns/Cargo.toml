@@ -13,6 +13,11 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
+default = ["srp-client", "dns-client"]
+# The SRP client (`srp::SrpClient`; OT `OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE`).
+srp-client = []
+# The DNS / DNS-SD client (`client`; OT `OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE`).
+dns-client = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "heapless/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 # The SRP server (`srp::server`).

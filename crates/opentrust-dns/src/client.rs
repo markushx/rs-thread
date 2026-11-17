@@ -31,7 +31,7 @@ use heapless::{String, Vec};
 use opentrust_core::time::{Duration, Instant};
 use rand_core::Rng;
 
-use crate::wire::{Header, MAX_LABEL_LEN, Name, Parser, Part, Writer, class, opcode, rcode, rtype};
+use crate::wire::{Header, Name, Parser, Part, Writer, class, opcode, rcode, rtype};
 
 /// Default DNS server port.
 pub const DEFAULT_SERVER_PORT: u16 = 53;
@@ -39,12 +39,7 @@ pub const DEFAULT_SERVER_PORT: u16 = 53;
 pub const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_millis(6000);
 /// Default number of transmission attempts per query (OT: 3).
 pub const DEFAULT_MAX_TX_ATTEMPTS: u8 = 3;
-/// Longest dotted name (service type or host name) a query may use.
-pub const MAX_NAME: usize = 128;
-/// Longest instance label.
-pub const MAX_LABEL: usize = MAX_LABEL_LEN + 1;
-/// Longest TXT rdata kept in a [`ResolvedService`].
-pub const MAX_TXT: usize = 256;
+pub use crate::rdata::{MAX_LABEL, MAX_NAME, MAX_TXT};
 /// Addresses kept per result.
 pub const MAX_ADDRS: usize = 4;
 /// Largest query message.

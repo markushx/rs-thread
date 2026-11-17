@@ -5,7 +5,6 @@
 
 use heapless::Deque;
 use opentrust_core::crypto::CryptoBackend;
-use opentrust_core::crypto::ecdsa::EcdsaP256;
 use opentrust_core::crypto::ecjpake::{P256, SoftP256};
 use opentrust_core::crypto::soft::SoftCrypto;
 #[cfg(feature = "border-agent")]
@@ -20,15 +19,26 @@ use opentrust_meshcop::leader::LeaderState;
 
 use crate::cm_io::JoinerAction;
 
+/// ECDSA P-256 where the SRP client or server needs it, nothing otherwise.
+#[cfg(any(feature = "srp-client", feature = "srp-server"))]
+pub trait EcdsaBound: opentrust_core::crypto::ecdsa::EcdsaP256 {}
+#[cfg(any(feature = "srp-client", feature = "srp-server"))]
+impl<T: opentrust_core::crypto::ecdsa::EcdsaP256> EcdsaBound for T {}
+/// ECDSA P-256 where the SRP client or server needs it, nothing otherwise.
+#[cfg(not(any(feature = "srp-client", feature = "srp-server")))]
+pub trait EcdsaBound {}
+#[cfg(not(any(feature = "srp-client", feature = "srp-server")))]
+impl<T> EcdsaBound for T {}
+
 /// The cryptography an [`Instance`](crate::Instance) needs: the
 /// [`CryptoBackend`] (AES-CCM*, SHA-256, HMAC, CMAC), ECDSA P-256 (SRP
-/// client) and the P-256 group of EC-JPAKE (DTLS of the Joiner, the
+/// client and server; only with `srp-client` or `srp-server`) and the P-256 group of EC-JPAKE (DTLS of the Joiner, the
 /// Commissioner and the Border Agent).
 ///
 /// Implemented for the software backend [`SoftCrypto`] (with
 /// [`SoftP256`]); a hardware backend implements it once with its own curve
 /// type, so the instance keeps three type parameters.
-pub trait InstanceCrypto: CryptoBackend<Sha256: Clone> + EcdsaP256 + Clone {
+pub trait InstanceCrypto: CryptoBackend<Sha256: Clone> + EcdsaBound + Clone {
     /// The P-256 group used by EC-JPAKE.
     type Curve: P256 + Clone;
 

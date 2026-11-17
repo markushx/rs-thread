@@ -26,12 +26,12 @@ ping = []
 tables = []
 # `netdata`, `prefix`, `route`.
 netdata = []
-# `srp client`.
-srp = []
+# `srp client` (the SRP client of the instance).
+srp = ["opentrust-instance/srp-client"]
 # `srp server` (the SRP server of the instance).
 srp-server = ["srp", "ftd", "opentrust-instance/srp-server"]
-# `dns`.
-dns = []
+# `dns` (the DNS client of the instance).
+dns = ["opentrust-instance/dns-client"]
 # `udp`.
 udp = []
 # `networkdiagnostic`.

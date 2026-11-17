@@ -20,14 +20,15 @@
 #[cfg(test)]
 extern crate std;
 
+#[cfg(feature = "dns-client")]
 pub mod client;
 pub mod rdata;
 pub mod srp;
 pub mod wire;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "dns-client"))]
 mod client_tests;
-#[cfg(test)]
+#[cfg(all(test, any(feature = "srp-client", feature = "dns-client")))]
 mod test_util;
 #[cfg(test)]
 mod tests;

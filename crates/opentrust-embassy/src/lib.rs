@@ -128,11 +128,14 @@ mod run;
 mod state;
 mod udp;
 
-pub use opentrust_instance::{
-    DiscoverResult, DnsError, PingReply, QueryConfig, ResolvedAddresses, ResolvedService, ServiceId,
-};
+pub use opentrust_instance::{DiscoverResult, PingReply};
+#[cfg(feature = "dns-client")]
+pub use opentrust_instance::{DnsError, QueryConfig, ResolvedAddresses, ResolvedService};
+#[cfg(feature = "srp-client")]
+pub use opentrust_instance::ServiceId;
 pub use opentrust_instance::{Event, Instance};
 pub use opentrust_meshcop::joiner::JoinerConfig;
+#[cfg(feature = "dns-client")]
 pub use requests::DnsClientError;
 pub use state::{EVENT_QUEUE_LEN, OpenTrust, Resources, WAITERS};
 pub use udp::UdpSocket;

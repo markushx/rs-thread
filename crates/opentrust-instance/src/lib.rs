@@ -51,7 +51,8 @@
 //! [`Event::SrpClient`], [`Event::DnsResult`]). They use two internal UDP
 //! sockets, take the server from the Network Data (`srp_enable_auto_start`),
 //! persist the SRP key and server in the settings and register the
-//! interface addresses. This needs `EcdsaP256` (`opentrust_core::crypto::ecdsa`)
+//! interface addresses. Both are optional (`srp-client`, `dns-client`). The SRP
+//! client needs `EcdsaP256` (`opentrust_core::crypto::ecdsa`)
 //! on the crypto backend and a `CryptoRng` as the RNG.
 //!
 //! # Backbone Router client
@@ -93,6 +94,11 @@
 //! `ftd` (default; router, leader, forwarding), `commissioner`,
 //! `border-agent`, `tcat`, `trel` are forwarded to the lower crates;
 //! `defmt` / `log` select the logging backend.
+//!
+//! `srp-client` and `dns-client` (default) include the SRP client and the
+//! DNS client (OT `OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE`,
+//! `OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE`). Without `srp-client` and
+//! `srp-server` the crypto backend needs no ECDSA P-256.
 
 mod api;
 mod bbr;
@@ -126,12 +132,16 @@ pub use config::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 #[cfg(feature = "ftd")]
 pub use diag::RouteInfo;
 pub use diag::{ChildInfo, MleCountersInfo, NeighborInfo, tlv as diag_tlv};
-pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES, SRP_SERVICES};
-#[cfg(feature = "srp-server")]
+#[cfg(feature = "dns-client")]
+pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES};
+#[cfg(all(feature = "dns-client", feature = "srp-server"))]
 pub use dns_srp::{RECORDS_MSG, records_of};
+#[cfg(feature = "srp-client")]
+pub use dns_srp::SRP_SERVICES;
 pub use opentrust_coap::message::Code as CoapCode;
 pub use opentrust_coap::uri::Uri as TmfUri;
 pub use opentrust_core::types::{ExtAddress, Rloc16};
+#[cfg(feature = "dns-client")]
 pub use opentrust_dns::client::{
     DnsError, PartialConfig, QueryConfig, QueryId, ResolvedAddresses, ResolvedService, Section,
     ServiceMode,
@@ -139,6 +149,7 @@ pub use opentrust_dns::client::{
 pub use opentrust_dns::rdata::TxtEntry;
 #[cfg(feature = "srp-server")]
 pub use opentrust_dns::srp::server as srp_server_types;
+#[cfg(feature = "srp-client")]
 pub use opentrust_dns::srp::{ItemState, ServiceConfig, ServiceId, SrpError, SrpEvent};
 pub use opentrust_mac::mac::MacCounters;
 pub use opentrust_mac::mac::ScanResult as BeaconScanResult;
@@ -343,8 +354,10 @@ pub enum Event {
     /// A Network Data Publisher entry changed state.
     Publisher(PublisherEvent),
     /// The SRP client selected or lost a server, registered, or failed.
+    #[cfg(feature = "srp-client")]
     SrpClient(SrpEvent),
     /// A DNS query completed ([`Instance::dns_take_result`]).
+    #[cfg(feature = "dns-client")]
     DnsResult(QueryId),
     /// An MLR.req from [`Instance::mlr_register`] was answered or failed
     /// ([`Instance::mlr_take_register_result`]).

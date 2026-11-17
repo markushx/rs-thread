@@ -30,7 +30,9 @@ opentrust-instance = { workspace = true }
 opentrust-meshcop = { workspace = true }
 opentrust-dns = { workspace = true }
 opentrust-flash = { workspace = true }
-opentrust-embassy = { path = "../opentrust-embassy", version = "0.1.0", default-features = false }
+# Matter advertises through the SRP client and resolves peers through the
+# DNS client.
+opentrust-embassy = { path = "../opentrust-embassy", version = "0.1.0", default-features = false, features = ["srp-client", "dns-client"] }
 rs-matter = { workspace = true }
 embassy-sync = { workspace = true }
 embassy-futures = { workspace = true }

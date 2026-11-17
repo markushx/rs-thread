@@ -1260,5 +1260,5 @@ fn verify_txt(d: &[u8]) -> bool {
 
 mod dnssd;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "srp-client", feature = "dns-client"))]
 mod tests;

@@ -17,14 +17,20 @@
 use core::net::Ipv6Addr;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+#[cfg(feature = "dns-client")]
 use heapless::Vec;
 use opentrust_core::Error;
 use opentrust_core::time::{Duration, Instant};
+use opentrust_instance::{DiscoverResult, InstanceCrypto, PingReply};
+#[cfg(feature = "dns-client")]
+use opentrust_instance::Instance;
+#[cfg(feature = "dns-client")]
 use opentrust_instance::{
-    BrowseInstance, DiscoverResult, DnsError, DnsOutcome, Instance, InstanceCrypto, ItemState,
-    MAX_BROWSE_INSTANCES, PingReply, QueryConfig, QueryId, ResolvedAddresses, ResolvedService,
-    ServiceId,
+    BrowseInstance, DnsError, DnsOutcome, MAX_BROWSE_INSTANCES, QueryConfig, QueryId,
+    ResolvedAddresses, ResolvedService,
 };
+#[cfg(feature = "srp-client")]
+use opentrust_instance::{ItemState, ServiceId};
 use opentrust_meshcop::joiner::JoinerConfig;
 use opentrust_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
@@ -35,6 +41,7 @@ use crate::state::{OpenTrust, State};
 const PING_ID: u16 = 0x4f54;
 
 /// Error of the async DNS wrappers.
+#[cfg(feature = "dns-client")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DnsClientError {
@@ -136,6 +143,7 @@ where
 
     /// Wait until the SRP client has registered the host
     /// ([`Error::ResponseTimeout`] after `timeout`, if given).
+    #[cfg(feature = "srp-client")]
     pub async fn srp_wait_host_registered(&self, timeout: Option<Duration>) -> Result<(), Error> {
         let deadline = timeout.map(|t| self.now().saturating_add(t));
         self.wait_for(deadline, |s| {
@@ -146,6 +154,7 @@ where
 
     /// Wait until the SRP client has registered service `id`
     /// ([`Error::NotFound`] if it is not a known service).
+    #[cfg(feature = "srp-client")]
     pub async fn srp_wait_service_registered(
         &self,
         id: ServiceId,
@@ -166,6 +175,7 @@ where
         if missing { Err(Error::NotFound) } else { r }
     }
 
+    #[cfg(feature = "dns-client")]
     async fn dns_query(
         &self,
         start: impl FnOnce(&mut Instance<S, C, R>, Instant) -> Result<QueryId, Error>,
@@ -232,6 +242,7 @@ where
 
     /// Resolve the AAAA records of `host` (see
     /// [`Instance::dns_resolve_address`]).
+    #[cfg(feature = "dns-client")]
     pub async fn dns_resolve_address(
         &self,
         host: &str,
@@ -247,6 +258,7 @@ where
     }
 
     /// Browse for the instances of `service` (see [`Instance::dns_browse`]).
+    #[cfg(feature = "dns-client")]
     pub async fn dns_browse(
         &self,
         service: &str,
@@ -262,6 +274,7 @@ where
     }
 
     /// Resolve a service instance (see [`Instance::dns_resolve_service`]).
+    #[cfg(feature = "dns-client")]
     pub async fn dns_resolve_service(
         &self,
         instance: &str,
