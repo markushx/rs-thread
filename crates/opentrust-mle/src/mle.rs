@@ -696,6 +696,15 @@ impl<const C: usize> Mle<C> {
             .map(NbRef::Child)
     }
 
+    /// Forget the RSS average of the neighbor with `ext`, if there is one
+    /// (OT `Mac::Filter::ApplyToRxFrame`: a frame that gets a fixed RSS
+    /// from the MAC filter makes the fixed value take effect quickly).
+    pub fn clear_neighbor_average_rss(&mut self, ext: &opentrust_core::types::ExtAddress) {
+        if let Some(nb) = self.find_neighbor(ext, false) {
+            self.neighbor_mut(nb).link_info.clear_average_rss();
+        }
+    }
+
     /// Replay protection for a received secured data frame (OT
     /// `MeshForwarder::HandleReceivedFrame` / `Mac::ProcessReceiveSecurity`):
     /// the key sequence and frame counter must not be older than the last

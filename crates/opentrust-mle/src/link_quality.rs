@@ -337,6 +337,12 @@ impl LinkQualityInfo {
         }
     }
 
+    /// Forget the RSS average (OT `LinkQualityInfo::ClearAverageRss`); the
+    /// incoming link quality stays until the next sample.
+    pub fn clear_average_rss(&mut self) {
+        self.rss.clear();
+    }
+
     /// Average RSS, [`INVALID_RSSI`] if none.
     pub fn average_rss(&self) -> i8 {
         self.rss.average()

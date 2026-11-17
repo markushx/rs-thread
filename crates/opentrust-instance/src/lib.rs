@@ -610,6 +610,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     // ------------------------------------------------------------ driving
 
+    /// Forget the RSS average of the neighbor with extended address `ext`
+    /// (OT `Mac::Filter::ApplyToRxFrame`): a test radio whose MAC filter
+    /// replaces the RSS of a frame calls this before delivering it.
+    pub fn clear_neighbor_average_rss(&mut self, ext: &[u8; 8]) {
+        self.mle
+            .clear_neighbor_average_rss(&opentrust_core::types::ExtAddress(*ext));
+    }
+
     /// Feed a received PSDU (with FCS) from the radio.
     pub fn handle_radio_rx(&mut self, psdu: &[u8], info: &PsduRxInfo, now: Instant) {
         self.core.now = now;

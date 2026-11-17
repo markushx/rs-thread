@@ -790,7 +790,12 @@ impl VtRadio {
                 if let Some(ext) = self.ext_of(tx.dst) {
                     match self.filter.apply(&ext) {
                         None => return,
-                        Some(r) => rssi = r.unwrap_or(rssi),
+                        Some(r) => {
+                            if let Some(r) = r {
+                                inst.clear_neighbor_average_rss(&ext);
+                                rssi = r;
+                            }
+                        }
                     }
                 }
                 self.tx = None;
@@ -879,7 +884,14 @@ impl VtRadio {
                     }
                     return;
                 }
-                Some(r) => rssi = r.unwrap_or(rssi),
+                Some(r) => {
+                    if let Some(r) = r {
+                        // A fixed RSS takes effect at once (OT
+                        // `Filter::ApplyToRxFrame`).
+                        inst.clear_neighbor_average_rss(&ext);
+                        rssi = r;
+                    }
+                }
             }
         }
         let info = PsduRxInfo {
