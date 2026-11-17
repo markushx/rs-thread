@@ -12,10 +12,10 @@
 //! Thread (`opentrust_matter::driver::ThreadRunner`). rs-matter
 //! uses its test device attestation credentials and the RustCrypto backend
 //! (pure Rust, no hardware crypto). Everything rs-matter persists (fabrics,
-//! ACLs, counters, ...) and the Thread settings blob of `ThreadPersist` live
-//! in one key-value store in flash (`opentrust-flash`, region in `memory.x`),
-//! so the light keeps its fabrics, its Thread network and its role over a
-//! reset. Button 1 held at boot erases the store (factory reset). LED1
+//! ACLs, counters, ...) lives in a key-value store in flash and the Thread
+//! settings (dataset, network info, ...) in a second region
+//! (`opentrust-flash`, regions in `memory.x`), so the light keeps its fabrics,
+//! its Thread network and its role over a reset. Button 1 held at boot erases the store (factory reset). LED1
 //! follows the On/Off attribute. The pairing code and discriminator are
 //! logged at start-up.
 //!
@@ -40,7 +40,9 @@ use nrf52840_leader::Board;
 use opentrust_core::crypto::soft::SoftCrypto;
 use opentrust_core::settings::SettingsKey;
 use opentrust_embassy::{OpenTrust, Resources};
-use opentrust_flash::{FlashWriter, Shared};
+use embassy_embedded_hal::flash::partition::Partition;
+use embassy_sync::mutex::Mutex as AsyncMutex;
+use opentrust_flash::{FlashWriter, Settings, Shared};
 use opentrust_instance::{ExtAddress, Instance};
 #[cfg(feature = "ble")]
 use opentrust_matter::ble::TroubleBtpGattContext;
@@ -48,9 +50,8 @@ use opentrust_matter::ble::TroubleBtpGattContext;
 use opentrust_matter::driver::ThreadCoexRunner;
 use opentrust_matter::driver::ThreadRunner;
 use opentrust_matter::flash_kv::FlashKv;
-use opentrust_matter::persist::{THREAD_SETTINGS_KEY, ThreadPersist};
 use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::{Radio, RamSettings, SettingsStore};
+use opentrust_platform::{Radio, SettingsStore};
 use panic_probe as _;
 use rs_matter::crypto::{Crypto, default_crypto};
 use rs_matter::dm::clusters::app::level_control::LevelControlHooks;
@@ -83,14 +84,22 @@ const BUMP: usize = if cfg!(feature = "ble") {
     28 * 1024
 };
 
-type Res = Resources<NoopRawMutex, EmbassyClock, RamSettings<4096>, SoftCrypto, NrfRng<'static>>;
+type Res =
+    Resources<NoopRawMutex, EmbassyClock, Settings<'static, 1536, 16>, SoftCrypto, NrfRng<'static>>;
 static RES: StaticCell<Res> = StaticCell::new();
 
 type LightStack = MatterStack<'static, BUMP, ThreadNetworks>;
 static STACK: StaticCell<LightStack> = StaticCell::new();
 
-/// RAM image of the key-value store (all rs-matter blobs plus the Thread
-/// settings blob) and the number of dirty keys tracked between flushes.
+/// RAM image of the Thread settings (bytes) and the number of distinct keys
+/// tracked; the Thread region of flash holds it.
+type ThreadStore = Shared<1536, 16>;
+static THREAD_STORE: ThreadStore = ThreadStore::new();
+/// Largest Thread settings entry the flash entry buffer takes.
+const THREAD_ENTRY_BUF: usize = 512;
+
+/// RAM image of the key-value store (all rs-matter blobs) and the number of
+/// dirty keys tracked between flushes.
 type KvImage = Shared<4096, 32>;
 static KV_IMAGE: KvImage = KvImage::new();
 /// Largest blob the flash entry buffer takes (rs-matter's 2048 byte blob
@@ -286,9 +295,29 @@ async fn main(spawner: Spawner) {
         info!("factory reset: erasing the key-value store");
         nrf52840_leader::flash::erase_all(&mut flash).await.unwrap();
     }
+    // Two regions of the one flash device: the Thread settings and the
+    // key-value store, each a partition (offset 0 inside its partition).
+    let flash = AsyncMutex::<NoopRawMutex, _>::new(flash);
+    const BANKS: u32 = 2 * nrf52840_leader::flash::PAGE;
+    let mut thread_writer = FlashWriter::<_, THREAD_ENTRY_BUF>::mount(
+        Partition::new(
+            &flash,
+            nrf52840_leader::flash::THREAD_START,
+            BANKS * nrf52840_leader::flash::THREAD_PAGES,
+        ),
+        0,
+        nrf52840_leader::flash::THREAD_PAGES,
+        &THREAD_STORE,
+    )
+    .await
+    .unwrap();
     let mut writer = FlashWriter::<_, FLASH_ENTRY_BUF>::mount(
-        flash,
-        nrf52840_leader::flash::KV_START,
+        Partition::new(
+            &flash,
+            nrf52840_leader::flash::KV_START,
+            BANKS * nrf52840_leader::flash::KV_PAGES,
+        ),
+        0,
         nrf52840_leader::flash::KV_PAGES,
         &KV_IMAGE,
     )
@@ -315,7 +344,7 @@ async fn main(spawner: Spawner) {
     #[cfg(feature = "med")]
     let config = opentrust_instance::Config::end_device(ext, caps);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
-        Instance::init(slot, config, RamSettings::<4096>::new(), SoftCrypto, rng);
+        Instance::init(slot, config, THREAD_STORE.settings(), SoftCrypto, rng);
     });
     let ot = OpenTrust::new(res);
     info!("stack peak after Thread init {} bytes", stack_high_water());
@@ -363,10 +392,8 @@ async fn main(spawner: Spawner) {
         defmt::warn!("QR code text failed: {}", e.code());
     }
 
-    // Load the persisted Thread settings now, so the app below can tell
-    // whether the node has a network to restore.
-    let mut persist = ThreadPersist::new(ot, kv);
-    let restored = persist.load().unwrap();
+    // The Thread settings were loaded from flash at mount; the app below
+    // tells from them whether the node has a network to restore.
     let (have_dataset, have_network) = ot.with(|i, _| {
         (
             i.settings()
@@ -383,14 +410,16 @@ async fn main(spawner: Spawner) {
         have_dataset
     );
     info!(
-        "thread settings: {} values restored (blob key {:#06x}), dataset {} network info {}",
-        restored, THREAD_SETTINGS_KEY, have_dataset, have_network
+        "thread settings: {} bytes loaded, dataset {} network info {}",
+        THREAD_STORE.with(|i| i.used()),
+        have_dataset,
+        have_network
     );
     // An unprovisioned light (no stored network, no build-time dataset) waits
     // for its Thread network over BLE; the commissioner hands it the dataset
     // (`ThreadNetCtl`).
     let ble_commissioning = cfg!(feature = "ble") && !have_dataset && BUILD_DATASET.is_empty();
-    let runner = ThreadRunner::new(ot, radio, EmbassyAlarm, kv).with_persist(persist);
+    let runner = ThreadRunner::new(ot, radio, EmbassyAlarm, kv);
     #[cfg(feature = "ble")]
     let fut = {
         let gatt = ble::SdcGatt::new(
@@ -502,11 +531,17 @@ async fn main(spawner: Spawner) {
             select(ot.wait_changed(), Timer::after_secs(2)).await;
         }
     };
-    // Writes the key-value store to flash a moment after rs-matter or the
-    // Thread persistence changed it.
+    // Writes the Thread settings and the key-value store to flash a moment
+    // after the node or rs-matter changed them.
     let persist_task = async {
         loop {
             Timer::after_millis(250).await;
+            if THREAD_STORE.is_dirty() {
+                match thread_writer.flush(&THREAD_STORE).await {
+                    Ok(()) => info!("thread settings written to flash"),
+                    Err(e) => defmt::warn!("flash write failed: {}", e),
+                }
+            }
             if KV_IMAGE.is_dirty() {
                 match writer.flush(&KV_IMAGE).await {
                     Ok(()) => info!("kv store written to flash"),
