@@ -180,6 +180,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                             .start_restoring(ld.data_version, ld.stable_data_version, now);
                     } else {
                         self.leader.start(ld.data_version, ld.stable_data_version);
+                        // A new leader starts with empty Commissioning Data
+                        // that carries a Commissioner Session ID (OT
+                        // `BecomeLeader`, `SetEmptyCommissionerData`).
+                        let _ = self.cm.leader.resign(&mut self.leader);
                     }
                     self.core.netdata.clear();
                 }
