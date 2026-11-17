@@ -20,8 +20,9 @@
 //! The manager is sans-IO: feed it events and call [`MlrManager::poll`]
 //! with the current state; it returns the [`MlrRequest`] to send with
 //! [`send_mlr_request`]; the outcome goes to [`MlrManager::handle_result`].
-//! A registration made by the Commissioner (Commissioner Session ID and
-//! Timeout TLVs) is not implemented.
+//! A registration requested by the application (`mlr reg`, OT
+//! `otIp6RegisterMulticastListeners`) carries the Commissioner Session ID
+//! and Timeout TLVs; see [`send_mlr_registration`].
 
 use core::net::Ipv6Addr;
 
@@ -46,6 +47,8 @@ use crate::tlv::{ThreadTlv, ThreadTlvs, mlr_status};
 /// `user` value of the MLR.req in [`Agent::post`] and in the TMF responses /
 /// failures.
 pub const USER_MLR: u32 = 0x0a53_0012;
+/// `user` value of an MLR.req requested by the application.
+pub const USER_MLR_REGISTER: u32 = 0x0a53_0013;
 /// Most addresses in one MLR.req (`OT_IP6_MAX_MLR_ADDRESSES`).
 pub const MAX_MLR_ADDRESSES: usize = 15;
 /// Smallest random renewal margin below the MLR timeout, seconds.
@@ -226,6 +229,62 @@ pub fn send_mlr_request<
         Uri::Mlr,
         &buf[..n],
         Some(USER_MLR),
+    )
+}
+
+/// An MLR.req requested by the application.
+#[derive(Debug, Clone)]
+pub struct MlrRegistration<'a> {
+    /// Destination: the Primary Backbone Router's RLOC or, for a child of a
+    /// Thread 1.1 parent, its service ALOC.
+    pub dst: Ipv6Addr,
+    /// Source (our RLOC).
+    pub src: Ipv6Addr,
+    /// The groups.
+    pub addresses: &'a [Ipv6Addr],
+    /// Commissioner Session ID TLV, while a Commissioner is active.
+    pub session_id: Option<u16>,
+    /// Timeout TLV, seconds.
+    pub timeout: Option<u32>,
+}
+
+/// Send an MLR.req requested by the application (OT
+/// `MlrManager::RegisterMulticastListeners`): the IPv6 Addresses TLV, the
+/// Commissioner Session ID TLV if given and the Timeout TLV if given.
+pub fn send_mlr_registration<
+    R: Rng + ?Sized,
+    S: UdpSink + ?Sized,
+    const A: usize,
+    const B: usize,
+    const C: usize,
+    const D: usize,
+>(
+    agent: &mut Agent<A, B, C, D>,
+    now: Instant,
+    rng: &mut R,
+    sink: &mut S,
+    reg: &MlrRegistration<'_>,
+) -> Result<()> {
+    let mut buf = [0u8; MAX_MLR_ADDRESSES * 16 + 16];
+    let mut n = build_mlr_request(reg.addresses, &mut buf)?;
+    let mut w = Writer::new(&mut buf[n..]);
+    if let Some(s) = reg.session_id {
+        ThreadTlv::CommissionerSessionId(s).write(&mut w)?;
+    }
+    if let Some(t) = reg.timeout {
+        ThreadTlv::Timeout(t).write(&mut w)?;
+    }
+    n += w.len();
+    agent.post(
+        now,
+        rng,
+        sink,
+        reg.dst,
+        Some(reg.src),
+        Priority::Normal,
+        Uri::Mlr,
+        &buf[..n],
+        Some(USER_MLR_REGISTER),
     )
 }
 

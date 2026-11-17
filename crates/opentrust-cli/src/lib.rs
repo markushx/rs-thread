@@ -321,6 +321,8 @@ where
             "dua" => self.dua(a),
             #[cfg(feature = "bbr-server")]
             "fake" => self.fake(a),
+            #[cfg(feature = "bbr-server")]
+            "mlr" => self.mlr(a),
             "factoryreset" => {
                 self.i.factory_reset();
                 self.st.reset = true;
@@ -405,6 +407,8 @@ where
             Event::UdpReadable(s) => self.udp_readable(*s),
             #[cfg(feature = "dns")]
             Event::DnsResult(id) => self.dns_result(*id),
+            #[cfg(feature = "bbr-server")]
+            Event::MlrRegisterResult => self.mlr_reg_result(),
             #[cfg(feature = "joiner")]
             Event::JoinerResult(r) => self.joiner_result(*r),
             #[cfg(feature = "commissioning")]

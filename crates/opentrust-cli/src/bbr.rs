@@ -194,3 +194,58 @@ where
         }
     }
 }
+
+#[cfg(feature = "bbr-server")]
+impl<S, C, Rn, W> Ctx<'_, S, C, Rn, W>
+where
+    S: SettingsStore,
+    C: InstanceCrypto,
+    Rn: Rng + CryptoRng,
+    W: core::fmt::Write,
+{
+    /// `mlr reg <addr>... [<timeout>]` (OT `otIp6RegisterMulticastListeners`).
+    pub(crate) fn mlr(&mut self, a: &Args<'_>) -> R {
+        if a.get(1) != "reg" {
+            return Err(E::INVALID_COMMAND);
+        }
+        let mut addrs: heapless::Vec<core::net::Ipv6Addr, 15> = heapless::Vec::new();
+        let mut k = 2;
+        while let Ok(ip) = parse_ip6(a.get(k)) {
+            k += 1;
+            if addrs.push(ip).is_err() {
+                break;
+            }
+        }
+        let timeout = match parse_u32(a.get(k)) {
+            Ok(t) => {
+                k += 1;
+                Some(t)
+            }
+            Err(_) => None,
+        };
+        if !a.get(k).is_empty() || addrs.is_empty() {
+            return Err(E::INVALID_ARGS);
+        }
+        self.i.mlr_register(&addrs, timeout, self.now)?;
+        Err(E::PENDING)
+    }
+
+    pub(crate) fn mlr_reg_result(&mut self) {
+        let Some(r) = self.i.mlr_take_register_result() else {
+            return;
+        };
+        match r {
+            Ok(r) => {
+                ln!(self.o, "status {}, {} failed", r.status, r.failed.len());
+                for f in &r.failed {
+                    ln!(self.o, "{}", Ip6(*f));
+                }
+                ln!(self.o, "Done");
+            }
+            Err(e) => {
+                let E(n) = E::from(e);
+                ln!(self.o, "Error {}: {}", n, crate::util::error_name(n));
+            }
+        }
+    }
+}

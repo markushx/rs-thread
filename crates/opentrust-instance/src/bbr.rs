@@ -14,7 +14,10 @@ use opentrust_mesh::dua::{ChildNotification, send_child_notification};
 use opentrust_mesh::dua::{
     DuaContext, DuaManager, DuaResult, USER_DUA_NOTIFY, USER_DUA_REGISTRATION, send_dua_request,
 };
-use opentrust_mesh::mlr::{MlrContext, MlrManager, MlrResult, USER_MLR, send_mlr_request};
+use opentrust_mesh::mlr::{
+    MlrContext, MlrManager, MlrRegistration, MlrResult, USER_MLR, USER_MLR_REGISTER,
+    parse_mlr_response, send_mlr_registration, send_mlr_request,
+};
 use opentrust_mesh::netdata::backbone::{BackboneRouterLeader, BbrState, DomainPrefixEvent};
 use opentrust_mle::Role;
 use opentrust_net::slaac::IidParams;
@@ -52,6 +55,21 @@ pub(crate) struct BbrGlue {
     pub ntf_inbox: Deque<Vec<u8, 64>, 2>,
     pub dua_results: Deque<(u32, Outcome), 2>,
     pub mlr_results: Deque<Outcome, 2>,
+    /// An application MLR.req ([`Instance::mlr_register`]) is outstanding.
+    pub mlr_register_pending: bool,
+    /// The result arrived and its event is still to be queued.
+    pub mlr_register_reported: bool,
+    /// The reported result, until taken.
+    pub mlr_register_result: Option<opentrust_core::Result<MlrRegisterResult>>,
+}
+
+/// The answer to an MLR.req requested by the application.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MlrRegisterResult {
+    /// The MLR status ([`opentrust_mesh::tlv::mlr_status`]).
+    pub status: u8,
+    /// The addresses that failed.
+    pub failed: Vec<core::net::Ipv6Addr, 15>,
 }
 
 impl BbrGlue {
@@ -70,6 +88,9 @@ impl BbrGlue {
             ntf_inbox: Deque::new(),
             dua_results: Deque::new(),
             mlr_results: Deque::new(),
+            mlr_register_pending: false,
+            mlr_register_reported: false,
+            mlr_register_result: None,
         }
     }
 
@@ -89,6 +110,7 @@ impl BbrGlue {
             || !self.ntf_inbox.is_empty()
             || !self.dua_results.is_empty()
             || !self.mlr_results.is_empty()
+            || self.mlr_register_reported
     }
 
     /// Queue the outcome of a TMF request if `user` is one of ours.
@@ -98,6 +120,21 @@ impl BbrGlue {
                 let _ = self.dua_results.pop_front();
             }
             let _ = self.dua_results.push_back((user, o));
+            true
+        } else if user == USER_MLR_REGISTER {
+            self.mlr_register_pending = false;
+            self.mlr_register_reported = true;
+            self.mlr_register_result = Some(match o {
+                Outcome::Response(code, p) if code == Code::CHANGED => {
+                    parse_mlr_response(&p).map(|r| MlrRegisterResult {
+                        status: r.status,
+                        failed: r.failed,
+                    })
+                }
+                Outcome::Response(..) => Err(opentrust_core::Error::Parse),
+                Outcome::Timeout => Err(opentrust_core::Error::ResponseTimeout),
+                Outcome::Failed => Err(opentrust_core::Error::Abort),
+            });
             true
         } else if user == USER_MLR {
             if self.mlr_results.is_full() {
@@ -126,6 +163,76 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         if let Ok(1) = self.core.settings.get(SettingsKey::DadInfo, 0, &mut b) {
             self.bbrg.dua.restore(b[0]);
         }
+    }
+
+    /// Register multicast listeners with the Primary Backbone Router
+    /// (OT `otIp6RegisterMulticastListeners`, CLI `mlr reg`), with the
+    /// Commissioner Session ID TLV while a Commissioner is active and the
+    /// Timeout TLV if `timeout` is given (0 deregisters). The answer is
+    /// [`Event::MlrRegisterResult`](crate::Event::MlrRegisterResult); fetch
+    /// it with [`mlr_take_register_result`](Self::mlr_take_register_result).
+    ///
+    /// [`opentrust_core::Error::InvalidArgs`] for no or more than 15
+    /// addresses, [`opentrust_core::Error::InvalidState`] without a Primary
+    /// Backbone Router, [`opentrust_core::Error::Busy`] while another
+    /// registration is outstanding. A Commissioner is not required (OT
+    /// reference device builds also send without one).
+    pub fn mlr_register(
+        &mut self,
+        addresses: &[core::net::Ipv6Addr],
+        timeout: Option<u32>,
+        now: Instant,
+    ) -> opentrust_core::Result<()> {
+        use opentrust_core::Error;
+        if addresses.is_empty() || addresses.len() > opentrust_mesh::mlr::MAX_MLR_ADDRESSES {
+            return Err(Error::InvalidArgs);
+        }
+        if self.bbrg.mlr_register_pending {
+            return Err(Error::Busy);
+        }
+        let Some(server16) = self.bbrg.bbr.config().map(|c| c.server16) else {
+            return Err(Error::InvalidState);
+        };
+        let mlp = self.core.cfg.cur.mesh_local_prefix;
+        let own = self.mle.rloc16();
+        let p1p1 = !self.mle.is_full_thread_device()
+            && self
+                .mle
+                .parent()
+                .is_some_and(|p| p.router.neighbor.is_thread_version_1p1());
+        let dst = if p1p1 {
+            let id = opentrust_mesh::netdata::backbone::backbone_router_service_id(
+                &self.core.netdata.view(),
+            )
+            .ok_or(Error::InvalidState)?;
+            mlp.aloc(0xfc10 + u16::from(id))?
+        } else {
+            mlp.rloc(opentrust_core::types::Rloc16(server16))
+        };
+        #[cfg(feature = "commissioner")]
+        let session_id = (self.cm.comm.state()
+            == opentrust_meshcop::commissioner::CommissionerState::Active)
+            .then(|| self.cm.comm.session_id());
+        #[cfg(not(feature = "commissioner"))]
+        let session_id = None;
+        let reg = MlrRegistration {
+            dst,
+            src: mlp.rloc(own),
+            addresses,
+            session_id,
+            timeout,
+        };
+        send_mlr_registration(&mut self.agent, now, &mut self.prng, &mut self.sink, &reg)?;
+        self.bbrg.mlr_register_pending = true;
+        Ok(())
+    }
+
+    /// The answer to [`mlr_register`](Self::mlr_register): the status and
+    /// the failed addresses, or the error of the exchange.
+    pub fn mlr_take_register_result(
+        &mut self,
+    ) -> Option<opentrust_core::Result<MlrRegisterResult>> {
+        self.bbrg.mlr_register_result.take()
     }
 
     /// The DUA of this device, if it has one.
@@ -396,6 +503,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             };
             let _ = b.mlr.handle_result(&mctx, res, &mut self.prng, children!());
         }
+        let mlr_reg_done = core::mem::take(&mut b.mlr_register_reported);
+        moved |= mlr_reg_done;
         if let Some(req) = b.mlr.poll(&mctx, &mut self.prng, children!()) {
             moved = true;
             if send_mlr_request(
@@ -465,6 +574,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 own,
                 &n,
             );
+        }
+        if mlr_reg_done {
+            self.core.push_event(crate::Event::MlrRegisterResult);
         }
         moved
     }

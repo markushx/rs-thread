@@ -514,8 +514,8 @@ Reference: `thread/mlr_manager.cpp`, `backbone_router/bbr_leader.cpp`,
 | Child registering groups | An FTD child checks the parent's Thread version | `MleEnv::registered_multicast_addresses` (default none) lists the groups; they are always included in the Address Registration TLV of a child that registers addresses | The parent's version is not consulted | A Thread 1.1 parent ignores the entries |
 | Promotion without request | `UpdateProxiedSubscriptions` / `UpdateLocalSubscriptions` | `MlrManager::update` marks a group registered if the device or another child registered it | | none |
 | Timers | One-second ticker counters | `Instant` deadlines; renewal in `(T/2+1)..=(T-9)` s with T = max(MLR timeout, 300 s), reregistration in `1..=reregistration delay` s | Sans-IO | none |
-| Commissioner registration | `RegisterMulticastListeners` with Commissioner Session ID and Timeout TLVs | Not implemented | Not needed by a device | none |
-| Thread 1.1 parents | Service ALOC of the Backbone Router service | Not supported (end devices register through their 1.2+ parent) | 1.1 is not a target | A 1.1 parent does not proxy MLR |
+| Commissioner registration | `RegisterMulticastListeners` (CLI `mlr reg`) with Commissioner Session ID and Timeout TLVs; refuses without an active Commissioner unless a reference device | `Instance::mlr_register` / CLI `mlr reg`: same TLVs (Session ID while the Commissioner is active, Timeout if given); sent without an active Commissioner as on a reference device; the answer arrives as `Event::MlrRegisterResult` | Test harness needs it | none |
+| Thread 1.1 parents | Service ALOC of the Backbone Router service | `mlr reg` of a child of a 1.1 parent uses the service ALOC; the automatic registration is not supported (end devices register through their 1.2+ parent) | 1.1 is not a target | A 1.1 parent does not proxy MLR |
 | MLR.req priority | Normal confirmable POST | Same (`Priority::Normal`); DUA.req uses net priority as OT | | none |
 
 ## DNS and SRP (`opentrust-dns`, ECDSA in `opentrust_core::crypto::ecdsa`)

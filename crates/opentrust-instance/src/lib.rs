@@ -108,6 +108,7 @@ mod stack;
 mod tmf;
 
 pub use api::{PingReply, UdpSocket};
+pub use bbr::MlrRegisterResult;
 #[cfg(feature = "border-agent")]
 pub use commissioning::BaDatagram;
 pub use commissioning::InstanceCrypto;
@@ -326,6 +327,9 @@ pub enum Event {
     SrpClient(SrpEvent),
     /// A DNS query completed ([`Instance::dns_take_result`]).
     DnsResult(QueryId),
+    /// An MLR.req from [`Instance::mlr_register`] was answered or failed
+    /// ([`Instance::mlr_take_register_result`]).
+    MlrRegisterResult,
     /// The Joiner changed state.
     JoinerState(opentrust_meshcop::joiner::JoinerState),
     /// Joining ended (OT joiner callback): `Ok` after the Joiner Entrust
