@@ -298,6 +298,16 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.ip6.netif.rloc()
     }
 
+    /// The RLOC address built from the current RLOC16, also while detached
+    /// (OT `otThreadGetRloc`).
+    pub fn rloc_or_invalid(&self) -> Ipv6Addr {
+        self.core
+            .cfg
+            .cur
+            .mesh_local_prefix
+            .with_iid(&opentrust_core::types::Iid::from_locator(self.rloc16().0))
+    }
+
     /// The link-local address.
     pub fn link_local(&self) -> Option<Ipv6Addr> {
         self.core.ip6.netif.link_local()

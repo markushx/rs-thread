@@ -41,8 +41,8 @@ where
                 self.one_addr(Some(m))
             }
             "rloc" => {
-                let r = self.i.rloc();
-                self.one_addr(r)
+                let r = self.i.rloc_or_invalid();
+                self.one_addr(Some(r))
             }
             "linklocal" => {
                 let l = self.i.link_local();
