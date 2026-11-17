@@ -218,7 +218,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
 | Link metrics / enhanced ack (Thread 1.2) | 5 | 0 | 3 | 2 | 0 | 0 |
 | Python unit tests of the cert libraries (no nodes) | 8 | 0 | 0 | 0 | 0 | 8 |
-| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 22 | 0 | 9 | 1 | 0 |
+| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 23 | 0 | 8 | 1 | 0 |
 
 #### SRP
 
@@ -305,7 +305,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 |---|---|---|---|
 | `test_anycast` | pass | 2/2 | Neighbor Discovery agent ALOC |
 | `test_anycast_locator` | pass | 2/2 | `locate` CLI and anycast locate API |
-| `test_br_upgrade_router_role` | fail | 1/2 | fails: all; child does not upgrade to router (`child` != `router`) |
+| `test_br_upgrade_router_role` | pass | 2/2 | Border Router router role request (`BorderRouterRequest`), leader limit of 2 router-role BRs |
 | `test_child_supervision` | pass | 2/2 | secured empty frames, polls do not reset the supervision interval, failure counter kept across a detach, child table columns |
 | `test_dataset_updater` | pass | 2/2 | `dataset updater start|cancel`, 30 s default delay as OT |
 | `test_detach` | fail | 1/2 | fails: all; router stays `detached` (`detached` != `router`) |

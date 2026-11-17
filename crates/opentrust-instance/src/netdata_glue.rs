@@ -45,11 +45,16 @@ pub(crate) struct GlueState {
     /// [`crate::diag::role_index`]).
     pub role_ms: [u64; 5],
     pub role_time_mark: u64,
+    /// Next one-second tick of the Border Router router role upgrade wait.
+    pub br_tick: Option<Instant>,
+    /// What the last scheduling decision was based on.
+    #[cfg(feature = "ftd")]
+    pub br_upgrade_key: u64,
 }
 
 impl GlueState {
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        None
+        self.br_tick
     }
 }
 
@@ -343,6 +348,74 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// OT `IsExpectedToBecomeRouterSoon`.
+    /// OT `Notifier::ScheduleRouterRoleUpgradeIfEligible` and `HandleTimeTick`:
+    /// a child that is a Border Router asks for the router role (reason
+    /// `BorderRouterRequest`) after a random wait of 1 to 10 seconds, once
+    /// while its local data stays the same. Returns `true` if the request
+    /// was made.
+    #[cfg(feature = "ftd")]
+    fn border_router_upgrade(
+        &mut self,
+        now: Instant,
+        role: Role,
+        rloc: Rloc16,
+        local: &[u8],
+    ) -> bool {
+        use opentrust_mesh::netdata::NetworkDataView;
+        use opentrust_mesh::netdata::notifier::UpgradeInput;
+        use opentrust_mle::env::RouterRequestReason;
+        if role != Role::Child {
+            self.glue.br_tick = None;
+            self.glue.br_upgrade_key = 0;
+            return false;
+        }
+        let leader = self.core.netdata.view();
+        let input = UpgradeInput {
+            is_child: true,
+            rloc16: rloc,
+            local: NetworkDataView(local),
+            leader,
+            active_router_count: self.mle.active_router_count(),
+            router_upgrade_threshold: self.mle.config().router.upgrade_threshold,
+            max_routers: opentrust_mle::consts::MAX_ROUTERS as u8,
+        };
+        // The decision depends on the leader's and the local data and on the
+        // router count: schedule again only when one of them changed.
+        let mut key = 0xcbf2_9ce4_8422_2325_u64;
+        hash_bytes(&mut key, leader.0);
+        hash_bytes(&mut key, local);
+        hash_bytes(
+            &mut key,
+            &[input.active_router_count, input.router_upgrade_threshold],
+        );
+        if key != self.glue.br_upgrade_key {
+            self.glue.br_upgrade_key = key;
+            self.notifier
+                .schedule_router_upgrade(&input, &mut self.prng);
+        }
+        if !self.notifier.router_upgrade_pending() {
+            self.glue.br_tick = None;
+            return false;
+        }
+        let due = *self
+            .glue
+            .br_tick
+            .get_or_insert(now.saturating_add(opentrust_core::time::Duration::from_secs(1)));
+        if now < due {
+            return false;
+        }
+        self.glue.br_tick = Some(due.saturating_add(opentrust_core::time::Duration::from_secs(1)));
+        if self.notifier.router_upgrade_tick(&input) {
+            let _ = self.mle.become_router(
+                &mut self.core,
+                now,
+                RouterRequestReason::BorderRouterRequest,
+            );
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn expected_to_become_router(&self) -> bool {
         #[cfg(feature = "ftd")]
         {
@@ -481,6 +554,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         if attached {
             let mut local_buf = [0u8; 256];
             let ln = self.local.encode(rloc.0, &mut local_buf).unwrap_or(0);
+            #[cfg(feature = "ftd")]
+            if self.border_router_upgrade(now, role, rloc, &local_buf[..ln]) {
+                busy = true;
+            }
             let view = self.core.netdata.view();
             let input = SyncInput {
                 attached,

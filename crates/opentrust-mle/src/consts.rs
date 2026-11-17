@@ -95,6 +95,9 @@ pub const CHILD_MAX_REQUEST_TLVS: usize = 6;
 // ---------------------------------------------------------------------------
 // Router / leader (Thread 1.4.1 Table 5-10 and OpenThread defaults)
 
+/// Router-role Border Routers at which a further `BorderRouterRequest` is
+/// turned down (OT `kRouterUpgradeBorderRouterRequestThreshold`).
+pub const ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD: usize = 2;
 /// `MAX_ROUTERS`: routers that may be active in one partition.
 pub const MAX_ROUTERS: usize = 32;
 /// Highest router ID (`MAX_ROUTER_ID`).

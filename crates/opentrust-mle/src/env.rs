@@ -630,6 +630,13 @@ pub trait MleEnv {
     fn request_router_id(&mut self, _request: &RouterIdRequest) -> Result<()> {
         Err(opentrust_core::Error::NotImplemented)
     }
+    /// Number of Border Routers with a router RLOC16 that provide external IP
+    /// connectivity in the leader's Network Data (OT
+    /// `CountBorderRouters(kRouterRoleOnly)`), for the leader's decision on
+    /// a `BorderRouterRequest` Address Solicit. Default 0.
+    fn router_role_border_routers(&self) -> usize {
+        0
+    }
     /// Also accept frames addressed to `rloc16` (the former child RLOC16 of a
     /// REED that became a router) or stop doing so (`None`); OT
     /// `Mac::SetAlternateShortAddress`. Default: no-op.

@@ -41,8 +41,7 @@
 //! - The security policy (`routers_enabled`, version threshold) is not
 //!   evaluated in [`Mle::is_router_eligible`]; the caller turns
 //!   `RouterConfig::eligible` off.
-//! - No Border Router specific upgrade (`BorderRouterRequest`) and no
-//!   reference-device router ID range.
+//! - No reference-device router ID range.
 
 use heapless::Vec;
 use opentrust_core::time::{Duration, Instant};
@@ -53,6 +52,7 @@ use crate::attach::AttachMode;
 use crate::consts::{
     ADVERTISEMENT_I_MAX_PER_NEIGHBOR, ID_REUSE_DELAY_SECS, ID_SEQUENCE_PERIOD, INVALID_ROUTER_ID,
     LINK_REQUEST_MIN_MARGIN, MAX_ROUTE_COST, MAX_ROUTER_ID, MAX_ROUTERS,
+    ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD,
 };
 use crate::env::{MleEnv, MleEvent, Role, RouterIdRequest, RouterRequestReason};
 use crate::link_quality::LinkQuality;
@@ -1041,6 +1041,15 @@ impl<const C: usize> Mle<C> {
         };
         if reason == RouterRequestReason::TooFewRouters
             && self.active_router_count() >= self.cfg.router.upgrade_threshold
+        {
+            return Err(SolicitRejection::NoAddressAvailable);
+        }
+        // A Border Router that asks for the router role is turned down when
+        // there are enough routers and already enough router-role Border
+        // Routers (OT `kBorderRouterRequest`).
+        if reason == RouterRequestReason::BorderRouterRequest
+            && self.active_router_count() >= self.cfg.router.upgrade_threshold
+            && env.router_role_border_routers() >= ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD
         {
             return Err(SolicitRejection::NoAddressAvailable);
         }

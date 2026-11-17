@@ -15,11 +15,11 @@ use super::*;
 
 /// Upper bound of `size_of::<Instance>()` for the enabled feature set.
 #[cfg(all(feature = "srp-server", feature = "border-agent"))]
-const TOTAL_BOUND: usize = 140_200;
+const TOTAL_BOUND: usize = 140_800;
 #[cfg(all(feature = "border-agent", not(feature = "srp-server")))]
-const TOTAL_BOUND: usize = 114_000;
+const TOTAL_BOUND: usize = 114_600;
 #[cfg(all(feature = "srp-server", feature = "ftd", not(feature = "border-agent")))]
-const TOTAL_BOUND: usize = 113_200;
+const TOTAL_BOUND: usize = 113_800;
 #[cfg(all(
     feature = "ftd",
     not(feature = "border-agent"),

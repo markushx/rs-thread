@@ -943,6 +943,10 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             .map_err(|_| Error::NoBufs)
     }
 
+    fn router_role_border_routers(&self) -> usize {
+        opentrust_mesh::netdata::notifier::count_border_routers(&self.netdata.view(), true)
+    }
+
     fn release_router_id(&mut self, rloc16: Rloc16) {
         let _ = self.solicit.push_back(SolicitCmd::Release(rloc16));
     }

@@ -58,6 +58,49 @@ pub const ROUTER_ROLE_UPGRADE_MAX_TIMEOUT: u8 = 10;
 /// (`kRouterUpgradeBorderRouterRequestThreshold`).
 pub const ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD: usize = 2;
 
+/// Border Routers providing external IP connectivity (OT
+/// `FindRlocs(kBrProvidingExternalIpConn)`): the RLOC16s of on-mesh
+/// prefixes with the default route or domain prefix flag and of external
+/// routes, each once. `router_only` keeps router RLOC16s (OT
+/// `kRouterRoleOnly`).
+pub fn count_border_routers(view: &NetworkDataView<'_>, router_only: bool) -> usize {
+    let mut seen: [u16; 16] = [0xffff; 16];
+    let mut count = 0usize;
+    let mut add = |rloc16: u16| {
+        if router_only && !Rloc16(rloc16).is_router() {
+            return;
+        }
+        if seen.contains(&rloc16) {
+            return;
+        }
+        if let Some(s) = seen.get_mut(count) {
+            *s = rloc16;
+        }
+        count += 1;
+    };
+    for e in view.on_mesh_prefixes() {
+        if e.flags.has(BrFlags::ON_MESH)
+            && (e.flags.has(BrFlags::DEFAULT_ROUTE) || e.flags.has(BrFlags::DP))
+        {
+            add(e.rloc16);
+        }
+    }
+    for e in view.external_routes() {
+        add(e.rloc16);
+    }
+    count
+}
+
+/// `rloc16` is a Border Router providing external IP connectivity in
+/// `view` (OT `ContainsBorderRouterWithRloc`).
+pub fn contains_border_router(view: &NetworkDataView<'_>, rloc16: Rloc16) -> bool {
+    view.on_mesh_prefixes().any(|e| {
+        e.rloc16 == rloc16.0
+            && e.flags.has(BrFlags::ON_MESH)
+            && (e.flags.has(BrFlags::DEFAULT_ROUTE) || e.flags.has(BrFlags::DP))
+    }) || view.external_routes().any(|e| e.rloc16 == rloc16.0)
+}
+
 /// What the Border Router router upgrade decision needs.
 #[derive(Debug, Clone, Copy)]
 pub struct UpgradeInput<'a> {
@@ -164,37 +207,18 @@ impl Notifier {
     }
 
     fn is_eligible_for_upgrade(input: &UpgradeInput<'_>) -> bool {
-        let rloc = input.rloc16.0;
-        // A Border Router providing external IP connectivity (on-mesh with
-        // default route or domain prefix), in both the local and the
-        // leader's data.
-        let provides = |e: &super::view::OnMeshEntry| {
-            e.flags.has(BrFlags::ON_MESH)
-                && (e.flags.has(BrFlags::DEFAULT_ROUTE) || e.flags.has(BrFlags::DP))
-        };
-        let has = |v: &NetworkDataView<'_>| {
-            v.on_mesh_prefixes()
-                .any(|e| e.rloc16 == rloc && provides(&e))
-        };
-        if !has(&input.local) || !has(&input.leader) {
+        // A Border Router providing external IP connectivity, in both the
+        // local and the leader's data.
+        if !contains_border_router(&input.local, input.rloc16)
+            || !contains_border_router(&input.leader, input.rloc16)
+        {
             return false;
         }
         let n = input.active_router_count;
         if n < input.router_upgrade_threshold || n >= input.max_routers {
             return false;
         }
-        // Router-role Border Routers (each RLOC16 once).
-        let mut seen: [u16; 8] = [0xffff; 8];
-        let mut count = 0usize;
-        for e in input.leader.on_mesh_prefixes() {
-            if Rloc16(e.rloc16).is_router() && provides(&e) && !seen.contains(&e.rloc16) {
-                if let Some(s) = seen.get_mut(count) {
-                    *s = e.rloc16;
-                }
-                count += 1;
-            }
-        }
-        count < ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD
+        count_border_routers(&input.leader, true) < ROUTER_UPGRADE_BORDER_ROUTER_REQUEST_THRESHOLD
     }
 
     /// OT `ScheduleRouterRoleUpgradeIfEligible`: call on local data,
