@@ -158,7 +158,6 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | Address resolver lists | Four intrusive linked lists | One entry array with a state and an insertion counter (same eviction order and capacities) | No alloc, no pointers | none |
 | Address resolver extras | `ResolveUsingNetDataServices`, Backbone Router queries, DUA, `/a/ae` child handling | Not implemented | Phases 7/9 | API |
 | DHCPv6 | `Dhcp6::Client` / `Dhcp6::Server`, always on with the build option | `opentrust-instance` `dhcp6`: Solicit with Rapid Commit answered by a Reply (no Request / Renew / Release / Confirm, as OpenThread); updated from the Network Data in the instance's Network Data pass | Needed by thread-cert 5.3.8 / 5.3.9 | none |
-| DHCPv6 client Solicit timer | Trickle timer (`Imin` 1 s, `Imax` 120 s) | Same intervals, but the first Solicit goes out immediately, later ones at a uniform time in `[I/2, I)` of a doubling interval (no redundancy counter) | No trickle timer in the instance | none |
 | DHCPv6 server context check | Prefix agent only if the prefix has a 6LoWPAN context (`GetContext`) | Any context covering the prefix (compress flag ignored) provides the agent ALOC16; none: no ALOC but the server still answers on the RLOC | Same behavior for the Context TLVs the leader allocates | none |
 
 ## CoAP / TMF (`opentrust-coap`, TLVs in `opentrust-core::tlv`)

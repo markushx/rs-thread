@@ -386,11 +386,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.dhcp6.running = true;
         self.dhcp6.interval_ms = IMIN_MS;
         self.dhcp6.interval_start = now;
+        // OT `TrickleTimer::Start` + `IndicateInconsistent`: the first
+        // interval is `Imin`, the first Solicit goes out at a random time in
+        // `[Imin / 2, Imin)`.
         self.dhcp6_pick_tx(now);
-        // The first transmission fires at once (OT
-        // `IndicateInconsistent`).
-        self.dhcp6.tx_at = now;
-        self.dhcp6.sent = false;
         true
     }
 
