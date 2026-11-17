@@ -947,7 +947,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         &mut self,
         now: Instant,
         f: impl FnOnce(
-            &mut opentrust_mesh::netdata::publisher::Publisher<3>,
+            &mut opentrust_mesh::netdata::publisher::Publisher<{ crate::config::PUBLISHER_ENTRIES }>,
             &mut opentrust_mesh::netdata::local::LocalData,
             &mut dyn FnMut(opentrust_mesh::netdata::publisher::PublisherEvent),
         ) -> Result<()>,

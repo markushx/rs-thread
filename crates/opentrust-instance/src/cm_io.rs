@@ -12,7 +12,7 @@ use opentrust_meshcop::dataset::Dataset;
 use opentrust_meshcop::joiner::{JoinerEvent, JoinerIo};
 #[cfg(feature = "ftd")]
 use opentrust_meshcop::joiner_router::JoinerRouterIo;
-use opentrust_net::ip6::{Ip6, SendInfo};
+use opentrust_net::ip6::SendInfo;
 use opentrust_net::udp::ReceiverId;
 
 use crate::stack::{Outbox, StackMac};
@@ -34,7 +34,7 @@ pub(crate) enum JoinerAction {
 /// [`JoinerIo`] / [`JoinerRouterIo`] over disjoint parts of the instance.
 pub(crate) struct LinkIo<'a, C: CryptoBackend> {
     pub mac: &'a mut StackMac<C>,
-    pub ip6: &'a mut Ip6,
+    pub ip6: &'a mut crate::stack::StackIp6,
     pub ext: &'a mut ExtAddress,
     pub out: &'a mut Outbox,
     pub udp: &'a mut crate::stack::Sockets,

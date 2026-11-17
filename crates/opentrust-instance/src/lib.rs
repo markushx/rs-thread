@@ -96,6 +96,7 @@ mod cm_comm;
 mod cm_glue;
 mod cm_io;
 mod commissioning;
+pub mod config;
 mod datapath;
 mod dhcp6;
 mod diag;
@@ -116,6 +117,7 @@ pub use bbr::MlrRegisterResult;
 #[cfg(feature = "border-agent")]
 pub use commissioning::BaDatagram;
 pub use commissioning::InstanceCrypto;
+pub use config::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 #[cfg(feature = "ftd")]
 pub use diag::RouteInfo;
 pub use diag::{ChildInfo, MleCountersInfo, NeighborInfo, tlv as diag_tlv};
@@ -150,7 +152,6 @@ pub use srp_server::{
     SRP_SERVER_HOSTS, SRP_SERVER_SERVICES, SRP_SERVER_UPDATE_SERVICES, SrpAddressMode,
     SrpServerState, SrpServerStore,
 };
-pub use stack::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 
 pub use opentrust_mac::mac::{RadioAction, TxOutcome};
 
@@ -179,6 +180,10 @@ use opentrust_net::udp::{ReceiverId, UdpSockets};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
+use crate::config::{
+    HOLD_BUFS, HOLD_SLOTS, INDIRECT_MSGS, INDIRECT_POOL_BLOCKS, PUBLISHER_ENTRIES, REASM_SLOTS,
+    RESOLVER_ENTRIES, SLAAC_ADDRS, TMF_CACHE, TMF_REQUESTS, TMF_RESOURCES,
+};
 use crate::stack::{Core, MacRng, NetConfig, Outbox};
 
 /// Largest UDP payload of a queued datagram (IPv6 minimum MTU minus the IPv6
@@ -192,14 +197,9 @@ pub const MAX_UDP_PAYLOAD: usize = 1232;
 pub type TmfExtension = fn(TmfUri, &[u8]) -> Option<(CoapCode, heapless::Vec<u8, 64>)>;
 
 /// The TMF agent with the capacities of the instance.
-pub(crate) type TmfAgent = Agent<4, 32, 4, TMF_MSG>;
+pub(crate) type TmfAgent = Agent<TMF_REQUESTS, TMF_RESOURCES, TMF_CACHE, TMF_MSG>;
 
-/// Largest TMF message: a Relay Receive / Transmit carries a whole DTLS
-/// record of the Joiner (FTD only; an end device relays nothing).
-#[cfg(feature = "ftd")]
-pub(crate) const TMF_MSG: usize = 1024;
-#[cfg(not(feature = "ftd"))]
-pub(crate) const TMF_MSG: usize = 320;
+pub(crate) use config::TMF_MSG;
 
 /// Event for the application (OpenThread: `otStateChangedCallback` flags,
 /// the receive callbacks of UDP and ICMPv6 and the result callbacks of the
@@ -434,15 +434,16 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     /// Non-cryptographic randomness (CoAP tokens, MPL and TMF jitter).
     pub(crate) prng: MacRng,
     pub(crate) udp: stack::Sockets,
-    pub(crate) resolver: AddressResolver<8>,
-    pub(crate) fwd: MeshForwarder<2, 2, 4, { stack::HOLD_BUFS }>,
+    pub(crate) resolver: AddressResolver<RESOLVER_ENTRIES>,
+    pub(crate) fwd:
+        MeshForwarder<HOLD_SLOTS, REASM_SLOTS, INDIRECT_MSGS, HOLD_BUFS, INDIRECT_POOL_BLOCKS>,
     #[cfg(feature = "ftd")]
     pub(crate) leader: Leader<{ NETDATA_LEN }>,
     pub(crate) local: LocalData,
     pub(crate) notifier: Notifier,
-    pub(crate) publisher: Publisher<3>,
+    pub(crate) publisher: Publisher<PUBLISHER_ENTRIES>,
     pub(crate) alocs: AlocSet,
-    pub(crate) slaac: Slaac<4>,
+    pub(crate) slaac: Slaac<SLAAC_ADDRS>,
     pub(crate) glue: netdata_glue::GlueState,
     pub(crate) dnssrp: dns_srp::DnsSrp,
     pub(crate) dhcp6: dhcp6::Dhcp6,

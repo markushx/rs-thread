@@ -345,9 +345,10 @@ pub struct MeshForwarder<
     const SLOTS: usize = 2,
     const QUEUE: usize = 4,
     const HOLD_BUFS: usize = 12,
+    const IPOOL: usize = 16,
 > {
     /// Messages for sleepy children, released on data polls.
-    pub indirect: IndirectQueue<QUEUE>,
+    pub indirect: IndirectQueue<QUEUE, IPOOL>,
     held: [Option<Held>; HOLD],
     held_pool: BufPool<HOLD_BUFS, POOL_BUF_SIZE>,
     reasm: Reassembler<SLOTS>,
@@ -367,8 +368,13 @@ fn hdr_of(datagram: &[u8]) -> Option<Ipv6Header> {
     Ipv6Header::parse(datagram).ok()
 }
 
-impl<const HOLD: usize, const SLOTS: usize, const QUEUE: usize, const HOLD_BUFS: usize>
-    MeshForwarder<HOLD, SLOTS, QUEUE, HOLD_BUFS>
+impl<
+    const HOLD: usize,
+    const SLOTS: usize,
+    const QUEUE: usize,
+    const HOLD_BUFS: usize,
+    const IPOOL: usize,
+> MeshForwarder<HOLD, SLOTS, QUEUE, HOLD_BUFS, IPOOL>
 {
     /// New forwarder; `tag_seed` seeds the datagram tags.
     pub fn new(tag_seed: u16) -> Self {

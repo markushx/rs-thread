@@ -130,7 +130,7 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     leader: &'a mut Leader<NETDATA_LEN>,
     #[cfg(feature = "ftd")]
     ls: &'a mut opentrust_meshcop::leader::LeaderState,
-    resolver: &'a mut AddressResolver<8>,
+    resolver: &'a mut AddressResolver<{ crate::config::RESOLVER_ENTRIES }>,
     bbrg: &'a mut crate::bbr::BbrGlue,
     diag_in: &'a mut heapless::Deque<crate::diag::Answer, 2>,
     #[cfg(any(feature = "scan-servers", feature = "commissioner"))]

@@ -35,28 +35,38 @@ use opentrust_net::netif::AddressOrigin;
 use opentrust_platform::SettingsStore;
 use rand_core::Rng;
 
-/// Capacity of the child table (router role).
-pub const CHILDREN: usize = 10;
-
-/// UDP sockets of the application.
-pub const UDP_SOCKETS: usize = 5;
-/// Buffers that hold datagrams while an address query runs (the default of
-/// the forwarder; two full-size datagrams with IPv6 fragmentation).
-pub const HOLD_BUFS: usize = if cfg!(feature = "ip6-fragmentation") {
-    24
-} else {
-    12
+pub use crate::config::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
+use crate::config::{
+    MAC_CSL_CHILDREN, MAC_EVENTS, MAC_INDIRECT, MAC_NEIGHBORS, MAC_POLL_REQUESTS, MAC_TX,
+    MLE_OUTBOX_BLOCKS, MPL_BUFS, MPL_SEEDS, TMF_OUTBOX_BLOCKS, UDP_POOL_BLOCKS, UDP_QUEUE,
+    UDP_RECEIVERS,
 };
+
 /// Payload capacity of a queued UDP datagram.
 pub const UDP_BUF: usize = opentrust_net::header::MAX_DATAGRAM_LEN;
 /// The UDP socket table of the instance.
-pub type Sockets = opentrust_net::udp::UdpSockets<{ UDP_SOCKETS }, 2, { UDP_BUF }, 4, 16>;
+pub type Sockets = opentrust_net::udp::UdpSockets<
+    { UDP_SOCKETS },
+    UDP_QUEUE,
+    { UDP_BUF },
+    UDP_RECEIVERS,
+    UDP_POOL_BLOCKS,
+>;
 
-/// Network Data capacity in bytes.
-pub const NETDATA_LEN: usize = 512;
+/// The IPv6 layer with the capacities of the instance.
+pub type StackIp6 = Ip6<8, 8, { MPL_SEEDS }, { MPL_BUFS }>;
 
 /// The MAC with the key manager as its frame security.
-pub type StackMac<C> = Mac<KeyManager<C>, MacRng>;
+pub type StackMac<C> = Mac<
+    KeyManager<C>,
+    MacRng,
+    MAC_TX,
+    MAC_INDIRECT,
+    MAC_EVENTS,
+    MAC_POLL_REQUESTS,
+    MAC_NEIGHBORS,
+    MAC_CSL_CHILDREN,
+>;
 
 /// Backoff randomness of the MAC (non-cryptographic xorshift64*, seeded
 /// from the instance's RNG).
@@ -118,7 +128,7 @@ pub(crate) const OUTBOX_BUF: usize = 128;
 /// payloads are chains of [`OUTBOX_BUF`]-byte buffers from a pool of
 /// `BLOCKS` buffers; a datagram that does not fit is refused with `NoBufs`.
 #[derive(Debug, Default)]
-pub struct Outbox<const BLOCKS: usize = 16> {
+pub struct Outbox<const BLOCKS: usize = TMF_OUTBOX_BLOCKS> {
     q: Deque<Outgoing, 6>,
     pool: BufPool<BLOCKS, OUTBOX_BUF>,
 }
@@ -238,9 +248,9 @@ pub struct Core<S, C: CryptoBackend, R> {
     pub(crate) ext: ExtAddress,
     pub(crate) ml_iid: Iid,
     pub(crate) role: Role,
-    pub(crate) ip6: Ip6,
+    pub(crate) ip6: StackIp6,
     /// MLE messages queued for the IPv6 layer.
-    pub(crate) mle_out: Outbox<8>,
+    pub(crate) mle_out: Outbox<MLE_OUTBOX_BLOCKS>,
     /// Network Data this node serves and uses (the leader store's copy on
     /// the leader, the copy received through MLE elsewhere).
     pub(crate) netdata: NetData<NETDATA_LEN>,
@@ -304,7 +314,7 @@ impl<S, C: CryptoBackend, R> Core<S, C, R> {
 /// [`DatasetEnv`] over the parts of [`Core`] the dataset managers touch.
 pub(crate) struct DsEnv<'a, S, C: CryptoBackend> {
     pub mac: &'a mut StackMac<C>,
-    pub ip6: &'a mut Ip6,
+    pub ip6: &'a mut StackIp6,
     pub settings: &'a mut S,
     pub cfg: &'a mut NetConfig,
     pub ml_iid: Iid,
