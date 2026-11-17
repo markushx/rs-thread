@@ -90,7 +90,7 @@ Keep this file up to date with every change that deviates from OpenThread.
 | Timed transmit without `TRANSMIT_TIMING` | `SubMac` timer before `BeginTransmit` | Same (`tx_at - (CCA 128 + 40 + SHR 160)`), the MAC waits using the radio clock; with `TRANSMIT_TIMING` the SFD time goes to the radio in `PsduTxInfo::tx_at_us` | — | none |
 | Enh-ACK probing (subject) | Radio platform keeps the table (`otPlatRadioConfigureEnhAckProbing`) | The MAC keeps it (`configure_enh_ack_probing`, 8 entries) and adds the IE to *its own software* enh-ACKs; a radio that acknowledges in hardware cannot (no trait method) | The `Radio` trait mirrors esp-rs/openthread, which has none | feature gap |
 | Enh-ACK probing data | LQI, margin (truncated `*255/130`), RSSI; three metrics accepted but only two bytes sent | Same order, fixed regardless of the request order; at most two metrics are accepted (`InvalidArgs`); scaling rounds to nearest like OT's initiator-side `ScaleLinkMarginToRawValue`; raw 0 RSSI saturates at -128 dBm (OT's `int8_t` wraps); no IE if a requested metric is unknown | Spec limits to two metrics; avoid OT's inconsistencies | none |
-| Enh-ACK probing (initiator) | `Mac::ProcessEnhAckProbing` -> `Initiator::ProcessEnhAckIeData` with the neighbor's configured metrics | `track_enh_ack_probing` keeps the metrics per neighbor; the IE of ACKs to our frames is reported as `Event::EnhAckLinkMetrics` | MLE (Phase 6) calls it | none |
+| Enh-ACK probing (initiator) | `Mac::ProcessEnhAckProbing` -> `Initiator::ProcessEnhAckIeData` with the neighbor's configured metrics | `track_enh_ack_probing` keeps the metrics per neighbor and the MAC decodes the IE of ACKs to our frames (reported as `Event::EnhAckLinkMetrics`); `MleEnv::track_enh_ack_probing` is called by `Mle::link_metrics_enh_ack` right after the request is sent, as OT sets the neighbor's metrics. Frames to a tracked neighbor use Frame Version 2015 (`Mac::enh_ack_probing_tracked`, OT `IsEnhAckProbingActive`) | MLE calls it | none |
 
 Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries` = 15 for direct frames (Thread §3.2); indirect frames use 0 retries per poll and up to 4 polls.
 
@@ -158,7 +158,6 @@ Matches OpenThread (listed because a draft said otherwise): `macMaxFrameRetries`
 | Address resolver lists | Four intrusive linked lists | One entry array with a state and an insertion counter (same eviction order and capacities) | No alloc, no pointers | none |
 | Address resolver extras | `ResolveUsingNetDataServices`, Backbone Router queries, DUA, `/a/ae` child handling | Not implemented | Phases 7/9 | API |
 | DHCPv6 | `Dhcp6::Client` / `Dhcp6::Server`, always on with the build option | `opentrust-instance` `dhcp6`: Solicit with Rapid Commit answered by a Reply (no Request / Renew / Release / Confirm, as OpenThread); updated from the Network Data in the instance's Network Data pass | Needed by thread-cert 5.3.8 / 5.3.9 | none |
-| DHCPv6 client Solicit timer | Trickle timer (`Imin` 1 s, `Imax` 120 s) | Same intervals, but the first Solicit goes out immediately, later ones at a uniform time in `[I/2, I)` of a doubling interval (no redundancy counter) | No trickle timer in the instance | none |
 | DHCPv6 server context check | Prefix agent only if the prefix has a 6LoWPAN context (`GetContext`) | Any context covering the prefix (compress flag ignored) provides the agent ALOC16; none: no ALOC but the server still answers on the RLOC | Same behavior for the Context TLVs the leader allocates | none |
 
 ## CoAP / TMF (`opentrust-coap`, TLVs in `opentrust-core::tlv`)
@@ -639,7 +638,7 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - `MleEnv::set_csl` calls `Mac::set_csl`; without a radio clock (`RadioCaps::clock`) the MAC refuses (`NotImplemented`) and the device keeps polling, whereas OT asserts the capability. The CSL clock accuracy reported to children comes from `RadioCaps::csl_accuracy_ppm` / `csl_uncertainty` and only if the radio has a clock.
 - Frames of a CSL synchronized sleepy child get a CSL IE (version 2015 frame, phase filled in by the MAC) when the destination is not broadcast; OT adds it to frames to the parent only, which is the same set for an end device.
 - A received frame with a CSL IE from a child calls `Mle::child_csl_synchronized` and flushes the frames queued for CSL children; `Event::CslChildOutOfSync` calls `child_csl_desynchronized`.
-- Link metrics: `aggregate_link_metrics` is fed with received data frames only (LQI and RSSI of the frame); data requests and ACKs are not aggregated because the MAC does not report their LQI. The MAC decodes the enhanced ACK probing IE itself, so `Mle::process_enh_ack_ie_data` (raw IE bytes) is not used: the decoded values are reported as `Event::EnhAckLinkMetrics`. `MleEnv::configure_enh_ack_probing` maps to `Mac::configure_enh_ack_probing`; the initiator side (`track_enh_ack_probing`) is not called yet.
+- Link metrics: `aggregate_link_metrics` is fed with received secured data frames and secured data requests (`Event::DataPollReceived` carries LQI and RSSI); a radio without LQI (OT simulation: `OT_RADIO_LQI_NONE`) counts as LQI 0 as in OT. ACKs to our own frames are not aggregated (the MAC does not report the LQI of an ACK; OT's `MacAck` series flag never matches here). The MAC decodes the enhanced ACK probing IE itself, so `Mle::process_enh_ack_ie_data` (raw IE bytes) is not used: the decoded values are reported as `Event::EnhAckLinkMetrics`. `MleEnv::configure_enh_ack_probing` maps to `Mac::configure_enh_ack_probing`; the initiator side (`track_enh_ack_probing`) is not called yet.
 - The virtual-time radio (`opentrust_sim::vt`) has a clock (virtual microseconds, `set_clock`) but no `RECEIVE_TIMING` / `TRANSMIT_TIMING` and no `RX_ACK`: as in OpenThread's simulation platform the MAC samples the CSL windows (receiver on/off by timer) and times CSL transmissions itself, and it builds the immediate or enhanced ACKs (with the CSL IE for the CSL parent). Only frames dropped by the radio's MAC filter (`macfilter`) are still ACKed by the radio (immediate ACK), because the stack never sees them. The timed-receive / radio-timed-transmit path is covered by unit tests only.
 - Frames take no time on the virtual medium. OpenThread's simulation radio refers a CSL phase to the time the frame or ACK is sent and stamps received frames at their end (the same instant). OpenTrust's MAC estimates the SFD of its own frames as attempt time + CCA + SHR (ACKs: + turnaround + SHR) and, without a radio timestamp, treats a received frame's SFD as delivery time + CCA + SHR; the virtual radio stamps received ACKs turnaround + SHR after their time. Against an OpenThread peer this puts the CSL transmission 0 to 350 us after the OpenThread convention, still inside the child's sample window.
 - MLE messages of a CSL receiver are secured at the link layer, as in OpenThread, so the parent can read the CSL IE; the forwarder fragments 8 octets smaller (CSL IE + Header Termination 2 IE) while the device is a CSL receiver (OpenThread derives it from the frame header).
@@ -954,3 +953,30 @@ Where OpenThread's output is lossy, malformed or undefined for an input, OpenTru
 ## Registering local Network Data
 
 - **API default.** `Instance::add_on_mesh_prefix`, `add_external_route`, `add_service` and their `remove` calls register the change with the leader at once. OT does not: `otBorderRouterAdd*` and `otServerAdd*` only change the local data and `otBorderRouterRegister` / `otServerRegister` start the registration. A device that adds two prefixes and then registers therefore sends one Server Data request in OT and two here. `Instance::set_manual_netdata_registration(true)` gives the OT behaviour (`Instance::register_netdata` registers); the simulator CLI node (`opentrust-cli-vt`) uses it, so that `netdata register` is not a no-op there. The default stays automatic so that applications need no extra call.
+
+### Link Metrics Manager and Enhanced Keep-Alive poll period
+
+- `Instance::link_metrics_manager_set_enabled` (feature `link-metrics-manager`, on in `opentrust-cli`'s `linkmetrics` group, off elsewhere; about 450 B of `Instance`) ports `Utils::LinkMetricsManager`: after attach (5 s) and every 150 s it registers Enhanced-ACK probing for link margin and RSSI at each neighbor from `neighbor_table()`, renews it, drops neighbors that are gone or not Thread 1.2 capable and gives up after three attempts. OT starts and stops it from the role-changed notification; here `service_lmm` compares the role on every `poll`. The pool holds 16 subjects (OT: the child count). Enabling does not replace the application's link metrics callbacks as OT does: `Event::LinkMetricsManagement` / `Event::EnhAckLinkMetrics` are still delivered.
+- The acknowledged-data-frame keep-alive postponement only applies while the poll period equals the child-timeout based default (OT `mPollPeriod == GetDefaultPollPeriod()`). `Mac::set_mle_poll_period` tells the poll sender that default when the application set a shorter period with `set_poll_period`, because the two are merged to one period before the MAC. Without it every ping of a child polling every 2 s delayed its next poll by 2 s and the reply missed a 2 s ping timeout (LowPower 7.1.2).
+- `mac send emptydata` / `mac send datarequest` (reference device commands) are `Instance::send_mac_empty_data` / `send_mac_data_request`; the empty data frame goes to the parent's short address, secured, ack requested, direct (not through the forwarder's queues).
+
+## Stop / start after instance creation
+
+OpenThread restores the network information once, in Instance init. In
+OpenTrust the first `thread_start` after the instance was created does the
+same. A later start after `thread_stop` attaches from scratch for a child (the
+parent is invalid after a stop, as in OT), and restores the router role with
+Link Requests for a router or leader that was stopped without a graceful
+detach. OT keeps the RLOC16 in memory; OpenTrust reads the stored role instead.
+A router that detached gracefully (Address Release) attaches with a Parent
+Request on the next start.
+
+## Random extended address
+
+`Config::ext_address = RANDOM_EXT_ADDRESS` makes `Instance::init` draw a
+locally administered unicast address from the instance RNG, as OT does at every
+boot. A restored network information record (attached role) replaces it before
+Thread starts, so the address persists through the network information only.
+The firmware no longer keeps its own copy in flash (the CLI and node examples
+use the sentinel). The Matter light keeps passing its persisted address (its
+key-value store) explicitly; the stack knows nothing of that store.

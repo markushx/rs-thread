@@ -1105,6 +1105,12 @@ impl<
         self.probe_initiator.configure(short, ext, flags)
     }
 
+    /// Initiator side: is Enhanced-ACK probing configured at `peer`? Frames
+    /// to it are then sent as Frame Version 2015 (they get enhanced ACKs).
+    pub fn enh_ack_probing_tracked(&self, peer: Address) -> bool {
+        self.probe_initiator.find(peer).is_some()
+    }
+
     /// Initiator side: stop tracking all subjects.
     pub fn reset_tracked_enh_ack_probing(&mut self) {
         self.probe_initiator.clear();
@@ -1291,6 +1297,15 @@ impl<
     /// Set the default poll period (MLE derives it from the child timeout).
     pub fn set_poll_period(&mut self, period: Duration, now: Instant) {
         self.poll.set_default_period(period, now);
+    }
+
+    /// Tell the poll sender which period MLE derives from the child timeout,
+    /// when the period set with [`set_poll_period`](Self::set_poll_period)
+    /// is shorter because of an application override: only a poll period
+    /// equal to it lets an acknowledged data frame replace the next
+    /// keep-alive poll.
+    pub fn set_mle_poll_period(&mut self, period: Option<Duration>) {
+        self.poll.mle_period = period;
     }
 
     /// The poll period currently in use.
@@ -2838,6 +2853,9 @@ impl<
                             src: meta.src,
                             frame_pending: acked_fp,
                             csl,
+                            secured: meta.security,
+                            lqi: info.lqi,
+                            rssi: info.rssi,
                         });
                         if acked_fp && !self.poll_requests.iter().any(|a| *a == meta.src) {
                             let _ = self.poll_requests.push_back(meta.src);

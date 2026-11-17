@@ -136,7 +136,10 @@ impl<const C: usize> Mle<C> {
         let mut sub = [0u8; SUB_BUF];
         let n = write_enh_ack_config(&mut sub, flags, &m)?;
         let res = self.send_link_metrics_management_request(env, dst, &sub[..n]);
-        self.neighbor_mut(r).enh_ack_probing = m.enh_ack_flags();
+        let nb = self.neighbor_mut(r);
+        nb.enh_ack_probing = m.enh_ack_flags();
+        let (flags, rloc16, ext) = (nb.enh_ack_probing, nb.rloc16, nb.ext_address);
+        env.track_enh_ack_probing(flags, rloc16, &ext);
         res
     }
 

@@ -169,7 +169,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.load_dad_counter();
         self.started = true;
         self.sync_netif();
-        let restored = if lead {
+        // OT restores the network information once, when the instance is
+        // created. After `thread stop` the parent is invalid, so a child
+        // attaches with a Parent Request; a router or leader keeps its RLOC16
+        // and restores its role with Link Requests.
+        let boot = core::mem::take(&mut self.restore_pending);
+        let released = core::mem::take(&mut self.rloc_released);
+        let restore = boot || (!released && self.stored_role_is_router());
+        let restored = if lead || !restore {
             Err(Error::NotFound)
         } else {
             // The device mode was restored at creation; a `mode` set since
@@ -193,6 +200,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         self.poll(now);
         Ok(())
+    }
+
+    fn stored_role_is_router(&mut self) -> bool {
+        use opentrust_mle::env::MleEnv as _;
+        self.core
+            .load_network_info()
+            .and_then(|i| Role::from_u8(i.role))
+            .is_some_and(|r| r.is_router_or_leader())
     }
 
     fn load_iid_secret(&mut self) {
@@ -619,7 +634,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// [`Error::Busy`] while a detach runs.
     pub fn detach_gracefully(&mut self, now: Instant) -> Result<()> {
         self.core.now = now;
+        let was_router = self.mle.role() == Role::Router;
         self.mle.detach_gracefully(&mut self.core, now)?;
+        self.rloc_released = was_router;
         self.poll(now);
         Ok(())
     }

@@ -180,9 +180,9 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 5.1.1 (v1.2 router) | Router attach (Thread 1.2 variant) | `v1_2_router_5_1_1` | pass | 4/4 |  | pass / pass |  |
 | LowPower 5.3.1 | SSED Attachment | `v1_2_LowPower_5_3_01_SSEDAttachment` | pass | 5/5 | n3 pass | pass / pass |  |
 | LowPower 6.1.7 | Preferring A Router Over A Reed | `v1_2_LowPower_6_1_07_PreferringARouterOverAReed` | pass | 6/6 | n4 pass | fail / fail |  |
-| LowPower 7.1.1 | Single Probe Link Metrics With Enhanced Acks | `v1_2_LowPower_7_1_01_SingleProbeLinkMetricsWithEnhancedAcks` | partial | 2/5 |  |  | fails: n2, n3, all; `linkmetrics` CLI commands missing in opentrust-cli (`Error 35: InvalidCommand`); the Leader (node 1) side works |
-| LowPower 7.1.2 | Single Probe Link Metrics Without Enhanced Ack | `v1_2_LowPower_7_1_02_SingleProbeLinkMetricsWithoutEnhancedAck` | partial | 2/5 |  |  | fails: n2, n3, all; same cause as LowPower 7.1.1 |
-| LowPower 7.2.1 | Forward Tracking Series | `v1_2_LowPower_7_2_01_ForwardTrackingSeries` | fail | 1/5 |  |  | fails: n1, n2, n3, all; forward tracking series not registered (`No matching series ID`) / `linkmetrics` CLI missing |
+| LowPower 7.1.1 | Single Probe Link Metrics With Enhanced Acks | `v1_2_LowPower_7_1_01_SingleProbeLinkMetricsWithEnhancedAcks` | pass | 5/5 | n/a | pass / pass | Subject (Leader) and initiator (SED, SSED) sides; `mac send emptydata`, Frame Version 2015 to a probed neighbor, reserved Type/Average option |
+| LowPower 7.1.2 | Single Probe Link Metrics Without Enhanced Ack | `v1_2_LowPower_7_1_02_SingleProbeLinkMetricsWithoutEnhancedAck` | pass | 5/5 | n/a | pass / pass | 2 s ping with a 2 s poll period: the keep-alive reset only applies at the default poll period |
+| LowPower 7.2.1 | Forward Tracking Series | `v1_2_LowPower_7_2_01_ForwardTrackingSeries` | pass | 5/5 | n/a | fail / fail (also fails with all OpenThread) | data requests and LQI-less frames count in the series |
 
 
 ## Not runnable in the simulation harness (NA)
@@ -280,8 +280,8 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 | script | status | runs passed | detail |
 |---|---|---|---|
-| `v1_2_LowPower_test_forward_tracking_series` | partial | 2/4 | fails: n2, all; link metrics (CLI missing) |
-| `v1_2_LowPower_test_link_metrics_manager` | partial | 3/5 | fails: n1, all; link metrics manager / `linkmetrics` CLI missing |
+| `v1_2_LowPower_test_forward_tracking_series` | pass | 4/4 |  |
+| `v1_2_LowPower_test_link_metrics_manager` | pass | 5/5 | `linkmetricsmgr`; pktverify passes for ot, each and all |
 | `v1_2_test_enhanced_frame_pending` | pass | 4/4 | child timeout is refreshed by data frames (enhanced keep-alive) |
 | `v1_2_test_enhanced_keep_alive` | pass | 4/4 | parent and child side of the enhanced keep-alive |
 | `v1_2_test_single_probe` | pass | 4/4 | `linkmetrics` initiator CLI; extended MAC addresses for indirect link-local frames |

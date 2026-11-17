@@ -54,11 +54,13 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
         let csl = csl_period != 0 && f.dst != MacDest::Broadcast;
         let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::Data)
-            .version(if csl || f.csl {
-                FrameVersion::V2015
-            } else {
-                FrameVersion::V2006
-            })
+            .version(
+                if csl || f.csl || self.mac.enh_ack_probing_tracked(mac_address(f.dst)) {
+                    FrameVersion::V2015
+                } else {
+                    FrameVersion::V2006
+                },
+            )
             .sequence(0)
             // Another destination PAN (Discovery Response to a scanner) keeps
             // our own PAN ID as the source PAN ID (OT `SetSource` /
@@ -222,13 +224,24 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             match ev {
                 MacEvent::Received(rx) => self.handle_frame(now, rx),
                 #[cfg(feature = "ftd")]
-                MacEvent::DataPollReceived { src, csl, .. } => self.handle_poll(now, src, csl),
+                MacEvent::DataPollReceived {
+                    src,
+                    csl,
+                    secured,
+                    lqi,
+                    rssi,
+                    ..
+                } => self.handle_poll(now, src, csl, secured.then_some((lqi, rssi))),
                 #[cfg(feature = "ftd")]
                 MacEvent::CslChildOutOfSync(Address::Short(s)) => {
                     self.mle.child_csl_desynchronized(Rloc16(s.0));
                 }
                 MacEvent::EnhAckLinkMetrics { neighbor, values } => {
                     let ext = self.neighbor_ext(neighbor);
+                    #[cfg(feature = "link-metrics-manager")]
+                    self.core
+                        .lmm
+                        .on_enh_ack(&ext, values.link_margin, values.rssi, now);
                     self.core.push_event(Event::EnhAckLinkMetrics {
                         rloc16: match neighbor {
                             Address::Short(s) => Rloc16(s.0),
@@ -307,7 +320,25 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// A data poll from a sleepy child: release its next frame.
     #[cfg(feature = "ftd")]
-    fn handle_poll(&mut self, now: Instant, src: Address, csl: Option<(CslIe, Option<u64>)>) {
+    fn handle_poll(
+        &mut self,
+        now: Instant,
+        src: Address,
+        csl: Option<(CslIe, Option<u64>)>,
+        link: Option<(Option<u8>, Option<i8>)>,
+    ) {
+        // Link metrics of the polling child (OT `Neighbor::AggregateLinkMetrics`).
+        // A radio without LQI reports 0 (`OT_RADIO_LQI_NONE`).
+        if let Some((lqi, Some(rss))) = link
+            && let Some(ext) = self.neighbor_ext_opt(src)
+        {
+            self.mle.aggregate_link_metrics(
+                &ext,
+                opentrust_mle::link_metrics::FrameKind::MacDataRequest,
+                lqi.unwrap_or(0),
+                rss,
+            );
+        }
         // A poll with a CSL IE synchronizes the child (OT `Mac::ProcessCsl`).
         #[cfg(feature = "ftd")]
         if let (Some((ie, ts)), Address::Short(s)) = (csl, src)
@@ -428,13 +459,13 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         };
         // Link metrics of the sender (OT `Neighbor::AggregateLinkMetrics`).
         if link_security
-            && let (Some(lqi), Some(rss)) = (rx.lqi, rx.rssi)
+            && let Some(rss) = rx.rssi
             && let Some(ext) = self.neighbor_ext_opt(src)
         {
             self.mle.aggregate_link_metrics(
                 &ext,
                 opentrust_mle::link_metrics::FrameKind::MacData,
-                lqi,
+                rx.lqi.unwrap_or(0),
                 rss,
             );
         }
@@ -890,6 +921,50 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.after_forwarder(now, events, notes);
         self.sync_src_match();
         r
+    }
+
+    /// Send an empty data frame (acknowledged, link-secured) to the parent
+    /// (OT `otLinkSendEmptyData`, reference device feature). Errors:
+    /// [`opentrust_core::Error::InvalidState`] unless this is a sleepy child
+    /// with a parent.
+    pub fn send_mac_empty_data(&mut self, now: Instant) -> Result<()> {
+        if self.mle.is_rx_on_when_idle() {
+            return Err(opentrust_core::Error::InvalidState);
+        }
+        let parent = self
+            .mle
+            .parent()
+            .map(|p| p.router.neighbor.rloc16)
+            .filter(|r| *r != Rloc16::INVALID)
+            .ok_or(opentrust_core::Error::InvalidState)?;
+        let src = Address::Short(self.core.mac.short_address());
+        let mut notes = FwdNotes::default();
+        let mut sink = Sink {
+            mac: MacSink {
+                mac: &mut self.core.mac,
+                tx: &mut self.core.mactx,
+            },
+            notes: &mut notes,
+        };
+        let r = sink.transmit(&TxFrame {
+            src,
+            dst: MacDest::Short(parent),
+            payload: &[],
+            security: LinkSecurity::Network,
+            frame_pending: false,
+            indirect: false,
+            csl: false,
+            radio: opentrust_mesh::radio::RadioLink::Ieee802154,
+        });
+        self.poll(now);
+        r
+    }
+
+    /// Send a data poll now (OT `otLinkSendDataRequest`).
+    pub fn send_mac_data_request(&mut self, now: Instant) -> Result<()> {
+        self.core.mac.send_data_poll(now)?;
+        self.poll(now);
+        Ok(())
     }
 
     // ------------------------------------------------------------ resolver

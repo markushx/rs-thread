@@ -533,7 +533,7 @@ where
     #[cfg(feature = "ftd")]
     pub fn route_table(&self) -> Vec<RouteInfo, 62> {
         let mut v = Vec::new();
-        for r in self.mle.router_table().iter(StateFilter::AnyExceptInvalid) {
+        for r in self.mle.router_table().iter(StateFilter::Any) {
             let _ = v.push(RouteInfo {
                 router_id: r.router_id,
                 rloc16: Rloc16::from_router_id(r.router_id).unwrap_or(Rloc16::INVALID),

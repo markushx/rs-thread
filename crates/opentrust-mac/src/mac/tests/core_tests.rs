@@ -325,7 +325,10 @@ fn software_ack_frame_pending_from_src_match() {
         Event::DataPollReceived {
             src: short(PEER_SHORT),
             frame_pending: true,
-            csl: None
+            csl: None,
+            secured: false,
+            lqi: None,
+            rssi: None
         }
     );
     // Not in the table: FP = 0.
@@ -718,7 +721,10 @@ fn indirect_queue_and_frame_pending() {
         [Event::DataPollReceived {
             src: short(CHILD),
             frame_pending: true,
-            csl: None
+            csl: None,
+            secured: false,
+            lqi: None,
+            rssi: None
         }]
     );
     // First frame, with Frame Pending (one more queued).

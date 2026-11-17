@@ -534,6 +534,18 @@ pub trait MleEnv {
         Err(opentrust_core::Error::NotImplemented)
     }
 
+    /// Initiator side of Enhanced-ACK probing: the neighbor was asked to
+    /// report `flags` (empty: nothing) in its Enhanced ACKs. The MAC decodes
+    /// them and frames to this neighbor use Frame Version 2015 (OT
+    /// `Neighbor::IsEnhAckProbingActive`). Default: ignore.
+    fn track_enh_ack_probing(
+        &mut self,
+        _flags: opentrust_mac::mac::LinkMetricsFlags,
+        _rloc16: Rloc16,
+        _ext: &ExtAddress,
+    ) {
+    }
+
     // ------------------------------------------------------------ discovery
 
     /// A Discovery Request arrived at an eligible router: should it be

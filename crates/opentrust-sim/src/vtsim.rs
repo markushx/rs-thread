@@ -81,6 +81,11 @@ pub struct VtSim {
     awake: BTreeSet<u16>,
     nodes_by_ack_seq: HashMap<u8, BTreeSet<u16>>,
     node_ack_seq: HashMap<u16, u8>,
+    /// The short address a node last used as the source of a frame.
+    short_of: HashMap<u16, u16>,
+    /// The short destination of the unicast frame a node last sent (the one
+    /// a pending ACK acknowledges).
+    node_dst_short: HashMap<u16, u16>,
     procs: BTreeMap<u16, Proc>,
     /// Every frame sent so far.
     pub sniffed: Vec<Sniffed>,
@@ -91,6 +96,8 @@ struct FrameInfo {
     ack: bool,
     seq: u8,
     broadcast: bool,
+    src_short: Option<u16>,
+    dst_short: Option<u16>,
 }
 
 fn dissect(data: &[u8]) -> Option<FrameInfo> {
@@ -127,10 +134,19 @@ fn dissect(data: &[u8]) -> Option<FrameInfo> {
                 .map(|b| u16::from_le_bytes([b[0], b[1]]));
         }
     }
+    let mut src_short = None;
+    if fcf & 7 != 2
+        && let Ok(f) = opentrust_mac::frame::Frame::parse_with_fcs(&data[1..])
+        && let opentrust_mac::frame::Address::Short(a) = f.src_address()
+    {
+        src_short = Some(a.0);
+    }
     Some(FrameInfo {
         ack: fcf & 7 == 2,
         seq: data[3],
         broadcast: dst_mode == 2 && dst_short == Some(0xffff),
+        src_short,
+        dst_short,
     })
 }
 
@@ -152,6 +168,8 @@ impl VtSim {
             awake: BTreeSet::new(),
             nodes_by_ack_seq: HashMap::new(),
             node_ack_seq: HashMap::new(),
+            short_of: HashMap::new(),
+            node_dst_short: HashMap::new(),
             procs: BTreeMap::new(),
             sniffed: Vec::new(),
             offset,
@@ -413,6 +431,20 @@ impl VtSim {
                     && i.ack
                 {
                     recv = self.nodes_by_ack_seq.get(&i.seq).cloned();
+                    // OpenThread's simulated radio acknowledges frames for
+                    // the short address 0x0000 on every node (its alternate
+                    // short address is never set), so a router with RLOC16
+                    // 0x0000 gets a second ACK from a node that cannot decrypt
+                    // it for the same frame. A real radio acks only its own
+                    // address: drop such an ACK from a node whose known short
+                    // address is another one.
+                    if let (Some(r), Some(&acker)) = (recv.as_mut(), self.short_of.get(&port)) {
+                        r.retain(|n| {
+                            self.node_dst_short
+                                .get(n)
+                                .is_none_or(|d| *d != 0 || acker == 0)
+                        });
+                    }
                 }
                 let recv = recv.unwrap_or_else(|| self.devices.keys().copied().collect());
                 for d in recv {
@@ -441,6 +473,17 @@ impl VtSim {
                     kind,
                     data: data.clone(),
                 });
+                if let Some(i) = &info
+                    && !i.ack
+                {
+                    if let Some(a) = i.src_short {
+                        self.short_of.insert(port, a);
+                    }
+                    match i.dst_short {
+                        Some(d) => self.node_dst_short.insert(port, d),
+                        None => self.node_dst_short.remove(&port),
+                    };
+                }
                 if let Some(i) = info
                     && !i.ack
                     && !i.broadcast

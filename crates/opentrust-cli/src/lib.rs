@@ -339,6 +339,7 @@ where
             "routereligible" => self.routereligible(a),
             #[cfg(feature = "dataset")]
             "dataset" => self.dataset(a),
+            "mac" => self.mac_cmd(a),
             #[cfg(feature = "ping")]
             "ping" => self.ping_cmd(a),
             #[cfg(feature = "tables")]
@@ -373,6 +374,8 @@ where
             "networkdiagnostic" => self.networkdiagnostic(a),
             #[cfg(feature = "linkmetrics")]
             "linkmetrics" => self.linkmetrics(a),
+            #[cfg(feature = "linkmetrics")]
+            "linkmetricsmgr" => self.linkmetricsmgr(a),
             #[cfg(feature = "commissioning")]
             "commissioner" => self.commissioner(a),
             #[cfg(feature = "joiner")]

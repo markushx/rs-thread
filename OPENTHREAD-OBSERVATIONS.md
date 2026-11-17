@@ -65,3 +65,28 @@ from a security point of view. Each entry is a candidate for a later review
   Reply): the prefixes this node serves in reverse Network Data order. A server
   that removed and re-added prefixes may order differently from OpenThread (the
   slot positions are not modelled).
+
+## Enhanced keep-alive and an application poll period
+
+- **OpenThread:** `DataPollSender::ResetKeepAliveTimer` (called after an acknowledged secured data frame to a Thread 1.2 parent) only restarts the poll timer when `mPollPeriod == GetDefaultPollPeriod()`, the period derived from the child timeout. A device with `pollperiod 2000` therefore keeps polling on its own schedule, but a device whose application period is longer than the default (the default wins as the minimum) has its poll postponed by every data frame.
+- **Why it matters:** LowPower 7.1.2 pings with a timeout equal to the poll period; a postponing implementation misses it.
+- **OpenTrust:** copies the condition (`PollSender::mle_period`).
+
+## Link metrics of a radio without LQI
+
+- **OpenThread:** the simulation radio reports `OT_RADIO_LQI_NONE` (0) for every received frame; `Neighbor::AggregateLinkMetrics` still counts the frame, with LQI 0.
+- **OpenTrust:** counts such frames with LQI 0 as well.
+
+## Simulated radio acknowledges frames for short address 0x0000 on every node
+
+In the OpenThread simulation platform (examples/platforms/simulation/radio.c) a
+node whose RLOC16 is not 0x0000 still sends an enhanced ACK for a frame
+addressed to the short address 0x0000 (observed: the leader acks the frames a
+child sends to its router with Router ID 0). The sender gets two ACKs for one
+frame; the first one comes from a node that cannot have the right key and
+the radio reports it as the ACK of the transmission, so every transmission to
+the router fails its 15 retries. The alternate short address of the simulated
+radio is probably never initialised to invalid. About 1 run in 62 gives the
+router Router ID 0; the thread-cert and mtd tests flaked at that rate.
+The OpenTrust virtual-time simulator drops an ACK from a node whose
+known short address differs from a 0x0000 destination.

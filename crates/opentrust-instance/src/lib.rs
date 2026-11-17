@@ -100,6 +100,8 @@ mod datapath;
 mod dhcp6;
 mod diag;
 mod dns_srp;
+#[cfg(feature = "link-metrics-manager")]
+mod lmm;
 mod netdata_glue;
 mod scan;
 mod stack;
@@ -337,10 +339,17 @@ pub enum Event {
     BorderAgent(opentrust_meshcop::border_agent::BorderAgentEvent),
 }
 
+/// Extended address value that asks the instance for a random one (OT picks
+/// a random extended address at every boot): drawn from the instance RNG when
+/// the instance is created, locally administered and unicast, replaced by the
+/// stored one when the network information of an attached device is restored.
+pub const RANDOM_EXT_ADDRESS: ExtAddress = ExtAddress([0; 8]);
+
 /// Configuration of an [`Instance`].
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// The device's extended address (IEEE EUI-64).
+    /// The device's extended address (IEEE EUI-64), or
+    /// [`RANDOM_EXT_ADDRESS`].
     pub ext_address: ExtAddress,
     /// MLE configuration (device mode, timeouts, router configuration).
     pub mle: MleConfig,
@@ -433,6 +442,14 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     /// Radio filter (OT `otLinkSetRadioFilterEnabled`): no frame is received
     /// or transmitted.
     pub(crate) radio_filter: bool,
+
+    /// The stored network information has not been used since the instance
+    /// was created (OT restores it at initialisation only; a later
+    /// stop / start attaches from scratch).
+    pub(crate) restore_pending: bool,
+    /// A router sent an Address Release when it detached gracefully: its
+    /// RLOC16 is gone, the next start attaches with a Parent Request.
+    pub(crate) rloc_released: bool,
 }
 
 impl<S, C: InstanceCrypto, R> core::fmt::Debug for Instance<S, C, R> {
@@ -489,7 +506,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let mut ba_id = [0u8; 16];
         rng.fill_bytes(&mut ba_id);
 
-        let ext = config.ext_address;
+        let ext = if config.ext_address == RANDOM_EXT_ADDRESS {
+            let mut a = [0u8; 8];
+            rng.fill_bytes(&mut a);
+            a[0] = (a[0] | 0x02) & !0x01;
+            ExtAddress(a)
+        } else {
+            config.ext_address
+        };
         let p = slot.as_mut_ptr();
         // SAFETY: `p` is valid for writes of `Self`; every field of `Self`
         // and of `Core` is written exactly once below, then the value is
@@ -549,6 +573,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             addr_of_mut!((*c).parent).write(None);
             addr_of_mut!((*c).poll_period).write(None);
             addr_of_mut!((*c).user_poll_period).write(None);
+            #[cfg(feature = "link-metrics-manager")]
+            addr_of_mut!((*c).lmm).write(lmm::LinkMetricsManager::new());
             put(addr_of_mut!((*c).mactx), stack::MacTx::default);
             put(addr_of_mut!((*c).events), Deque::new);
             addr_of_mut!((*c).iid_secret).write(iid_secret);
@@ -602,6 +628,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             addr_of_mut!((*p).ip6_enabled).write(false);
             addr_of_mut!((*p).started).write(false);
             addr_of_mut!((*p).radio_filter).write(false);
+
+            addr_of_mut!((*p).restore_pending).write(true);
+            addr_of_mut!((*p).rloc_released).write(false);
             let inst = &mut *p;
             inst.restore_boot_identity();
             inst
@@ -716,6 +745,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy |= self.service_bbr(now);
             busy |= self.service_commissioning(now);
             busy |= self.service_scan(now);
+            #[cfg(feature = "link-metrics-manager")]
+            {
+                busy |= self.service_lmm(now);
+            }
             busy |= self.service_outbox(now);
             if !busy {
                 break;
@@ -746,6 +779,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.bbrg.next_deadline(),
             self.cm.next_deadline(),
             self.scan_servers_deadline(),
+            self.lmm_deadline(),
         ]
         .into_iter()
         .flatten()
@@ -754,6 +788,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             d = Some(self.core.now);
         }
         d
+    }
+
+    #[cfg(feature = "link-metrics-manager")]
+    fn lmm_deadline(&self) -> Option<Instant> {
+        self.core.lmm.next_deadline()
+    }
+
+    #[cfg(not(feature = "link-metrics-manager"))]
+    #[allow(clippy::unused_self)]
+    const fn lmm_deadline(&self) -> Option<Instant> {
+        None
     }
 
     #[cfg(feature = "scan-servers")]
@@ -870,6 +915,10 @@ mod tests {
     fn instance() -> Instance<RamSettings<2048>, SoftCrypto, MacRng> {
         let cfg = Config::router(ExtAddress([2, 0, 0, 0, 0, 0, 0, 1]), RadioCaps::default());
         Instance::new(cfg, RamSettings::new(), SoftCrypto, MacRng::new(42))
+    }
+
+    fn instance_with(cfg: Config, seed: u64) -> Instance<RamSettings<2048>, SoftCrypto, MacRng> {
+        Instance::new(cfg, RamSettings::new(), SoftCrypto, MacRng::new(seed))
     }
 
     #[test]
@@ -1018,14 +1067,25 @@ mod tests {
         i.poll(now);
         let (ext, ml_eid) = (i.ext_address(), i.ml_eid());
         let settings = i.into_settings();
-        // After a reset the instance starts with another (random) address
-        // and takes the stored one before Thread starts.
-        let cfg = Config::router(ExtAddress([2, 0, 0, 0, 0, 0, 0, 9]), RadioCaps::default());
-        let i2 = Instance::new(cfg, settings, SoftCrypto, MacRng::new(7));
+        // After a reset the instance starts with a random address and takes
+        // the stored one before Thread starts.
+        let cfg = Config::router(RANDOM_EXT_ADDRESS, RadioCaps::default());
+        let i2 = Instance::new(cfg.clone(), settings, SoftCrypto, MacRng::new(7));
         assert_eq!(i2.role(), Role::Disabled);
         assert_eq!(i2.ext_address(), ext);
         // The prefix comes with the dataset at start; the IID is restored.
         assert_eq!(i2.ml_eid().octets()[8..], ml_eid.octets()[8..]);
+    }
+
+    #[test]
+    fn random_ext_address_without_stored_network() {
+        let cfg = Config::router(RANDOM_EXT_ADDRESS, RadioCaps::default());
+        let a = instance_with(cfg.clone(), 1).ext_address();
+        let b = instance_with(cfg, 2).ext_address();
+        assert_ne!(a, RANDOM_EXT_ADDRESS);
+        assert_ne!(a, b);
+        // Locally administered, unicast.
+        assert_eq!(a.0[0] & 0x03, 0x02);
     }
 
     #[test]
