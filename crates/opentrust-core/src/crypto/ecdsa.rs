@@ -48,6 +48,21 @@ pub trait EcdsaP256 {
 
     /// Sign the SHA-256 `digest` (`r || s`).
     fn sign_digest(&self, key: &SecretKey, digest: &[u8; 32]) -> Result<[u8; SIGNATURE_LEN]>;
+
+    /// Verify `signature` (`r || s`) over the SHA-256 `digest` with
+    /// `public_key` (`X || Y`). [`Error::Security`](crate::Error::Security)
+    /// if the key is not a point of the curve or the signature does not
+    /// match. Backends that only sign return
+    /// [`Error::NotImplemented`](crate::Error::NotImplemented) (the default).
+    fn verify_digest(
+        &self,
+        public_key: &[u8; PUBLIC_KEY_LEN],
+        digest: &[u8; 32],
+        signature: &[u8; SIGNATURE_LEN],
+    ) -> Result<()> {
+        let _ = (public_key, digest, signature);
+        Err(crate::Error::NotImplemented)
+    }
 }
 
 /// Software [`EcdsaP256`] on RustCrypto `p256`.
@@ -78,6 +93,24 @@ impl EcdsaP256 for SoftEcdsaP256 {
         out.copy_from_slice(&sig.to_bytes());
         Ok(out)
     }
+
+    fn verify_digest(
+        &self,
+        public_key: &[u8; PUBLIC_KEY_LEN],
+        digest: &[u8; 32],
+        signature: &[u8; SIGNATURE_LEN],
+    ) -> Result<()> {
+        use p256::ecdsa::signature::hazmat::PrehashVerifier;
+        let mut sec1 = [0u8; PUBLIC_KEY_LEN + 1];
+        sec1[0] = 0x04;
+        sec1[1..].copy_from_slice(public_key);
+        let vk = p256::ecdsa::VerifyingKey::from_sec1_bytes(&sec1)
+            .map_err(|_| crate::Error::Security)?;
+        let sig =
+            p256::ecdsa::Signature::from_slice(signature).map_err(|_| crate::Error::Security)?;
+        vk.verify_prehash(digest, &sig)
+            .map_err(|_| crate::Error::Security)
+    }
 }
 
 #[cfg(all(feature = "ecdsa", feature = "soft-crypto"))]
@@ -88,6 +121,15 @@ impl EcdsaP256 for super::soft::SoftCrypto {
 
     fn sign_digest(&self, key: &SecretKey, digest: &[u8; 32]) -> Result<[u8; SIGNATURE_LEN]> {
         SoftEcdsaP256.sign_digest(key, digest)
+    }
+
+    fn verify_digest(
+        &self,
+        public_key: &[u8; PUBLIC_KEY_LEN],
+        digest: &[u8; 32],
+        signature: &[u8; SIGNATURE_LEN],
+    ) -> Result<()> {
+        SoftEcdsaP256.verify_digest(public_key, digest, signature)
     }
 }
 
@@ -142,6 +184,23 @@ mod tests {
         let digest: [u8; 32] = sha.finalize();
         let sig = SoftEcdsaP256.sign_digest(&key, &digest).unwrap();
         assert_eq!(sig, expected_sig);
+        SoftEcdsaP256
+            .verify_digest(&expected_pk, &digest, &sig)
+            .unwrap();
+        let mut bad = digest;
+        bad[0] ^= 1;
+        assert!(
+            SoftEcdsaP256
+                .verify_digest(&expected_pk, &bad, &sig)
+                .is_err()
+        );
+        let mut bad_key = expected_pk;
+        bad_key[0] ^= 1;
+        assert!(
+            SoftEcdsaP256
+                .verify_digest(&bad_key, &digest, &sig)
+                .is_err()
+        );
 
         let mut sec1 = [0u8; 65];
         sec1[0] = 4;

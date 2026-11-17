@@ -211,8 +211,8 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 | area | scripts | pass | partial | fail | baseline-fail | NA |
 |---|---|---|---|---|---|---|
-| SRP | 15 | 0 | 0 | 14 | 1 | 0 |
-| DNS / DNS-SD | 3 | 0 | 0 | 3 | 0 | 0 |
+| SRP | 15 | 14 | 0 | 0 | 1 | 0 |
+| DNS / DNS-SD | 3 | 3 | 0 | 0 | 0 | 0 |
 | CoAP / CoAPS | 4 | 2 | 0 | 1 | 0 | 1 |
 | Backbone router / DUA / MLR (Thread 1.2) | 7 | 7 | 0 | 0 | 0 | 0 |
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
@@ -224,29 +224,29 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 | script | status | runs passed | detail |
 |---|---|---|---|
-| `test_srp_auto_host_address` | fail | 1/2 | fails: all |
-| `test_srp_auto_start_mode` | fail | 1/2 | fails: all |
-| `test_srp_client_change_lease` | fail | 1/2 | fails: all |
-| `test_srp_client_remove_host` | fail | 1/2 | fails: all |
-| `test_srp_client_save_server_info` | fail | 1/2 | fails: all |
-| `test_srp_lease` | fail | 1/2 | fails: all |
-| `test_srp_many_services_mtu_check` | fail | 1/2 | fails: all |
-| `test_srp_name_conflicts` | fail | 1/2 | fails: all |
-| `test_srp_register_500_services` | baseline-fail | 0/2 | all-OT: FAIL FAILED (failures=1); baseline: failed / timed out at the 120 s limit |
-| `test_srp_register_services_diff_lease` | fail | 1/2 | fails: all |
-| `test_srp_register_single_service` | fail | 1/2 | fails: all |
-| `test_srp_server_anycast_mode` | fail | 1/2 | fails: all |
-| `test_srp_server_reboot_port` | fail | 1/2 | fails: all |
-| `test_srp_sub_type` | fail | 1/2 | fails: all |
-| `test_srp_ttl` | fail | 1/2 | fails: all |
+| `test_srp_auto_host_address` | pass | 2/2 |  |
+| `test_srp_auto_start_mode` | pass | 2/2 |  |
+| `test_srp_client_change_lease` | pass | 2/2 |  |
+| `test_srp_client_remove_host` | pass | 2/2 |  |
+| `test_srp_client_save_server_info` | pass | 2/2 |  |
+| `test_srp_lease` | pass | 2/2 |  |
+| `test_srp_many_services_mtu_check` | pass | 2/2 |  |
+| `test_srp_name_conflicts` | pass | 2/2 |  |
+| `test_srp_register_500_services` | baseline-fail | 0/2 | all-OT: FAIL FAILED (failures=1); baseline: failed / timed out at the 120 s limit; all-OpenTrust: fails too (the server stores at most 16 services) |
+| `test_srp_register_services_diff_lease` | pass | 2/2 |  |
+| `test_srp_register_single_service` | pass | 2/2 |  |
+| `test_srp_server_anycast_mode` | pass | 2/2 |  |
+| `test_srp_server_reboot_port` | pass | 2/2 |  |
+| `test_srp_sub_type` | pass | 2/2 |  |
+| `test_srp_ttl` | pass | 2/2 |  |
 
 #### DNS / DNS-SD
 
 | script | status | runs passed | detail |
 |---|---|---|---|
-| `test_dns_client_config_auto_start` | fail | 1/2 | fails: all; `Error 7: InvalidArgs` from the `dns` CLI |
-| `test_dnssd` | fail | 1/2 | fails: all |
-| `test_dnssd_name_with_special_chars` | fail | 1/2 | fails: all |
+| `test_dns_client_config_auto_start` | pass | 2/2 |  |
+| `test_dnssd` | pass | 2/2 |  |
+| `test_dnssd_name_with_special_chars` | pass | 2/2 |  |
 
 #### CoAP / CoAPS
 

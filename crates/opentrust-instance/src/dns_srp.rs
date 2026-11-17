@@ -56,8 +56,29 @@ pub enum DnsOutcome {
     Browse(Vec<BrowseInstance, MAX_BROWSE_INSTANCES>),
     /// A resolved service instance.
     Service(ResolvedService),
+    /// The response message of an arbitrary record query (parse it with
+    /// [`records_of`]).
+    #[cfg(feature = "srp-server")]
+    Records(Vec<u8, RECORDS_MSG>),
     /// The query failed.
     Failed(DnsError),
+}
+
+/// Largest response kept for an arbitrary record query.
+#[cfg(feature = "srp-server")]
+pub const RECORDS_MSG: usize = 512;
+
+/// The records of a [`DnsOutcome::Records`] message.
+#[cfg(feature = "srp-server")]
+pub fn records_of(
+    msg: &[u8],
+) -> impl Iterator<
+    Item = (
+        opentrust_dns::client::Section,
+        opentrust_dns::wire::Record<'_>,
+    ),
+> {
+    opentrust_dns::client::RecordsResponse::from_message(msg).records()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +162,9 @@ pub(crate) struct DnsSrp {
     attached: bool,
     nd_hash: Option<u64>,
     addr_hash: Option<u64>,
+    slaac_hash: Option<u64>,
+    #[cfg(feature = "srp-server")]
+    pub(crate) srpd: crate::srp_server::SrpServerCtx,
 }
 
 impl DnsSrp {
@@ -158,11 +182,18 @@ impl DnsSrp {
             attached: false,
             nd_hash: None,
             addr_hash: None,
+            slaac_hash: None,
+            #[cfg(feature = "srp-server")]
+            srpd: crate::srp_server::SrpServerCtx::new(),
         }
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        [self.srp.next_deadline(), self.dns.next_deadline()]
+        #[cfg(feature = "srp-server")]
+        let server = self.srpd.next_deadline();
+        #[cfg(not(feature = "srp-server"))]
+        let server = None;
+        [self.srp.next_deadline(), self.dns.next_deadline(), server]
             .into_iter()
             .flatten()
             .min()
@@ -260,6 +291,22 @@ impl DnsContext for DnsCtx<'_> {
             DnsResult::Address(a) => DnsOutcome::Address(a.clone()),
             DnsResult::Service(s) => DnsOutcome::Service(s.clone()),
             DnsResult::Failed(e) => DnsOutcome::Failed(e),
+            DnsResult::Records(r) => {
+                #[cfg(feature = "srp-server")]
+                {
+                    let mut v = Vec::new();
+                    if v.extend_from_slice(r.message()).is_ok() {
+                        DnsOutcome::Records(v)
+                    } else {
+                        DnsOutcome::Failed(DnsError::NoBufs)
+                    }
+                }
+                #[cfg(not(feature = "srp-server"))]
+                {
+                    let _ = r;
+                    DnsOutcome::Failed(DnsError::NoBufs)
+                }
+            }
             DnsResult::Browse(b) => {
                 let mut v: Vec<BrowseInstance, MAX_BROWSE_INSTANCES> = Vec::new();
                 for name in b.instances() {
@@ -430,6 +477,40 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.dnssrp.srp_failure.take()
     }
 
+    /// The SRP client, for reading its configuration and state.
+    pub fn srp_client(&self) -> &SrpClient<SRP_SERVICES> {
+        &self.dnssrp.srp
+    }
+
+    /// Set the default lease interval in seconds (OT
+    /// `otSrpClientSetLeaseInterval`).
+    pub fn srp_set_lease_interval(&mut self, secs: u32) {
+        self.dnssrp.srp.set_lease_interval(secs);
+    }
+
+    /// Set the default key lease interval in seconds.
+    pub fn srp_set_key_lease_interval(&mut self, secs: u32) {
+        self.dnssrp.srp.set_key_lease_interval(secs);
+    }
+
+    /// Set the TTL of the records in seconds (0: the lease).
+    pub fn srp_set_ttl(&mut self, secs: u32) {
+        self.dnssrp.srp.set_ttl(secs);
+    }
+
+    /// Forget a service locally, without informing the server (OT
+    /// `otSrpClientClearService`).
+    pub fn srp_clear_service(&mut self, id: ServiceId, now: Instant) -> Result<()> {
+        let r = self.with_srp(now, |c, e| c.clear_service(e, id));
+        self.after_call(now, r)
+    }
+
+    /// Forget the host and all services locally (OT
+    /// `otSrpClientClearHostAndServices`).
+    pub fn srp_clear_host_and_services(&mut self) {
+        self.dnssrp.srp.clear_host_and_services();
+    }
+
     /// The host name of the SRP client (empty until set).
     pub fn srp_host_name(&self) -> &str {
         self.dnssrp.srp.host_name()
@@ -461,6 +542,50 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// `otDnsClientSetDefaultConfig`); auto-start sets it to the SRP server.
     pub fn dns_set_default_server(&mut self, server: Option<SocketAddrV6>) {
         self.dnssrp.dns.set_default_server(server);
+    }
+
+    /// The default query configuration (OT `otDnsClientGetDefaultConfig`).
+    pub fn dns_default_config(&self) -> QueryConfig {
+        self.dnssrp.dns.default_config()
+    }
+
+    /// Set the default query configuration; unset fields take the defaults
+    /// (OT `otDnsClientSetDefaultConfig`).
+    pub fn dns_set_default_config(&mut self, c: opentrust_dns::client::PartialConfig) {
+        let srp = self
+            .dnssrp
+            .srp
+            .is_server_selected_by_auto_start()
+            .then(|| self.dnssrp.srp.server().map(|s| *s.ip()))
+            .flatten();
+        self.dnssrp.dns.set_default_config(c, srp);
+    }
+
+    /// Query records of `rrtype` for `<first_label>.<next_labels>`; the
+    /// result is [`DnsOutcome::Records`].
+    pub fn dns_query_record(
+        &mut self,
+        rrtype: u16,
+        first_label: &str,
+        next_labels: &str,
+        config: Option<QueryConfig>,
+        now: Instant,
+    ) -> Result<QueryId> {
+        let (st, core) = (&mut self.dnssrp, &mut self.core);
+        let mut ctx = DnsCtx {
+            out: &mut st.out,
+            results: &mut st.results,
+        };
+        let r = st.dns.query_record(
+            now,
+            &mut core.rng,
+            &mut ctx,
+            rrtype,
+            first_label,
+            next_labels,
+            config,
+        );
+        self.after_call(now, r)
     }
 
     /// Browse for instances of `service`, e.g. `_matter._tcp.default.service.arpa`
@@ -582,14 +707,28 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         // Interface addresses.
         let mut ah = 0xcbf2_9ce4_8422_2325u64;
-        for a in self.auto_addrs() {
-            fnv(&mut ah, &a.octets());
+        // Added or removed addresses (not a change of their preferred flag,
+        // OT only reacts to additions and removals) trigger a refresh.
+        let mlp = self.core.cfg.cur.mesh_local_prefix;
+        for a in self.core.ip6.netif.unicast_addresses().filter(|a| a.valid) {
+            let ll = a.addr.segments()[0] & 0xffc0 == 0xfe80;
+            if !ll && !opentrust_net::addr::is_mesh_local(&a.addr, &mlp) {
+                fnv(&mut ah, &a.addr.octets());
+            }
         }
-        if self.dnssrp.addr_hash != Some(ah) {
+        let mut sh = 0xcbf2_9ce4_8422_2325u64;
+        for a in self.core.ip6.netif.unicast_addresses() {
+            if a.origin == opentrust_net::netif::AddressOrigin::Slaac {
+                fnv(&mut sh, &a.addr.octets());
+            }
+        }
+        if self.dnssrp.addr_hash != Some(ah) || self.dnssrp.slaac_hash != Some(sh) {
             let first = self.dnssrp.addr_hash.is_none();
+            let slaac = self.dnssrp.slaac_hash != Some(sh);
             self.dnssrp.addr_hash = Some(ah);
+            self.dnssrp.slaac_hash = Some(sh);
             if !first {
-                self.with_srp(now, |c, e| c.on_addresses_changed(e));
+                self.with_srp(now, |c, e| c.on_addresses_changed(e, slaac));
                 busy = true;
             }
         }
@@ -607,11 +746,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             st.dns.poll(now, &mut core.rng, &mut ctx);
             busy = true;
         }
+        #[cfg(feature = "srp-server")]
+        {
+            busy |= self.service_srp_server(now);
+        }
         // Events.
         while let Some(ev) = self.dnssrp.srp_events.pop_front() {
             busy = true;
             if let SrpEvent::ServerSelected(s) = ev {
-                self.dnssrp.dns.set_default_server(s);
+                self.dnssrp.dns.on_srp_server_selected(s.map(|s| *s.ip()));
             }
             if let SrpEvent::Failed(e) = ev {
                 self.dnssrp.srp_failure = Some(e);
@@ -675,6 +818,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// A datagram queued on socket `h`: consumed here if it belongs to the
     /// SRP or DNS client.
     pub(crate) fn dns_srp_rx(&mut self, now: Instant, h: SocketHandle) -> bool {
+        #[cfg(feature = "srp-server")]
+        if self.srp_server_rx(now, h) {
+            return true;
+        }
         let which = if self.dnssrp.srp_sock == Some(h) {
             Which::Srp
         } else if self.dnssrp.dns_sock == Some(h) {

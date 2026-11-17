@@ -15,6 +15,8 @@ readme = "../../README.md"
 [features]
 defmt = ["dep:defmt", "opentrust-core/defmt", "heapless/defmt"]
 log = ["dep:log", "opentrust-core/log"]
+# The SRP server (`srp::server`).
+srp-server = []
 
 [dependencies]
 opentrust-core = { workspace = true }

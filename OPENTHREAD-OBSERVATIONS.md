@@ -90,3 +90,31 @@ radio is probably never initialised to invalid. About 1 run in 62 gives the
 router Router ID 0; the thread-cert and mtd tests flaked at that rate.
 The OpenTrust virtual-time simulator drops an ACK from a node whose
 known short address differs from a 0x0000 destination.
+
+## SRP server: a duplicate "delete all RRsets" record ends the service description pass silently
+
+- **OpenThread:** in `Server::ProcessServiceDescriptionInstructions` a second
+  "Delete All RRsets from a name" record for the same service instance executes
+  `VerifyOrExit(!service->mParsedDeleteAllRrset)` without assigning an error, so
+  the function returns success without the final checks and without advancing
+  `aMetadata.mOffset`. `ProcessAdditionalSection` then reads the OPT and SIG
+  records from the start of the update section.
+- **Assessment:** accidental; the result is a parse failure further on. It
+  cannot make a signature verify that does not.
+- **OpenTrust:** rejects the message with FORMERR
+  (`crates/opentrust-dns/src/srp/server.rs`, `service_description`).
+
+## SRP server: the signer name of the SIG(0) record is not checked
+
+- **OpenThread:** `VerifySignature` hashes the signer name of the SIG record but
+  never compares it with the host name; only the key of the host description
+  matters (the key binds the names).
+- **Assessment:** consistent with RFC 9665 (the signature proves possession of
+  the key registered for the names).
+- **OpenTrust:** copies it (`additional_section`).
+
+## SRP server: a KEY record of any name sets the host key
+
+- **OpenThread:** the host description pass takes the first KEY record of the
+  update section for the host regardless of its owner name.
+- **OpenTrust:** copies it (`host_description`).

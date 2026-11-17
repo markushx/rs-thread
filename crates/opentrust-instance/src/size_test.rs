@@ -14,9 +14,17 @@ use opentrust_platform::RamSettings;
 use super::*;
 
 /// Upper bound of `size_of::<Instance>()` for the enabled feature set.
-#[cfg(feature = "border-agent")]
+#[cfg(all(feature = "srp-server", feature = "border-agent"))]
+const TOTAL_BOUND: usize = 140_200;
+#[cfg(all(feature = "border-agent", not(feature = "srp-server")))]
 const TOTAL_BOUND: usize = 114_000;
-#[cfg(all(feature = "ftd", not(feature = "border-agent")))]
+#[cfg(all(feature = "srp-server", feature = "ftd", not(feature = "border-agent")))]
+const TOTAL_BOUND: usize = 113_200;
+#[cfg(all(
+    feature = "ftd",
+    not(feature = "border-agent"),
+    not(feature = "srp-server")
+))]
 const TOTAL_BOUND: usize = 86_950;
 #[cfg(not(feature = "ftd"))]
 const TOTAL_BOUND: usize = 78_200;
@@ -77,6 +85,8 @@ fn instance_size_breakdown() {
     row("cm.ba_out", &i.cm.ba_out);
     row("dnssrp.srp", &i.dnssrp.srp);
     row("dnssrp.dns", &i.dnssrp.dns);
+    #[cfg(feature = "srp-server")]
+    row("dnssrp.srpd", &i.dnssrp.srpd);
     // The Link Metrics Manager's subject table.
     let lmm = if cfg!(feature = "link-metrics-manager") {
         450

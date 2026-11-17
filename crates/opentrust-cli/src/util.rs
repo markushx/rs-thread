@@ -114,9 +114,26 @@ impl<'a> Args<'a> {
             v: [""; MAX_ARGS],
             n: 0,
         };
-        for w in line.split_ascii_whitespace() {
-            *a.v.get_mut(a.n)? = w;
-            a.n += 1;
+        // Arguments are separated by whitespace; a backslash escapes the next
+        // character (OT CLI). The escapes stay in the argument, see
+        // `unescape`.
+        let b = line.as_bytes();
+        let (mut i, mut start) = (0usize, None);
+        while i <= b.len() {
+            let sep = i == b.len() || b[i].is_ascii_whitespace();
+            match (start, sep) {
+                (None, false) => start = Some(i),
+                (Some(st), true) => {
+                    *a.v.get_mut(a.n)? = &line[st..i];
+                    a.n += 1;
+                    start = None;
+                }
+                _ => {}
+            }
+            if i < b.len() && b[i] == b'\\' {
+                i += 1;
+            }
+            i += 1;
         }
         Some(a)
     }
@@ -130,6 +147,22 @@ impl<'a> Args<'a> {
     pub fn rest(&self, i: usize) -> &[&'a str] {
         self.v.get(i..self.n).unwrap_or(&[])
     }
+}
+
+/// Remove the backslash escapes of a CLI argument (a backslash makes the
+/// next character literal).
+pub fn unescape<const N: usize>(s: &str) -> Result<heapless::String<N>, E> {
+    let mut out = heapless::String::new();
+    let mut esc = false;
+    for c in s.chars() {
+        if c == '\\' && !esc {
+            esc = true;
+            continue;
+        }
+        esc = false;
+        out.push(c).map_err(|_| E::INVALID_ARGS)?;
+    }
+    Ok(out)
 }
 
 /// Parse a decimal or `0x` hexadecimal unsigned number (OT `ParseAsUint32`).

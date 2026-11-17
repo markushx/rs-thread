@@ -40,6 +40,8 @@
 //! [`SrpEvent::ServerSelected`] to browse and resolve peers.
 
 pub mod discovery;
+#[cfg(feature = "srp-server")]
+pub mod server;
 
 use core::net::{Ipv6Addr, SocketAddrV6};
 
@@ -88,7 +90,7 @@ pub const MAX_HOST_NAME: usize = 64;
 /// Longest service type (without the domain), e.g. `_matter._tcp`.
 pub const MAX_SERVICE_NAME: usize = 64;
 /// Subtypes per service.
-pub const MAX_SUBTYPES: usize = 5;
+pub const MAX_SUBTYPES: usize = 6;
 /// Host addresses.
 pub const MAX_HOST_ADDRS: usize = 4;
 /// Server candidates remembered per kind for server switching.
@@ -584,6 +586,49 @@ impl<const S: usize> SrpClient<S> {
             .map(|s| s.state)
     }
 
+    /// Default lease in seconds.
+    pub const fn lease_interval(&self) -> u32 {
+        self.default_lease
+    }
+
+    /// Default key lease in seconds.
+    pub const fn key_lease_interval(&self) -> u32 {
+        self.default_key_lease
+    }
+
+    /// Record TTL cap in seconds (0: the lease).
+    pub const fn ttl(&self) -> u32 {
+        self.ttl
+    }
+
+    /// Does the client register the interface addresses itself?
+    pub const fn is_auto_host_address(&self) -> bool {
+        self.host.auto
+    }
+
+    /// The configured host addresses (empty in auto address mode).
+    pub fn host_addresses(&self) -> &[Ipv6Addr] {
+        &self.host.addrs
+    }
+
+    /// Is server auto-start enabled?
+    pub fn is_auto_start_enabled(&self) -> bool {
+        self.auto != AutoState::Disabled
+    }
+
+    /// The services with their state, in the order they were added.
+    pub fn services(&self) -> impl Iterator<Item = (ServiceId, &ServiceConfig, ItemState)> {
+        self.services
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.as_ref().map(|s| (ServiceId(i as u8), &s.cfg, s.state)))
+    }
+
+    /// Did auto-start select the server (not an explicit `start`)?
+    pub fn is_server_selected_by_auto_start(&self) -> bool {
+        self.is_running() && self.requester == Requester::Auto
+    }
+
     /// Is the client started (not stopped)?
     pub fn is_running(&self) -> bool {
         self.state != ClientState::Stopped
@@ -819,13 +864,15 @@ impl<const S: usize> SrpClient<S> {
     }
 
     /// The interface addresses changed: refresh the registration if the
-    /// auto host addresses differ from the registered ones.
-    pub fn on_addresses_changed<E: Env>(&mut self, env: &mut E) {
+    /// auto host addresses differ from the registered ones. `slaac`: a
+    /// SLAAC address was added or removed, which asks for the longer
+    /// transmit jitter (OT `HandleUnicastAddressEvent`).
+    pub fn on_addresses_changed<E: Env>(&mut self, env: &mut E, slaac: bool) {
         if !self.host.auto {
             return;
         }
         let now = env.now();
-        if self.is_running() && !self.guard_running(now) {
+        if slaac && self.is_running() && !self.guard_running(now) {
             self.request_jitter(JitterReason::SlaacAddr, now);
         }
         let cur = self.auto_address_list(env);

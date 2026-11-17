@@ -27,6 +27,10 @@ tcat = ["opentrust-meshcop/tcat"]
 scan-servers = []
 # The Link Metrics Manager (OT `Utils::LinkMetricsManager`).
 link-metrics-manager = []
+
+# The SRP server (OT `Srp::Server`): registers hosts and services of clients
+# in the mesh, publishes itself in the Network Data.
+srp-server = ["ftd", "opentrust-dns/srp-server"]
 srp-services-8 = []
 srp-services-12 = []
 trel = ["opentrust-mesh/trel"]

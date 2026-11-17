@@ -10,7 +10,8 @@ use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{
-    Args, E, Ip6, R, hex, ln, out, parse_hex_padded, parse_ip6, parse_prefix, parse_u32,
+    Args, E, Ip6, R, hex, ln, out, parse_hex_padded, parse_ip6, parse_prefix, parse_u8, parse_u16,
+    parse_u32,
 };
 
 /// A prefix as OT prints it: the words covered by the prefix length, then
@@ -254,8 +255,63 @@ where
                 self.i.register_netdata();
                 Ok(())
             }
+            "publish" if a.get(2) == "dnssrp" => self.publish_dnssrp(a),
+            "unpublish" if a.get(2) == "dnssrp" => {
+                self.i.unpublish_dns_srp_service(self.now);
+                Ok(())
+            }
             _ => Err(E::INVALID_COMMAND),
         }
+    }
+
+    /// `netdata publish dnssrp anycast <seq> [version]` and
+    /// `netdata publish dnssrp unicast [addr] <port> [version]`.
+    fn publish_dnssrp(&mut self, a: &Args<'_>) -> R {
+        use opentrust_mesh::netdata::publisher::DnsSrpService;
+        let svc = match a.get(3) {
+            "anycast" => {
+                let sequence_number = parse_u8(a.get(4))?;
+                let mut version = 0;
+                if !a.get(5).is_empty() {
+                    version = parse_u8(a.get(5))?;
+                    if !a.get(6).is_empty() {
+                        return Err(E::INVALID_ARGS);
+                    }
+                }
+                DnsSrpService::Anycast {
+                    sequence_number,
+                    version,
+                }
+            }
+            "unicast" => {
+                let mut k = 4;
+                let address = parse_ip6(a.get(k)).ok();
+                if address.is_some() {
+                    k += 1;
+                }
+                let port = parse_u16(a.get(k))?;
+                k += 1;
+                let mut version = 0;
+                if !a.get(k).is_empty() {
+                    version = parse_u8(a.get(k))?;
+                    k += 1;
+                }
+                if !a.get(k).is_empty() {
+                    return Err(E::INVALID_ARGS);
+                }
+                match address {
+                    Some(address) => DnsSrpService::Unicast {
+                        address,
+                        port,
+                        version,
+                    },
+                    None => DnsSrpService::UnicastMlEid { port, version },
+                }
+            }
+            _ => return Err(E::INVALID_ARGS),
+        };
+        self.i.publish_dns_srp_service(svc, self.now);
+        Ok(())
     }
 
     pub(crate) fn prefix(&mut self, a: &Args<'_>) -> R {

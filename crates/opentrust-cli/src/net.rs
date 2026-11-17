@@ -7,7 +7,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-use crate::util::{Args, E, Ip6, R, ln, parse_ip6};
+use crate::util::{Args, E, Ip6, R, ln, out, parse_ip6};
 
 impl<S, C, Rn, W> Ctx<'_, S, C, Rn, W>
 where
@@ -23,7 +23,25 @@ where
                 let n = self.i.unicast_addresses().count();
                 for k in (0..n).rev() {
                     if let Some(u) = self.i.unicast_addresses().nth(k) {
-                        ln!(self.o, "{}", Ip6(u.addr));
+                        out!(self.o, "{}", Ip6(u.addr));
+                        if a.get(1) == "-v" {
+                            use opentrust_net::netif::AddressOrigin as O;
+                            let origin = match u.origin {
+                                O::Thread => "thread",
+                                O::Slaac => "slaac",
+                                O::Dhcp6 => "dhcp6",
+                                O::Manual => "manual",
+                            };
+                            out!(
+                                self.o,
+                                " origin:{} plen:{} preferred:{} valid:{}",
+                                origin,
+                                u.prefix_len,
+                                u8::from(u.preferred),
+                                u8::from(u.valid)
+                            );
+                        }
+                        ln!(self.o);
                     }
                 }
                 Ok(())
