@@ -441,17 +441,28 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         // A frame with a CSL IE synchronizes the sending child (OT
         // `Mac::ProcessCsl`).
         #[cfg(feature = "ftd")]
+        let csl_child = match src {
+            Address::Short(s) => Some(Rloc16(s.0)),
+            // A child that has no short address in the frame (a Child Update
+            // Request goes out with the extended source address).
+            Address::Extended(e) => self.mle.child_rloc_by_ext(&e),
+            Address::None => None,
+        };
+        #[cfg(feature = "ftd")]
         if link_security
             && let Some(ie) = f.csl_ie()
-            && let Address::Short(s) = src
-            && self.mle.child_csl_synchronized(Rloc16(s.0), now)
+            && let Some(child) = csl_child
+            && self.mle.child_csl_synchronized(child, now)
         {
             // The MAC starts tracking the child with this frame.
-            let ch = self.mle.child_csl_channel(Rloc16(s.0)).unwrap_or(0);
-            let _ = self
-                .core
-                .mac
-                .csl_child_sample(src, ch, ie, rx.timestamp_us, now);
+            let ch = self.mle.child_csl_channel(child).unwrap_or(0);
+            let _ = self.core.mac.csl_child_sample(
+                Address::Short(ShortAddress(child.0)),
+                ch,
+                ie,
+                rx.timestamp_us,
+                now,
+            );
             self.csl_flush_children();
         }
         // Any secure frame from the parent is a sign of life.

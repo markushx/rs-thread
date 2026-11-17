@@ -256,6 +256,13 @@ impl<const C: usize> Mle<C> {
             .map(|c| c.csl_channel)
     }
 
+    /// The RLOC16 of the child with extended address `ext`.
+    pub fn child_rloc_by_ext(&self, ext: &opentrust_core::types::ExtAddress) -> Option<Rloc16> {
+        self.children
+            .find_by_ext(ext, StateFilter::AnyExceptInvalid)
+            .map(|c| c.neighbor.rloc16)
+    }
+
     /// The MAC lost the child's CSL synchronization (frames to it failed in
     /// its windows): data polls serve it again until it sends a CSL IE.
     pub fn child_csl_desynchronized(&mut self, child: Rloc16) {
