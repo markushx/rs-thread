@@ -116,10 +116,16 @@ and stale ones make the secured frames of a new run fail the replay check.
 
 ### Expect scripts against `opentrust-rcp-sim`
 
+A script counts as passed when it reaches its final `dispose_all` (the
+`dispose_all` itself hangs on macOS because the posix CLI ignores `^D`, so
+the run is cut after 60 s):
+
 | script | result |
 |--------|--------|
-| `posix-rcp` | pass |
-| others | see the end of this file |
+| `posix-rcp`, `posix-rcp-energy-scan`, `posix-channel-mask`, `posix-ccathreshold`, `posix-fem-lnagain`, `posix-scan-tx-to-sleep` (two RCPs, active scan) | pass |
+| `posix-max-power-table`, `posix-power-calibration`, `posix-diag-rcp` | reach the end (the power table / calibration properties are answered `PROP_NOT_FOUND`; the script does not check them against the RCP) |
+| `posix-url-enable-coex` | the host stops: `RADIO_COEX_ENABLE` is not supported |
+| `posix-rcp-restoration`, `posix-rcp-stack-reset` | skipped by the scripts on macOS (need `socat`); not run |
 
 ## Firmware (`examples/nrf52840-leader`, `--bin rcp`)
 
