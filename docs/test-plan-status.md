@@ -65,7 +65,7 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 5.1.13 | Router Reset | `Cert_5_1_13_RouterReset` | pass | 4/4 |  | pass / pass |  |
 | 5.2.1 | REED Attach | `Cert_5_2_01_REEDAttach` | pass | 6/6 |  | fail / fail |  |
 | 5.2.3 | Leader Reject2 Hops | `Cert_5_2_03_LeaderReject2Hops` | pass | 35/35 |  | fail / fail |  |
-| 5.2.4 | REED Upgrade | `Cert_5_2_04_REEDUpgrade` | pass | 20/20 |  | pass / fail |  |
+| 5.2.4 | REED Upgrade | `Cert_5_2_04_REEDUpgrade` | pass | 20/20 |  | pass / pass |  |
 | 5.2.5 | Address Query | `Cert_5_2_05_AddressQuery` | pass | 20/20 |  | fail / fail |  |
 | 5.2.6 | Router Downgrade | `Cert_5_2_06_RouterDowngrade` | pass | 26/26 |  | fail / fail |  |
 | 5.2.7 | REED Synchronization | `Cert_5_2_07_REEDSynchronization` | pass | 19/19 |  | pass / pass |  |
@@ -73,10 +73,10 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 5.3.2 | Realm Local | `Cert_5_3_02_RealmLocal` | pass | 6/6 |  | fail / fail |  |
 | 5.3.3 | Address Query | `Cert_5_3_03_AddressQuery` | pass | 7/7 |  | fail / fail |  |
 | 5.3.4 | Address Map Cache | `Cert_5_3_04_AddressMapCache` | pass | 9/9 |  | fail / fail |  |
-| 5.3.5 | Routing Link Quality | `Cert_5_3_05_RoutingLinkQuality` | pass | 6/6 |  | pass / fail |  |
+| 5.3.5 | Routing Link Quality | `Cert_5_3_05_RoutingLinkQuality` | pass | 6/6 |  | pass / pass |  |
 | 5.3.6 | Router Id Mask | `Cert_5_3_06_RouterIdMask` | pass | 5/5 |  | pass / pass |  |
 | 5.3.7 | Duplicate Address | `Cert_5_3_07_DuplicateAddress` | pass | 8/8 |  | fail / fail |  |
-| 5.3.8 | Child Address Set | `Cert_5_3_08_ChildAddressSet` | pass | 6/6 |  | pass / fail |  |
+| 5.3.8 | Child Address Set | `Cert_5_3_08_ChildAddressSet` | pass | 6/6 |  | pass / pass |  |
 | 5.3.9 | Address Query | `Cert_5_3_09_AddressQuery` | pass | 7/7 |  | fail / fail |  |
 | 5.3.10 | Address Query | `Cert_5_3_10_AddressQuery` | pass | 7/7 |  | fail / fail |  |
 | 5.3.11 | Address Query Timeout Intervals | `Cert_5_3_11_AddressQueryTimeoutIntervals` | pass | 5/5 |  | fail / fail |  |
@@ -86,19 +86,19 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 5.5.4 | Split Merge Routers | `Cert_5_5_04_SplitMergeRouters` | pass | 7/7 |  | pass / pass |  |
 | 5.5.5 | Split Merge REED | `Cert_5_5_05_SplitMergeREED` | pass | 19/19 |  | pass / pass |  |
 | 5.5.7 | Split Merge Three Way | `Cert_5_5_07_SplitMergeThreeWay` | pass | 6/6 |  | pass / pass |  |
-| 5.6.1 | Network Data Register Before Attach Leader | `Cert_5_6_01_NetworkDataRegisterBeforeAttachLeader` | pass | 6/6 |  | fail / fail |  |
-| 5.6.2 | Network Data Register Before Attach Router | `Cert_5_6_02_NetworkDataRegisterBeforeAttachRouter` | pass | 6/6 |  | fail / fail |  |
-| 5.6.3 | Network Data Register After Attach Leader | `Cert_5_6_03_NetworkDataRegisterAfterAttachLeader` | pass | 6/6 |  | fail / fail |  |
-| 5.6.4 | Network Data Register After Attach Router | `Cert_5_6_04_NetworkDataRegisterAfterAttachRouter` | pass | 6/6 |  | fail / fail |  |
-| 5.6.5 | Network Data Register After Attach Router | `Cert_5_6_05_NetworkDataRegisterAfterAttachRouter` | pass | 6/6 |  | fail / fail |  |
-| 5.6.6 | Network Data Expiration | `Cert_5_6_06_NetworkDataExpiration` | pass | 6/6 |  | fail / fail |  |
+| 5.6.1 | Network Data Register Before Attach Leader | `Cert_5_6_01_NetworkDataRegisterBeforeAttachLeader` | pass | 6/6 |  | pass / pass |  |
+| 5.6.2 | Network Data Register Before Attach Router | `Cert_5_6_02_NetworkDataRegisterBeforeAttachRouter` | pass | 6/6 |  | pass / pass |  |
+| 5.6.3 | Network Data Register After Attach Leader | `Cert_5_6_03_NetworkDataRegisterAfterAttachLeader` | pass | 6/6 |  | pass / pass |  |
+| 5.6.4 | Network Data Register After Attach Router | `Cert_5_6_04_NetworkDataRegisterAfterAttachRouter` | pass | 6/6 |  | pass / pass |  |
+| 5.6.5 | Network Data Register After Attach Router | `Cert_5_6_05_NetworkDataRegisterAfterAttachRouter` | pass | 6/6 |  | pass / pass |  |
+| 5.6.6 | Network Data Expiration | `Cert_5_6_06_NetworkDataExpiration` | pass | 6/6 |  | pass / pass |  |
 | 5.6.7 | Network Data Request REED | `Cert_5_6_07_NetworkDataRequestREED` | pass | 19/19 |  | pass / pass |  |
-| 5.6.9 | Network Data Forwarding | `Cert_5_6_09_NetworkDataForwarding` | pass | 7/7 |  | fail / fail |  |
+| 5.6.9 | Network Data Forwarding | `Cert_5_6_09_NetworkDataForwarding` | pass | 7/7 |  | pass / pass |  |
 | 5.7.1 | Coap Diag Commands | `Cert_5_7_01_CoapDiagCommands` | pass | 8/8 |  | pass / pass | the DUT answered all along; the Leader needed the `networkdiagnostic get|reset` CLI |
 | 5.7.2 | Coap Diag Commands | `Cert_5_7_02_CoapDiagCommands` | pass | 19/19 |  | pass / pass | as 5.7.1 |
 | 5.7.3 | Coap Diag Commands | `Cert_5_7_03_CoapDiagCommands` | pass | 7/7 |  | pass / pass | as 5.7.1 |
-| 5.8.2 | Key Increment | `Cert_5_8_02_KeyIncrement` | pass | 4/4 |  | pass / fail |  |
-| 5.8.3 | Key Increment Roll Over | `Cert_5_8_03_KeyIncrementRollOver` | pass | 4/4 |  | pass / fail |  |
+| 5.8.2 | Key Increment | `Cert_5_8_02_KeyIncrement` | pass | 4/4 |  | pass / pass |  |
+| 5.8.3 | Key Increment Roll Over | `Cert_5_8_03_KeyIncrementRollOver` | pass | 4/4 |  | pass / pass |  |
 | 5.8.4 | Security Policy TLV | `Cert_5_8_04_SecurityPolicyTLV` | pass | 6/6 |  | fail / fail |  |
 
 ### 6.x Attaching, partitions, reset, link-local / realm-local, key increment
@@ -107,30 +107,30 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 |---|---|---|---|---|---|---|---|
 | 6.1.1 | Router Attach | `Cert_6_1_01_RouterAttach` | pass | 4/4 | n2 pass | pass / pass |  |
 | 6.1.2 | REED Attach | `Cert_6_1_02_REEDAttach` | pass | 5/5 | n3 pass | fail / fail |  |
-| 6.1.3 | Router Attach Connectivity | `Cert_6_1_03_RouterAttachConnectivity` | pass | 7/7 | n5 pass | pass / fail |  |
+| 6.1.3 | Router Attach Connectivity | `Cert_6_1_03_RouterAttachConnectivity` | pass | 7/7 | n5 pass | pass / pass |  |
 | 6.1.4 | REED Attach Connectivity | `Cert_6_1_04_REEDAttachConnectivity` | pass | 7/7 | n5 pass | fail / fail |  |
 | 6.1.5 | REED Attach Connectivity | `Cert_6_1_05_REEDAttachConnectivity` | pass | 7/7 | n5 pass | pass / pass |  |
 | 6.1.6 | REED Attach Link Quality | `Cert_6_1_06_REEDAttachLinkQuality` | pass | 6/6 | n4 pass | pass / pass |  |
-| 6.1.7 | Router Attach Link Quality | `Cert_6_1_07_RouterAttachLinkQuality` | pass | 6/6 | n4 pass | pass / fail |  |
+| 6.1.7 | Router Attach Link Quality | `Cert_6_1_07_RouterAttachLinkQuality` | pass | 6/6 | n4 pass | pass / pass |  |
 | 6.2.1 | New Partition | `Cert_6_2_01_NewPartition` | pass | 5/5 | n3 pass | pass / pass |  |
-| 6.2.2 | New Partition | `Cert_6_2_02_NewPartition` | pass | 6/6 |  | pass / fail | passes in every configuration on the current tree (the earlier node 2 / all failure did not reproduce; not traced to a change); pktverify differs |
+| 6.2.2 | New Partition | `Cert_6_2_02_NewPartition` | pass | 6/6 |  | pass / pass | passes in every configuration on the current tree (the earlier node 2 / all failure did not reproduce; not traced to a change); pktverify differs |
 | 6.3.1 | Orphan Reattach | `Cert_6_3_01_OrphanReattach` | pass | 5/5 | n3 pass | pass / pass |  |
 | 6.3.2 | Network Data Update | `Cert_6_3_02_NetworkDataUpdate` | pass | 4/4 | n2 pass | pass / pass |  |
 | 6.4.1 | Link Local | `Cert_6_4_01_LinkLocal` | pass | 4/4 | n2 pass | fail / pass |  |
 | 6.4.2 | Realm Local | `Cert_6_4_02_RealmLocal` | pass | 5/5 | n3 pass | fail / fail |  |
-| 6.5.1 | Child Reset Reattach | `Cert_6_5_01_ChildResetReattach` | pass | 4/4 | n2 pass | pass / fail |  |
-| 6.5.2 | Child Reset Reattach | `Cert_6_5_02_ChildResetReattach` | pass | 5/5 | n3 pass | pass / fail | fixed: the stored extended address is restored when the instance is created (before `thread start`), as OpenThread does; the script reads it after the reset to allow-list the DUT at the leader |
+| 6.5.1 | Child Reset Reattach | `Cert_6_5_01_ChildResetReattach` | pass | 4/4 | n2 pass | pass / pass |  |
+| 6.5.2 | Child Reset Reattach | `Cert_6_5_02_ChildResetReattach` | pass | 5/5 | n3 pass | pass / pass | fixed: the stored extended address is restored when the instance is created (before `thread start`), as OpenThread does; the script reads it after the reset to allow-list the DUT at the leader |
 | 6.5.3 | Child Reset Synchronize | `Cert_6_5_03_ChildResetSynchronize` | pass | 4/4 | n2 pass | fail / pass |  |
-| 6.6.1 | Key Increment | `Cert_6_6_01_KeyIncrement` | pass | 4/4 | n2 pass | pass / fail |  |
-| 6.6.2 | Key Increment Roll Over | `Cert_6_6_02_KeyIncrementRollOver` | pass | 4/4 | n2 pass | pass / fail |  |
+| 6.6.1 | Key Increment | `Cert_6_6_01_KeyIncrement` | pass | 4/4 | n2 pass | pass / pass |  |
+| 6.6.2 | Key Increment Roll Over | `Cert_6_6_02_KeyIncrementRollOver` | pass | 4/4 | n2 pass | pass / pass |  |
 
 ### 7.x Border router (network data / on-mesh prefixes)
 
 | # | title | script | status | runs passed | MTD build | pktverify (ot / all) | detail |
 |---|---|---|---|---|---|---|---|
-| 7.1.1 | Border Router As Leader | `Cert_7_1_01_BorderRouterAsLeader` | pass | 6/6 | n3+4 pass | fail / fail |  |
+| 7.1.1 | Border Router As Leader | `Cert_7_1_01_BorderRouterAsLeader` | pass | 6/6 | n3+4 pass | pass / pass |  |
 | 7.1.2 | Border Router As Router | `Cert_7_1_02_BorderRouterAsRouter` | pass | 6/6 | n3+4 pass | fail / fail |  |
-| 7.1.3 | Border Router As Leader | `Cert_7_1_03_BorderRouterAsLeader` | pass | 6/6 | n3+4 pass | fail / fail |  |
+| 7.1.3 | Border Router As Leader | `Cert_7_1_03_BorderRouterAsLeader` | pass | 6/6 | n3+4 pass | pass / pass |  |
 | 7.1.4 | Border Router As Router | `Cert_7_1_04_BorderRouterAsRouter` | pass | 6/6 | n3+4 pass | fail / fail |  |
 | 7.1.5 | Border Router As Router | `Cert_7_1_05_BorderRouterAsRouter` | pass | 6/6 | n3+4 pass | fail / fail |  |
 | 7.1.6 | Border Router As Leader | `Cert_7_1_06_BorderRouterAsLeader` | pass | 7/7 | n4+5 pass | fail / fail |  |
@@ -164,12 +164,12 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | 9.2.9 | Pending Partition | `Cert_9_2_09_PendingPartition` | partial | 4/6 |  | fail / fail | fails: n3, all; known, being fixed |
 | 9.2.10 | Pending Partition | `Cert_9_2_10_PendingPartition` | pass | 7/7 | n4+5 pass | fail / fail |  |
 | 9.2.11 | Network Key | `Cert_9_2_11_NetworkKey` | partial | 3/7 | n4+5 pass | fail / fail | fails: n1, n2, n3, all; known, being fixed |
-| 9.2.12 | Announce | `Cert_9_2_12_Announce` | partial | 2/6 | n4 pass | pass / fail | fails: n1, n2, n3, all; known, being fixed |
+| 9.2.12 | Announce | `Cert_9_2_12_Announce` | partial | 2/6 | n4 pass | pass / pass | fails: n1, n2, n3, all; known, being fixed |
 | 9.2.13 | Energy Scan | `Cert_9_2_13_EnergyScan` | partial | 2/6 |  | fail / fail | fails: n1, n3, n4, all; known, being fixed |
 | 9.2.14 | Pan Id Query | `Cert_9_2_14_PanIdQuery` | partial | 3/6 |  | fail / fail | fails: n1, n3, all; known, being fixed |
 | 9.2.15 | Pending Partition | `Cert_9_2_15_PendingPartition` | pass | 6/6 |  | pass / pass |  |
 | 9.2.16 | Active Pending Partition | `Cert_9_2_16_ActivePendingPartition` | pass | 6/6 |  | pass / pass |  |
-| 9.2.17 | Orphan | `Cert_9_2_17_Orphan` | pass | 5/5 | n3 pass | pass / fail |  |
+| 9.2.17 | Orphan | `Cert_9_2_17_Orphan` | pass | 5/5 | n3 pass | pass / pass |  |
 | 9.2.18 | Roll Back Active Timestamp | `Cert_9_2_18_RollBackActiveTimestamp` | fail | 1/7 | n4+5 FAIL | fail / fail | fails: n1, n2, n3, n4, n5, all; known, being fixed (fails in every role and with the MTD build) |
 | 9.2.19 | Pending Dataset Get | `Cert_9_2_19_PendingDatasetGet` | pass | 4/4 |  | fail / fail |  |
 
@@ -178,7 +178,7 @@ NA (cannot run in this harness): 11 backbone + 8 MATN + 3 border-router LowPower
 | # | title | script | status | runs passed | MTD build | pktverify (ot / all) | detail |
 |---|---|---|---|---|---|---|---|
 | 5.1.1 (v1.2 router) | Router attach (Thread 1.2 variant) | `v1_2_router_5_1_1` | pass | 4/4 |  | pass / pass |  |
-| LowPower 5.3.1 | SSED Attachment | `v1_2_LowPower_5_3_01_SSEDAttachment` | pass | 5/5 | n3 pass | pass / fail |  |
+| LowPower 5.3.1 | SSED Attachment | `v1_2_LowPower_5_3_01_SSEDAttachment` | pass | 5/5 | n3 pass | pass / pass |  |
 | LowPower 6.1.7 | Preferring A Router Over A Reed | `v1_2_LowPower_6_1_07_PreferringARouterOverAReed` | pass | 6/6 | n4 pass | fail / fail |  |
 | LowPower 7.1.1 | Single Probe Link Metrics With Enhanced Acks | `v1_2_LowPower_7_1_01_SingleProbeLinkMetricsWithEnhancedAcks` | partial | 2/5 |  |  | fails: n2, n3, all; `linkmetrics` CLI commands missing in opentrust-cli (`Error 35: InvalidCommand`); the Leader (node 1) side works |
 | LowPower 7.1.2 | Single Probe Link Metrics Without Enhanced Ack | `v1_2_LowPower_7_1_02_SingleProbeLinkMetricsWithoutEnhancedAck` | partial | 2/5 |  |  | fails: n2, n3, all; same cause as LowPower 7.1.1 |
@@ -345,8 +345,21 @@ the all-OpenTrust run. The CLI based status is the authoritative column: with `t
 differs from the Wireshark version the `pktverify` checks were written for, so a failure in both
 columns is the tooling (63 cases fail with OpenThread nodes too).
 
-- Pass with both implementations (23): 5.1.7 to 5.1.11, 5.1.13, 5.2.7, 5.3.6, 5.5.1, 5.5.4, 5.5.5, 5.5.7,
-  5.6.7, 6.1.1, 6.1.5, 6.1.6, 6.2.1, 6.3.1, 6.3.2, 8.1.1, 9.2.15, 9.2.16, 5.1.1 (v1.2 router).
-- Pass with OpenThread, fail with OpenTrust (15, packet-level differences not analysed): 5.2.4, 5.3.5,
-  5.3.8, 5.8.2, 5.8.3, 6.1.3, 6.1.7, 6.2.2, 6.5.1, 6.5.2, 6.6.1, 6.6.2, 9.2.12, 9.2.17, LowPower 5.3.1.
+- Pass with both implementations (47): the 23 above plus 5.2.4, 5.3.5, 5.3.8, 5.8.2, 5.8.3, 6.1.3, 6.1.7,
+  6.2.2, 6.5.1, 6.5.2, 6.6.1, 6.6.2, 9.2.12, 9.2.17, LowPower 5.3.1 (all fixed, see below) and 5.6.1 to 5.6.6,
+  5.6.9, 7.1.1, 7.1.3 (these failed with OpenThread too until the shim reported tshark 4.6 booleans for list
+  fields as 1/0).
+- Pass with OpenThread, fail with OpenTrust: none of the cases examined.
+- Packet-level root causes fixed in OpenTrust: `ipaddr rloc` while detached (OT prints the RLOC of
+  RLOC16 0xfffe; 5.2.4 harness KeyError); a newer key sequence on a secured data frame from a neighbor is adopted
+  (5.8.2, 5.8.3, 6.6.x); the MAC filter's fixed RSS clears the RSS average (5.3.5, 6.1.x link quality);
+  the DHCPv6 Reply lists the prefixes in reverse order (5.3.8); the CLI ping identifier counts up (6.6.x); a frame
+  with a CSL IE and an extended source address synchronizes the child, so the Child Update Response to a SSED is
+  2015 (LowPower 5.3.1); a new leader starts with Commissioning Data holding a session ID, local Network Data is
+  registered only on `netdata register` in the simulator node, and the parent does not echo the ML-EID
+  (5.6.x, 7.1.x).
+- Still failing with OpenThread too (tooling): the tshark 4.6 dissection differs (CoAP ACK payload TLVs are not
+  dissected: `p.coap.tlv.type`, `thread_meshcop.tlv.type`; `icmpv6.data.len` is gone, the Echo data is in the
+  `data` layer minus an 8 byte timestamp). A shim for `icmpv6.data.len` was tried for 5.3.1 and did not make the
+  baseline pass; the remaining 5.x / 7.1.x / 8.x / 9.2.x baseline failures were not analysed further.
 - Fail with OpenThread, pass with OpenTrust (4): 5.1.12, 5.3.1, 6.4.1, 6.5.3 (tool artefacts).
