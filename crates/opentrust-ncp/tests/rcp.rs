@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::vec::Vec;
 
 use embassy_futures::block_on;
+use opentrust_core::crypto::soft::SoftCrypto;
 use opentrust_ncp::rcp::{Rcp, RcpInfo, Transport};
 use opentrust_platform::radio::sim::{RadioState, TestRadio, rx_info};
 use opentrust_platform::radio::{MacCapabilities, RadioErrorKind};
@@ -79,11 +80,13 @@ fn info() -> RcpInfo {
     }
 }
 
-fn new_rcp() -> Rcp<TestRadio> {
-    block_on(Rcp::new(TestRadio::new(), info())).unwrap()
+type TestRcp = Rcp<TestRadio, SoftCrypto>;
+
+fn new_rcp() -> TestRcp {
+    block_on(Rcp::new(TestRadio::new(), SoftCrypto, info())).unwrap()
 }
 
-fn run(rcp: &mut Rcp<TestRadio>, host: &mut Host) {
+fn run(rcp: &mut TestRcp, host: &mut Host) {
     let r = block_on(rcp.run(host));
     assert!(r.is_err());
 }
@@ -139,7 +142,7 @@ fn boot_notification_and_identity() {
     assert_eq!(parsed(&f[6]).3, [11]);
     // Radio caps: the PHY capability bits of the radio (energy scan) plus the
     // frame retries the RCP does itself.
-    assert_eq!(parsed(&f[7]).3, [0x06]);
+    assert_eq!(parsed(&f[7]).3, [0x26]);
 }
 
 #[test]
@@ -355,7 +358,7 @@ fn source_match_keys_scan_and_errors() {
         |w| w.array(&[0, 0, 0, 0, 0, 0, 0, 9]).unwrap(),
     ));
     host.push(&req(6, cmd::PROP_VALUE_SET, prop::RCP_MAC_KEY, |w| {
-        w.u8(1).unwrap();
+        w.u8(8).unwrap();
         w.u8(7).unwrap();
         for k in [1u8, 2, 3] {
             w.data(&[k; 16]).unwrap();

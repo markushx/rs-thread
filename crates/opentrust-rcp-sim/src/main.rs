@@ -24,6 +24,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
+use opentrust_core::crypto::soft::SoftCrypto;
 use opentrust_ncp::rcp::{Rcp, RcpInfo, Transport};
 use sim_radio::SimRadio;
 
@@ -138,7 +139,9 @@ fn main() {
     };
     let mut io = Stdio::new();
     let r = block_on(async {
-        let mut rcp = Rcp::new(radio, info).await.map_err(|_| Closed)?;
+        let mut rcp = Rcp::new(radio, SoftCrypto, info)
+            .await
+            .map_err(|_| Closed)?;
         rcp.run(&mut io).await
     });
     std::process::exit(if r.is_ok() { 0 } else { 1 });

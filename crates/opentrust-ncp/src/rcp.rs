@@ -14,7 +14,10 @@
 
 use embassy_futures::select::{Either, select};
 use heapless::Vec;
-use opentrust_mac::frame::{Frame as MacFrame, KeyIdentifier};
+use opentrust_core::crypto::CryptoBackend;
+use opentrust_core::types::ExtAddress;
+use opentrust_mac::frame::{Frame as MacFrame, FrameMut, KeyIdentifier};
+use opentrust_mac::security::seal_psdu;
 use opentrust_platform::radio::{
     Capabilities, Config, MacKeys, PsduRxInfo, PsduTxInfo, Radio, RadioCaps, RadioError,
     RadioErrorKind, SRC_MATCH_CAPACITY, SrcMatchConfig,
@@ -96,6 +99,8 @@ struct State {
     ext_list: Vec<u64, SRC_MATCH_CAPACITY>,
     scan_mask: u32,
     scan_period_ms: u16,
+    mac_keys: Option<MacKeys>,
+    mac_frame_counter: u32,
 }
 
 impl State {
@@ -114,13 +119,16 @@ impl State {
             ext_list: Vec::new(),
             scan_mask: 0,
             scan_period_ms: 0,
+            mac_keys: None,
+            mac_frame_counter: 0,
         }
     }
 }
 
 /// The RCP: a [`Radio`] served over Spinel.
-pub struct Rcp<R: Radio> {
+pub struct Rcp<R: Radio, C: CryptoBackend> {
     radio: R,
+    crypto: C,
     caps: RadioCaps,
     info: RcpInfo,
     st: State,
@@ -129,7 +137,7 @@ pub struct Rcp<R: Radio> {
     ack_buf: [u8; MAX_PSDU + 2],
 }
 
-impl<R: Radio> core::fmt::Debug for Rcp<R> {
+impl<R: Radio, C: CryptoBackend> core::fmt::Debug for Rcp<R, C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Rcp")
             .field("caps", &self.caps)
@@ -160,13 +168,15 @@ fn parse(_: opentrust_spinel::Error) -> u32 {
     status::PARSE_ERROR
 }
 
-impl<R: Radio> Rcp<R> {
-    /// Initialises the radio and builds the RCP around it.
-    pub async fn new(mut radio: R, info: RcpInfo) -> Result<Self, R::Error> {
+impl<R: Radio, C: CryptoBackend> Rcp<R, C> {
+    /// Initialises the radio and builds the RCP around it. `crypto` secures
+    /// outgoing frames for a radio without `TRANSMIT_SEC`.
+    pub async fn new(mut radio: R, crypto: C, info: RcpInfo) -> Result<Self, R::Error> {
         let caps = radio.init().await?;
         let st = State::new(&caps);
         Ok(Self {
             radio,
+            crypto,
             caps,
             info,
             st,
@@ -482,9 +492,9 @@ impl<R: Radio> Rcp<R> {
             prop::PHY_TX_POWER => w.i8(s.tx_power),
             prop::PHY_RX_SENSITIVITY => w.i8(c.receive_sensitivity),
             prop::PHY_FEM_LNA_GAIN => w.i8(s.fem_lna_gain),
-            prop::RADIO_CAPS => {
-                w.packed(u32::from((c.phy | Capabilities::TRANSMIT_RETRIES).bits()))
-            }
+            prop::RADIO_CAPS => w.packed(u32::from(
+                (c.phy | Capabilities::TRANSMIT_RETRIES | Capabilities::TRANSMIT_SEC).bits(),
+            )),
             prop::MAC_15_4_LADDR => w.array(&s.config.ext_addr.unwrap_or(0).to_be_bytes()),
             prop::MAC_15_4_SADDR => w.u16(s.config.short_addr.unwrap_or(0xfffe)),
             prop::MAC_15_4_ALT_SADDR => w.u16(s.config.alt_short_addr.unwrap_or(0xfffe)),
@@ -679,8 +689,10 @@ impl<R: Radio> Rcp<R> {
                     .map_err(|e| status_of(e.kind()))
             }
             prop::RCP_MAC_KEY => {
+                // The wire value is OpenThread's `Mac::Frame::kKeyIdMode1`
+                // (security control bits 3-4), the radio trait's mode is 1.
                 let key_id_mode = r.u8().map_err(parse)?;
-                if key_id_mode != 1 {
+                if key_id_mode != 0x08 {
                     return Err(status::INVALID_ARGUMENT);
                 }
                 let key_id = r.u8().map_err(parse)?;
@@ -692,12 +704,13 @@ impl<R: Radio> Rcp<R> {
                 };
                 let (prev, curr, next) = (key()?, key()?, key()?);
                 let keys = MacKeys {
-                    key_id_mode,
+                    key_id_mode: 1,
                     key_id,
                     prev,
                     curr,
                     next,
                 };
+                self.st.mac_keys = Some(keys);
                 self.radio
                     .set_mac_keys(Some(&keys))
                     .await
@@ -710,6 +723,9 @@ impl<R: Radio> Rcp<R> {
                 } else {
                     r.bool().map_err(parse)?
                 };
+                if !if_larger || counter > self.st.mac_frame_counter {
+                    self.st.mac_frame_counter = counter;
+                }
                 self.radio
                     .set_mac_frame_counter(counter, if_larger)
                     .await
@@ -803,6 +819,42 @@ impl<R: Radio> Rcp<R> {
         Ok(())
     }
 
+    /// Software `TRANSMIT_SEC` for the frame in `tx_buf[..len]` (PSDU with
+    /// FCS): assigns the frame counter and key index unless the header is
+    /// already updated, then seals the frame with the current key.
+    fn secure_tx(&mut self, len: usize, tx: &mut PsduTxInfo) -> Result<(), u32> {
+        let psdu = &mut self.tx_buf[..len.saturating_sub(2)];
+        let secured = MacFrame::parse(psdu)
+            .map_err(|_| status::PARSE_ERROR)?
+            .security_header()
+            .is_some();
+        if !secured {
+            tx.security_processed = true;
+            return Ok(());
+        }
+        let keys = self.st.mac_keys.ok_or(status::INVALID_STATE)?;
+        if !tx.header_updated {
+            let counter = self.st.mac_frame_counter;
+            let mut fm = FrameMut::new(psdu).map_err(|_| status::PARSE_ERROR)?;
+            fm.set_frame_counter(counter)
+                .and_then(|()| fm.set_key_index(keys.key_id))
+                .map_err(|_| status::INVALID_ARGUMENT)?;
+            self.st.mac_frame_counter = counter.wrapping_add(1);
+            tx.header_updated = true;
+        }
+        let source = ExtAddress(
+            self.st
+                .config
+                .ext_addr
+                .ok_or(status::INVALID_STATE)?
+                .to_be_bytes(),
+        );
+        let cipher = self.crypto.aes128(&keys.curr);
+        seal_psdu(&cipher, psdu, &source).map_err(|_| status::FAILURE)?;
+        tx.security_processed = true;
+        Ok(())
+    }
+
     /// `SET STREAM_RAW`: transmit one frame; the answer is the transmit-done
     /// `LAST_STATUS` with the ACK.
     async fn stream_raw_tx<T: Transport>(
@@ -842,6 +894,14 @@ impl<R: Radio> Rcp<R> {
                 at += 1 << 32;
             }
             tx.tx_at_us = Some(at);
+        }
+        // A radio without `TRANSMIT_SEC` gets finished, secured frames: the
+        // frame counter and key index are assigned and the frame is sealed
+        // here, as the host expects of an RCP.
+        if !self.caps.phy.contains(Capabilities::TRANSMIT_SEC) && !tx.security_processed {
+            if let Err(code) = self.secure_tx(len, &mut tx) {
+                return self.last_status(out, header, code).await;
+            }
         }
         let cca = req.csma.then_some(self.st.cca_threshold);
         // The host expects the RCP to retry unacknowledged frames

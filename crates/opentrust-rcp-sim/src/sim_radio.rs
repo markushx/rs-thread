@@ -39,6 +39,28 @@ const RSSI: i8 = -20;
 const NOISE_FLOOR: i8 = -100;
 const MAX_PSDU: usize = 127;
 
+/// Appends a line to the file named by `OPENTRUST_RCP_LOG`, if set (stdout
+/// and stderr carry the Spinel link and must stay clean).
+pub fn log(line: &str) {
+    use std::io::Write;
+    static FILE: std::sync::OnceLock<Option<std::sync::Mutex<std::fs::File>>> =
+        std::sync::OnceLock::new();
+    let f = FILE.get_or_init(|| {
+        let path = std::env::var_os("OPENTRUST_RCP_LOG")?;
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()?;
+        Some(std::sync::Mutex::new(f))
+    });
+    if let Some(f) = f {
+        if let Ok(mut f) = f.lock() {
+            let _ = writeln!(f, "{:>10} {line}", micros_since_start());
+        }
+    }
+}
+
 fn micros_since_start() -> u64 {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     START.get_or_init(Instant::now).elapsed().as_micros() as u64
@@ -108,7 +130,8 @@ impl SimRadio {
             phy: Capabilities::ACK_TIMEOUT
                 | Capabilities::ENERGY_SCAN
                 | Capabilities::CSMA_BACKOFF
-                | Capabilities::SLEEP_TO_TX,
+                | Capabilities::SLEEP_TO_TX
+                | Capabilities::TRANSMIT_TIMING,
             mac: MacCapabilities::all(),
             clock: Some(RadioClock(micros_since_start)),
             receive_sensitivity: -100,
@@ -179,8 +202,21 @@ impl SimRadio {
                 continue;
             }
             let Ok(frame) = Frame::parse(&psdu[..len - 2]) else {
+                log(&format!("rx unparsable len {len}"));
                 continue;
             };
+            log(&format!(
+                "rx {:?} len {len} seq {:?} dst {:?} ar {} match {}",
+                frame.frame_type(),
+                frame.sequence(),
+                frame.dst_address(),
+                frame.ack_request(),
+                self.matches(&frame)
+            ));
+            if std::env::var_os("OPENTRUST_RCP_HEX").is_some() {
+                let hex: String = psdu.iter().map(|b| format!("{b:02x}")).collect();
+                log(&format!("   {hex}"));
+            }
             if frame.frame_type() == FrameType::Ack {
                 if self.awaiting_ack.is_some() && frame.sequence() == self.awaiting_ack {
                     self.ack = Some((psdu.to_vec(), frame.frame_pending()));
@@ -264,7 +300,7 @@ impl Radio for SimRadio {
     async fn transmit(
         &mut self,
         psdu: &mut [u8],
-        _psdu_tx: &mut PsduTxInfo,
+        psdu_tx: &mut PsduTxInfo,
         channel: u8,
         _power: i8,
         _cca_threshold: Option<i8>,
@@ -282,6 +318,21 @@ impl Radio for SimRadio {
         let before = self.state;
         // The ACK arrives on the channel the frame went out on.
         self.state = State::Receive(channel);
+        if let Some(at) = psdu_tx.tx_at_us {
+            // A timed transmission (CSL): wait for the time, receiving meanwhile.
+            core::future::poll_fn(|_| {
+                self.pump();
+                if micros_since_start() >= at {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            })
+            .await;
+        }
+        log(&format!(
+            "tx len {len} ch {channel} ar {ack_request} seq {seq:?}"
+        ));
         self.send(channel, psdu);
         let result = if ack_request {
             self.awaiting_ack = seq;
