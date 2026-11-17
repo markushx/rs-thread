@@ -156,7 +156,7 @@ where
                 "listener" => match a.get(4) {
                     "" => {
                         let now = self.now;
-                        let list: heapless::Vec<_, 16> = self.i.bbr_listeners(now).collect();
+                        let list: heapless::Vec<_, 75> = self.i.bbr_listeners(now).collect();
                         for (addr, left) in list {
                             ln!(self.o, "{} {}", Ip6(addr), left);
                         }
@@ -168,11 +168,18 @@ where
                     }
                     "add" => {
                         let addr = parse_ip6(a.get(5))?;
-                        let timeout = if a.get(6).is_empty() {
+                        let mut timeout = if a.get(6).is_empty() {
                             0
                         } else {
                             parse_u32(a.get(6))?
                         };
+                        // As OT `otBackboneRouterMulticastListenerAdd`: 0 is
+                        // the MLR timeout of the local dataset; capped.
+                        if timeout == 0 {
+                            timeout = self.i.bbr_config().mlr_timeout;
+                        }
+                        let timeout =
+                            timeout.min(opentrust_mesh::netdata::backbone::MAX_MLR_TIMEOUT);
                         let expire = self.now
                             + opentrust_core::time::Duration::from_secs(u64::from(timeout));
                         self.i

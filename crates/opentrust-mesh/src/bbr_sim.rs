@@ -277,6 +277,8 @@ pub fn step(i: usize, now: Instant, mle: &mut Mle<4>, env: &mut TestEnv, t: &mut
         attached,
         full_thread_device: mle.is_full_thread_device(),
         is_child: role == Role::Child,
+        parent_1p1: false,
+        service_id: None,
         bbr: &b.bbr,
     };
     if let Some((st, _)) = nd_event {

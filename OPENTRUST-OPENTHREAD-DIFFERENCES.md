@@ -944,7 +944,7 @@ Where OpenThread's output is lossy, malformed or undefined for an input, OpenTru
 ## Backbone Router role (Thread 1.2)
 
 - **No Backbone Link.** `bbr enable` registers the BBR service, becomes Primary through the Leader's choice and answers `/n/dr` (DUA.req) and `/n/mr` (MLR.req) from local tables (`opentrust_mesh::bbr_server`, instance feature `bbr-server`). There is no DAD on the backbone, no ND proxying of the DUAs, no Backbone Query / Answer (`/b/bq`, `/b/ba`), no BMLR.ntf and no multicast routing to the link. A registered DUA is therefore never defended against a duplicate on the link, and a DUA that is not registered with this BBR is not resolved through the backbone.
-- **Fixed table sizes.** 16 multicast listeners (OT 75) and 8 registered DUAs (OT 64).
+- **Fixed table sizes.** 75 multicast listeners (as OT) and 8 registered DUAs (OT 64).
 - **Notifier and role change.** When the role changes (child to router) the Network Data notifier no longer waits for the response of a Server Data request that is still out: its response goes to the old RLOC16. OT keeps waiting until the CoAP request ends, so a service registered as a child could take much longer to be re-registered with the new RLOC16.
 - **`rloc16` while disabled** reports the RLOC16 restored from the settings after a reset, as OT does.
 - **Commissioner MLR** (Commissioner Session ID and Timeout TLVs, `mlr reg`) is not implemented on the device side; the BBR side handles the TLVs.

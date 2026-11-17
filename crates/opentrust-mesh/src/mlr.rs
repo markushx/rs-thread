@@ -88,6 +88,11 @@ pub struct MlrContext<'a> {
     pub full_thread_device: bool,
     /// The device is in the child role.
     pub is_child: bool,
+    /// The device is an end device whose parent is a Thread 1.1 device: it
+    /// sends the MLR.req itself, to the service ALOC.
+    pub parent_1p1: bool,
+    /// Service ID of the Backbone Router service (for `parent_1p1`).
+    pub service_id: Option<u8>,
     /// Backbone Router state of the Network Data.
     pub bbr: &'a BackboneRouterLeader,
 }
@@ -97,6 +102,9 @@ pub struct MlrContext<'a> {
 pub struct MlrRequest {
     /// RLOC16 of the Primary Backbone Router.
     pub server16: u16,
+    /// Send to the service ALOC with this ID instead (an end device with a
+    /// Thread 1.1 parent).
+    pub service_id: Option<u8>,
     /// The groups to register.
     pub addresses: Vec<Ipv6Addr, MAX_MLR_ADDRESSES>,
 }
@@ -219,11 +227,15 @@ pub fn send_mlr_request<
 ) -> Result<()> {
     let mut buf = [0u8; MAX_MLR_ADDRESSES * 16 + 4];
     let n = build_mlr_request(&req.addresses, &mut buf)?;
+    let dst = match req.service_id {
+        Some(id) => mesh_local_prefix.aloc(0xfc10 + u16::from(id))?,
+        None => mesh_local_prefix.rloc(Rloc16(req.server16)),
+    };
     agent.post(
         now,
         rng,
         sink,
-        mesh_local_prefix.rloc(Rloc16(req.server16)),
+        dst,
         Some(mesh_local_prefix.rloc(own_rloc16)),
         Priority::Normal,
         Uri::Mlr,
@@ -338,7 +350,7 @@ impl<const N: usize> MlrManager<N> {
     }
 
     fn can_send(ctx: &MlrContext<'_>) -> bool {
-        ctx.attached && ctx.full_thread_device && ctx.bbr.has_primary()
+        ctx.attached && (ctx.full_thread_device || ctx.parent_1p1) && ctx.bbr.has_primary()
     }
 
     fn schedule_send(&mut self, now: Instant, delay: Duration) {
@@ -523,8 +535,14 @@ impl<const N: usize> MlrManager<N> {
             return None;
         }
         self.pending = true;
+        let service_id = if ctx.full_thread_device {
+            None
+        } else {
+            Some(ctx.service_id?)
+        };
         Some(MlrRequest {
             server16,
+            service_id,
             addresses,
         })
     }

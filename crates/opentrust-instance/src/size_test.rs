@@ -15,7 +15,7 @@ use super::*;
 
 /// Upper bound of `size_of::<Instance>()` for the enabled feature set.
 #[cfg(feature = "border-agent")]
-const TOTAL_BOUND: usize = 112_600;
+const TOTAL_BOUND: usize = 114_000;
 #[cfg(all(feature = "ftd", not(feature = "border-agent")))]
 const TOTAL_BOUND: usize = 86_950;
 #[cfg(not(feature = "ftd"))]

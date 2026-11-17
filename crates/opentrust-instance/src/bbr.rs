@@ -469,6 +469,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             attached,
             full_thread_device: full,
             is_child: role == Role::Child,
+            parent_1p1: p1p1,
+            service_id: opentrust_mesh::netdata::backbone::backbone_router_service_id(&view),
             bbr: &b.bbr,
         };
         if let Some((st, _)) = nd_event {

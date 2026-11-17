@@ -37,7 +37,7 @@ pub const DEFAULT_REGISTRATION_JITTER: u8 = 5;
 /// Anycast locator of the Primary Backbone Router (`kAloc16BackboneRouterPrimary`).
 pub const ALOC16_PRIMARY_BBR: u16 = 0xfc38;
 /// Multicast listeners of the table (OT: 75).
-pub const MAX_LISTENERS: usize = 16;
+pub const MAX_LISTENERS: usize = 75;
 /// Registered DUAs of the ND proxy table (OT: 64).
 pub const MAX_PROXIES: usize = 8;
 
