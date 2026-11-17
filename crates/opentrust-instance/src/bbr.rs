@@ -488,11 +488,16 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     true,
                 ) {
                     let _ = self.add_service(cfg);
+                    // The role registers its service itself (OT
+                    // `Local::AddService` notifies the Network Data
+                    // Notifier), also with manual registration.
+                    self.register_netdata();
                 }
             }
             ServiceAction::Remove => {
                 let _ = self
                     .remove_service(THREAD_ENTERPRISE_NUMBER, &[BACKBONE_ROUTER_SERVICE_NUMBER]);
+                self.register_netdata();
             }
         }
     }
