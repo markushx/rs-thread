@@ -450,6 +450,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     let _ = pe.push(e);
                 });
             for e in pe {
+                #[cfg(feature = "srp-server")]
+                self.srp_server_publisher_event(&e, now);
                 self.core.push_event(Event::Publisher(e));
             }
             if self.publisher.take_local_changed() {

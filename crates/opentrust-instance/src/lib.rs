@@ -102,6 +102,8 @@ mod diag;
 mod dns_srp;
 mod netdata_glue;
 mod scan;
+#[cfg(feature = "srp-server")]
+mod srp_server;
 mod stack;
 mod tmf;
 
@@ -120,6 +122,8 @@ pub use opentrust_dns::client::{
     DnsError, QueryConfig, QueryId, ResolvedAddresses, ResolvedService,
 };
 pub use opentrust_dns::rdata::TxtEntry;
+#[cfg(feature = "srp-server")]
+pub use opentrust_dns::srp::server as srp_server_types;
 pub use opentrust_dns::srp::{ItemState, ServiceConfig, ServiceId, SrpError, SrpEvent};
 pub use opentrust_mac::mac::MacCounters;
 pub use opentrust_mac::mac::ScanResult as BeaconScanResult;
@@ -133,6 +137,11 @@ pub use opentrust_mle::tlv::{DeviceMode, LeaderData};
 pub use opentrust_mle::{MleConfig, Role};
 pub use opentrust_net::udp::{RecvInfo, UdpMeta, UdpSendOpts};
 pub use opentrust_platform::radio::{PsduRxInfo, RadioCaps};
+#[cfg(feature = "srp-server")]
+pub use srp_server::{
+    SRP_SERVER_HOSTS, SRP_SERVER_SERVICES, SRP_SERVER_UPDATE_SERVICES, SrpAddressMode,
+    SrpServerState, SrpServerStore,
+};
 pub use stack::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 
 pub use opentrust_mac::mac::{RadioAction, TxOutcome};

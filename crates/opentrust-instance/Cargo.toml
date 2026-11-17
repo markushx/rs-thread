@@ -25,6 +25,9 @@ tcat = ["opentrust-meshcop/tcat"]
 # Query requests (`/c/ab`, `/c/es`, `/c/pq`; OT `AnnounceBeginServer`,
 # `EnergyScanServer`, `PanIdQueryServer`).
 scan-servers = []
+# The SRP server (OT `Srp::Server`): registers hosts and services of clients
+# in the mesh, publishes itself in the Network Data.
+srp-server = ["ftd", "opentrust-dns/srp-server"]
 srp-services-8 = []
 srp-services-12 = []
 trel = ["opentrust-mesh/trel"]

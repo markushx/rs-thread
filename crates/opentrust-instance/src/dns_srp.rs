@@ -141,6 +141,8 @@ pub(crate) struct DnsSrp {
     attached: bool,
     nd_hash: Option<u64>,
     addr_hash: Option<u64>,
+    #[cfg(feature = "srp-server")]
+    pub(crate) srpd: crate::srp_server::SrpServerCtx,
 }
 
 impl DnsSrp {
@@ -158,11 +160,17 @@ impl DnsSrp {
             attached: false,
             nd_hash: None,
             addr_hash: None,
+            #[cfg(feature = "srp-server")]
+            srpd: crate::srp_server::SrpServerCtx::new(),
         }
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        [self.srp.next_deadline(), self.dns.next_deadline()]
+        #[cfg(feature = "srp-server")]
+        let server = self.srpd.next_deadline();
+        #[cfg(not(feature = "srp-server"))]
+        let server = None;
+        [self.srp.next_deadline(), self.dns.next_deadline(), server]
             .into_iter()
             .flatten()
             .min()
@@ -430,6 +438,40 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.dnssrp.srp_failure.take()
     }
 
+    /// The SRP client, for reading its configuration and state.
+    pub fn srp_client(&self) -> &SrpClient<SRP_SERVICES> {
+        &self.dnssrp.srp
+    }
+
+    /// Set the default lease interval in seconds (OT
+    /// `otSrpClientSetLeaseInterval`).
+    pub fn srp_set_lease_interval(&mut self, secs: u32) {
+        self.dnssrp.srp.set_lease_interval(secs);
+    }
+
+    /// Set the default key lease interval in seconds.
+    pub fn srp_set_key_lease_interval(&mut self, secs: u32) {
+        self.dnssrp.srp.set_key_lease_interval(secs);
+    }
+
+    /// Set the TTL of the records in seconds (0: the lease).
+    pub fn srp_set_ttl(&mut self, secs: u32) {
+        self.dnssrp.srp.set_ttl(secs);
+    }
+
+    /// Forget a service locally, without informing the server (OT
+    /// `otSrpClientClearService`).
+    pub fn srp_clear_service(&mut self, id: ServiceId, now: Instant) -> Result<()> {
+        let r = self.with_srp(now, |c, e| c.clear_service(e, id));
+        self.after_call(now, r)
+    }
+
+    /// Forget the host and all services locally (OT
+    /// `otSrpClientClearHostAndServices`).
+    pub fn srp_clear_host_and_services(&mut self) {
+        self.dnssrp.srp.clear_host_and_services();
+    }
+
     /// The host name of the SRP client (empty until set).
     pub fn srp_host_name(&self) -> &str {
         self.dnssrp.srp.host_name()
@@ -607,6 +649,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             st.dns.poll(now, &mut core.rng, &mut ctx);
             busy = true;
         }
+        #[cfg(feature = "srp-server")]
+        {
+            busy |= self.service_srp_server(now);
+        }
         // Events.
         while let Some(ev) = self.dnssrp.srp_events.pop_front() {
             busy = true;
@@ -675,6 +721,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// A datagram queued on socket `h`: consumed here if it belongs to the
     /// SRP or DNS client.
     pub(crate) fn dns_srp_rx(&mut self, now: Instant, h: SocketHandle) -> bool {
+        #[cfg(feature = "srp-server")]
+        if self.srp_server_rx(now, h) {
+            return true;
+        }
         let which = if self.dnssrp.srp_sock == Some(h) {
             Which::Srp
         } else if self.dnssrp.dns_sock == Some(h) {
