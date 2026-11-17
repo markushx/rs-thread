@@ -51,6 +51,7 @@ impl DnsContext for Ctx {
                 let first = b.instances().next().and_then(|n| b.service_info(&n).ok());
                 Res::Browse(names, first)
             }
+            DnsResult::Records(_) => return,
         };
         self.results.push((id, r));
     }

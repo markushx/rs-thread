@@ -339,3 +339,113 @@ fn capacity_limits_are_servfail() {
         rcode::SERVER_FAILURE
     );
 }
+
+#[derive(Default)]
+struct DnsCtx {
+    sent: Vec<Vec<u8>>,
+    out: Vec<(usize, usize, u16, Vec<u8>)>,
+    failed: Vec<crate::client::DnsError>,
+}
+
+impl crate::client::DnsContext for DnsCtx {
+    fn send(&mut self, _s: SocketAddrV6, p: &[u8]) -> opentrust_core::Result<()> {
+        self.sent.push(p.to_vec());
+        Ok(())
+    }
+    fn result(&mut self, _id: crate::client::QueryId, r: crate::client::DnsResult<'_>) {
+        use crate::client::DnsResult;
+        match r {
+            DnsResult::Browse(b) => {
+                let n = b.instances().count();
+                let info = b
+                    .instances()
+                    .next()
+                    .and_then(|i| b.service_info(&i).ok())
+                    .map(|i| (i.port, i.txt.to_vec()))
+                    .unwrap_or_default();
+                self.out.push((n, 0, info.0, info.1));
+            }
+            DnsResult::Service(s) => self.out.push((1, s.addrs.len(), s.port, s.txt.to_vec())),
+            DnsResult::Failed(e) => self.failed.push(e),
+            DnsResult::Address(a) => self.out.push((0, a.addrs.len(), 0, Vec::new())),
+            DnsResult::Records(_) => {}
+        }
+    }
+}
+
+#[test]
+fn dnssd_answers_browse_resolve_and_nxdomain() {
+    use crate::client::{DnsClient, QueryConfig};
+    let mut s = Srv::new();
+    let mut a = Client::new(1, "h1", &[("ins1", "_a._tcp")]);
+    send(&mut s, t(1), &a.message());
+    let mut b = Client::new(2, "h2", &[("ins2", "_a._tcp")]);
+    send(&mut s, t(1), &b.message());
+
+    let mut dns: DnsClient = DnsClient::new();
+    let mut ctx = DnsCtx::default();
+    let mut rng = TestRng(7);
+    let cfg = QueryConfig::new(server_addr());
+    let run = |s: &Srv, dns: &mut DnsClient, ctx: &mut DnsCtx| {
+        let q = ctx.sent.last().unwrap().clone();
+        let mut o = [0u8; 1232];
+        let n = s.handle_query(t(10), &q, &mut o).unwrap();
+        dns.handle_datagram(server_addr(), &o[..n], ctx);
+    };
+    // Two instances: the PTR answers only.
+    dns.browse(
+        t(10),
+        &mut rng,
+        &mut ctx,
+        "_A._tcp.default.service.arpa",
+        Some(cfg),
+    )
+    .unwrap();
+    run(&s, &mut dns, &mut ctx);
+    assert_eq!(ctx.out.pop().unwrap().0, 2);
+    // One instance via subtype: service info comes in the additional section.
+    dns.browse(
+        t(10),
+        &mut rng,
+        &mut ctx,
+        "_a._tcp.default.service.arpa",
+        Some(cfg),
+    )
+    .unwrap();
+    run(&s, &mut dns, &mut ctx);
+    // Resolve an instance (SRV + TXT + AAAA).
+    dns.resolve_service(
+        t(10),
+        &mut rng,
+        &mut ctx,
+        "INS1",
+        "_a._tcp.default.service.arpa",
+        Some(cfg),
+    )
+    .unwrap();
+    run(&s, &mut dns, &mut ctx);
+    let r = ctx.out.pop().unwrap();
+    assert_eq!((r.0, r.1, r.2), (1, 1, 5540));
+    // Host addresses.
+    dns.resolve_address(
+        t(10),
+        &mut rng,
+        &mut ctx,
+        "H2.default.service.arpa",
+        Some(cfg),
+    )
+    .unwrap();
+    run(&s, &mut dns, &mut ctx);
+    assert_eq!(ctx.out.pop().unwrap().1, 1);
+    // Unknown name.
+    dns.resolve_address(
+        t(10),
+        &mut rng,
+        &mut ctx,
+        "nope.default.service.arpa",
+        Some(cfg),
+    )
+    .unwrap();
+    run(&s, &mut dns, &mut ctx);
+    assert_eq!(ctx.failed.pop(), Some(crate::client::DnsError::NotFound));
+}

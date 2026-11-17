@@ -56,8 +56,29 @@ pub enum DnsOutcome {
     Browse(Vec<BrowseInstance, MAX_BROWSE_INSTANCES>),
     /// A resolved service instance.
     Service(ResolvedService),
+    /// The response message of an arbitrary record query (parse it with
+    /// [`records_of`]).
+    #[cfg(feature = "srp-server")]
+    Records(Vec<u8, RECORDS_MSG>),
     /// The query failed.
     Failed(DnsError),
+}
+
+/// Largest response kept for an arbitrary record query.
+#[cfg(feature = "srp-server")]
+pub const RECORDS_MSG: usize = 512;
+
+/// The records of a [`DnsOutcome::Records`] message.
+#[cfg(feature = "srp-server")]
+pub fn records_of(
+    msg: &[u8],
+) -> impl Iterator<
+    Item = (
+        opentrust_dns::client::Section,
+        opentrust_dns::wire::Record<'_>,
+    ),
+> {
+    opentrust_dns::client::RecordsResponse::from_message(msg).records()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -270,6 +291,22 @@ impl DnsContext for DnsCtx<'_> {
             DnsResult::Address(a) => DnsOutcome::Address(a.clone()),
             DnsResult::Service(s) => DnsOutcome::Service(s.clone()),
             DnsResult::Failed(e) => DnsOutcome::Failed(e),
+            DnsResult::Records(r) => {
+                #[cfg(feature = "srp-server")]
+                {
+                    let mut v = Vec::new();
+                    if v.extend_from_slice(r.message()).is_ok() {
+                        DnsOutcome::Records(v)
+                    } else {
+                        DnsOutcome::Failed(DnsError::NoBufs)
+                    }
+                }
+                #[cfg(not(feature = "srp-server"))]
+                {
+                    let _ = r;
+                    DnsOutcome::Failed(DnsError::NoBufs)
+                }
+            }
             DnsResult::Browse(b) => {
                 let mut v: Vec<BrowseInstance, MAX_BROWSE_INSTANCES> = Vec::new();
                 for name in b.instances() {
@@ -507,6 +544,50 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.dnssrp.dns.set_default_server(server);
     }
 
+    /// The default query configuration (OT `otDnsClientGetDefaultConfig`).
+    pub fn dns_default_config(&self) -> QueryConfig {
+        self.dnssrp.dns.default_config()
+    }
+
+    /// Set the default query configuration; unset fields take the defaults
+    /// (OT `otDnsClientSetDefaultConfig`).
+    pub fn dns_set_default_config(&mut self, c: opentrust_dns::client::PartialConfig) {
+        let srp = self
+            .dnssrp
+            .srp
+            .is_server_selected_by_auto_start()
+            .then(|| self.dnssrp.srp.server().map(|s| *s.ip()))
+            .flatten();
+        self.dnssrp.dns.set_default_config(c, srp);
+    }
+
+    /// Query records of `rrtype` for `<first_label>.<next_labels>`; the
+    /// result is [`DnsOutcome::Records`].
+    pub fn dns_query_record(
+        &mut self,
+        rrtype: u16,
+        first_label: &str,
+        next_labels: &str,
+        config: Option<QueryConfig>,
+        now: Instant,
+    ) -> Result<QueryId> {
+        let (st, core) = (&mut self.dnssrp, &mut self.core);
+        let mut ctx = DnsCtx {
+            out: &mut st.out,
+            results: &mut st.results,
+        };
+        let r = st.dns.query_record(
+            now,
+            &mut core.rng,
+            &mut ctx,
+            rrtype,
+            first_label,
+            next_labels,
+            config,
+        );
+        self.after_call(now, r)
+    }
+
     /// Browse for instances of `service`, e.g. `_matter._tcp.default.service.arpa`
     /// (OT `otDnsClientBrowse`). The result is [`Event::DnsResult`].
     pub fn dns_browse(
@@ -673,7 +754,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         while let Some(ev) = self.dnssrp.srp_events.pop_front() {
             busy = true;
             if let SrpEvent::ServerSelected(s) = ev {
-                self.dnssrp.dns.set_default_server(s);
+                self.dnssrp.dns.on_srp_server_selected(s.map(|s| *s.ip()));
             }
             if let SrpEvent::Failed(e) = ev {
                 self.dnssrp.srp_failure = Some(e);

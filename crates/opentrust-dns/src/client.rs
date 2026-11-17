@@ -200,6 +200,57 @@ impl<'a> BrowseResponse<'a> {
     }
 }
 
+/// Section of a record in a response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Section {
+    /// Answer.
+    Answer,
+    /// Authority.
+    Authority,
+    /// Additional.
+    Additional,
+}
+
+/// The response of an arbitrary record query.
+#[derive(Debug, Clone, Copy)]
+pub struct RecordsResponse<'a> {
+    msg: &'a [u8],
+}
+
+impl<'a> RecordsResponse<'a> {
+    /// Wrap a response message.
+    pub const fn from_message(msg: &'a [u8]) -> Self {
+        Self { msg }
+    }
+
+    /// The response message.
+    pub const fn message(&self) -> &'a [u8] {
+        self.msg
+    }
+
+    /// The records with their section (OPT records excluded).
+    pub fn records(self) -> impl Iterator<Item = (Section, crate::wire::Record<'a>)> + 'a {
+        let (an, ns) = Parser::new(self.msg)
+            .map(|(_, h)| (usize::from(h.an), usize::from(h.ns)))
+            .unwrap_or((0, 0));
+        records(self.msg)
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .filter(|(_, r)| r.rtype != rtype::OPT)
+            .map(move |(i, r)| {
+                let sec = if i < an {
+                    Section::Answer
+                } else if i < an + ns {
+                    Section::Authority
+                } else {
+                    Section::Additional
+                };
+                (sec, r)
+            })
+    }
+}
+
 /// A delivered query result.
 #[derive(Debug)]
 pub enum DnsResult<'a> {
@@ -209,6 +260,8 @@ pub enum DnsResult<'a> {
     Browse(BrowseResponse<'a>),
     /// Resolved service instance.
     Service(&'a ResolvedService),
+    /// Records of an arbitrary record query.
+    Records(RecordsResponse<'a>),
     /// The query failed.
     Failed(DnsError),
 }
@@ -230,6 +283,7 @@ enum Kind {
     Browse,
     Address,
     Service,
+    Record,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -259,6 +313,7 @@ struct Slot {
     config: QueryConfig,
     name: String<MAX_NAME>,
     label: String<MAX_LABEL>,
+    rrtype: u16,
     wires: [Wire; 2],
     /// Combined SRV+TXT query that may fall back to separate queries.
     fallback_pending: bool,
@@ -269,7 +324,9 @@ struct Slot {
 impl Slot {
     fn parts(&self) -> ([Part<'_>; 2], usize) {
         match self.kind {
-            Kind::Service => ([Part::Label(&self.label), Part::Dotted(&self.name)], 2),
+            Kind::Service | Kind::Record => {
+                ([Part::Label(&self.label), Part::Dotted(&self.name)], 2)
+            }
             _ => ([Part::Dotted(&self.name), Part::Dotted("")], 1),
         }
     }
@@ -300,6 +357,44 @@ impl Slot {
 pub struct DnsClient<const Q: usize = 4> {
     slots: [Option<Slot>; Q],
     default_server: Option<SocketAddrV6>,
+    /// The address was set by the user (not adopted from the SRP server).
+    user_addr: bool,
+    cfg: DefaultOptions,
+    rrtype_next: u16,
+}
+
+/// The default query options besides the server.
+#[derive(Debug, Clone, Copy)]
+struct DefaultOptions {
+    timeout: Duration,
+    attempts: u8,
+    recursion: bool,
+    mode: ServiceMode,
+}
+
+impl DefaultOptions {
+    const INIT: Self = Self {
+        timeout: DEFAULT_RESPONSE_TIMEOUT,
+        attempts: DEFAULT_MAX_TX_ATTEMPTS,
+        recursion: true,
+        mode: ServiceMode::SrvTxtOptimize,
+    };
+}
+
+/// A default configuration with unspecified (`None`) fields (OT
+/// `otDnsClientSetDefaultConfig`: they take the built-in defaults).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PartialConfig {
+    /// Server; an unspecified address adopts the SRP server's.
+    pub server: Option<SocketAddrV6>,
+    /// Response timeout.
+    pub timeout: Option<Duration>,
+    /// Transmission attempts.
+    pub attempts: Option<u8>,
+    /// Recursion desired.
+    pub recursion: Option<bool>,
+    /// Service mode.
+    pub mode: Option<ServiceMode>,
 }
 
 impl<const Q: usize> Default for DnsClient<Q> {
@@ -314,12 +409,64 @@ impl<const Q: usize> DnsClient<Q> {
         Self {
             slots: [const { None }; Q],
             default_server: None,
+            user_addr: false,
+            cfg: DefaultOptions::INIT,
+            rrtype_next: 0,
         }
     }
 
     /// Set (or clear) the server used when a query gives no configuration.
     pub fn set_default_server(&mut self, server: Option<SocketAddrV6>) {
         self.default_server = server;
+        self.user_addr = server.is_some();
+    }
+
+    /// The default configuration; an unset server reads `[::]:53`.
+    pub fn default_config(&self) -> QueryConfig {
+        let server = self
+            .default_server
+            .unwrap_or_else(|| SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, DEFAULT_SERVER_PORT, 0, 0));
+        QueryConfig {
+            server,
+            response_timeout: self.cfg.timeout,
+            max_tx_attempts: self.cfg.attempts,
+            recursion_desired: self.cfg.recursion,
+            service_mode: self.cfg.mode,
+        }
+    }
+
+    /// Set the default configuration; unspecified fields take the built-in
+    /// defaults. `srp_server`: the SRP server selected by auto-start, whose
+    /// address is adopted unless the config names a server.
+    pub fn set_default_config(&mut self, c: PartialConfig, srp_server: Option<Ipv6Addr>) {
+        self.cfg = DefaultOptions {
+            timeout: c.timeout.unwrap_or(DefaultOptions::INIT.timeout),
+            attempts: c.attempts.unwrap_or(DefaultOptions::INIT.attempts),
+            recursion: c.recursion.unwrap_or(DefaultOptions::INIT.recursion),
+            mode: c.mode.unwrap_or(DefaultOptions::INIT.mode),
+        };
+        match c.server.filter(|s| !s.ip().is_unspecified()) {
+            Some(s) => {
+                self.default_server = Some(s);
+                self.user_addr = true;
+            }
+            None => {
+                self.user_addr = false;
+                self.default_server = None;
+                self.on_srp_server_selected(srp_server);
+            }
+        }
+    }
+
+    /// The SRP client selected a server by auto-start (OT
+    /// `UpdateDefaultConfigAddress`): its address becomes the default DNS
+    /// server (port 53) unless the user set one.
+    pub fn on_srp_server_selected(&mut self, addr: Option<Ipv6Addr>) {
+        if let Some(a) = addr.filter(|a| !a.is_unspecified())
+            && !self.user_addr
+        {
+            self.default_server = Some(SocketAddrV6::new(a, DEFAULT_SERVER_PORT, 0, 0));
+        }
     }
 
     /// The default server.
@@ -370,6 +517,31 @@ impl<const Q: usize> DnsClient<Q> {
         self.start(now, rng, ctx, Kind::Service, instance, service, config)
     }
 
+    /// Query records of type `rrtype` for `<first_label>.<next_labels>`
+    /// (the first label may contain dots).
+    #[allow(clippy::too_many_arguments)]
+    pub fn query_record<R: Rng + ?Sized, X: DnsContext>(
+        &mut self,
+        now: Instant,
+        rng: &mut R,
+        ctx: &mut X,
+        rrtype: u16,
+        first_label: &str,
+        next_labels: &str,
+        config: Option<QueryConfig>,
+    ) -> opentrust_core::Result<QueryId> {
+        self.rrtype_next = rrtype;
+        self.start(
+            now,
+            rng,
+            ctx,
+            Kind::Record,
+            first_label,
+            next_labels,
+            config,
+        )
+    }
+
     /// Cancel a query; no result is delivered.
     pub fn cancel(&mut self, id: QueryId) {
         if let Some(s) = self.slots.get_mut(usize::from(id.0)) {
@@ -390,7 +562,7 @@ impl<const Q: usize> DnsClient<Q> {
     ) -> opentrust_core::Result<QueryId> {
         use opentrust_core::Error;
         let config = config
-            .or_else(|| self.default_server.map(QueryConfig::new))
+            .or_else(|| self.default_server.map(|_| self.default_config()))
             .ok_or(Error::InvalidState)?;
         if config.max_tx_attempts == 0 {
             return Err(Error::InvalidArgs);
@@ -406,6 +578,7 @@ impl<const Q: usize> DnsClient<Q> {
             config,
             name: String::try_from(name).map_err(|_| Error::InvalidArgs)?,
             label: String::try_from(label).map_err(|_| Error::InvalidArgs)?,
+            rrtype: self.rrtype_next,
             wires: [Wire::IDLE; 2],
             fallback_pending: false,
             acc: ResolvedService::default(),
@@ -418,6 +591,7 @@ impl<const Q: usize> DnsClient<Q> {
         match kind {
             Kind::Browse => slot.wires[0].qtypes[0] = rtype::PTR,
             Kind::Address => slot.wires[0].qtypes[0] = rtype::AAAA,
+            Kind::Record => slot.wires[0].qtypes[0] = slot.rrtype,
             Kind::Service => match config.service_mode {
                 ServiceMode::Srv => slot.wires[0].qtypes[0] = rtype::SRV,
                 ServiceMode::Txt => slot.wires[0].qtypes[0] = rtype::TXT,
@@ -585,6 +759,9 @@ impl<const Q: usize> DnsClient<Q> {
                 } else {
                     self.finish(i, DnsResult::Browse(resp), ctx);
                 }
+            }
+            Kind::Record => {
+                self.finish(i, DnsResult::Records(RecordsResponse { msg: payload }), ctx)
             }
             Kind::Service => {
                 let label = slot.label.clone();

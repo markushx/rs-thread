@@ -40,6 +40,8 @@ struct Line {
     buf: Vec<u8>,
     esc: u8,
     after_cr: bool,
+    /// Bytes of an incomplete UTF-8 character (echoed once complete).
+    utf8: Vec<u8>,
 }
 
 struct Node {
@@ -210,6 +212,14 @@ impl Node {
                     self.line.buf.push(c);
                     let _ = self.out.write_char(c as char);
                 }
+                0x80..=0xff if self.line.buf.len() < LINE_MAX - 1 => {
+                    self.line.buf.push(c);
+                    self.line.utf8.push(c);
+                    if let Ok(t) = std::str::from_utf8(&self.line.utf8) {
+                        self.out.push_str(t);
+                        self.line.utf8.clear();
+                    }
+                }
                 _ => {}
             }
         }
@@ -283,6 +293,7 @@ pub fn main() {
             buf: Vec::new(),
             esc: 0,
             after_cr: false,
+            utf8: Vec::new(),
         },
     };
     node.settle();

@@ -20,6 +20,8 @@ use opentrust_net::udp::{SocketHandle, UdpSendOpts};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
+const DNS_PORT: u16 = 53;
+
 use crate::{Instance, InstanceCrypto, MAX_UDP_PAYLOAD};
 
 /// Hosts the SRP server stores (OT: heap; see the differences document).
@@ -68,6 +70,9 @@ pub(crate) struct SrpServerCtx {
     /// 0: not selected yet.
     port: u16,
     pub(crate) sock: Option<SocketHandle>,
+    /// The DNS-SD socket (port 53) while the server runs, unless the SRP
+    /// socket is on that port itself.
+    pub(crate) dns_sock: Option<SocketHandle>,
     registered_any: bool,
 }
 
@@ -80,6 +85,7 @@ impl SrpServerCtx {
             seq: 0,
             port: 0,
             sock: None,
+            dns_sock: None,
             registered_any: false,
         }
     }
@@ -282,6 +288,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             return Err(e);
         }
         self.dnssrp.srpd.sock = Some(s);
+        if self.dnssrp.srpd.port != DNS_PORT && self.dnssrp.srpd.dns_sock.is_none() {
+            let d = self.udp.open()?;
+            let any = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, DNS_PORT, 0, 0);
+            if let Err(e) = self.udp.bind(d, any, &self.core.ip6.netif) {
+                let _ = self.udp.close(d);
+                return Err(e);
+            }
+            self.dnssrp.srpd.dns_sock = Some(d);
+        }
         Ok(())
     }
 
@@ -294,6 +309,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         d.store.clear();
         d.registered_any = false;
         if let Some(s) = d.sock.take() {
+            let _ = self.udp.close(s);
+        }
+        if let Some(s) = self.dnssrp.srpd.dns_sock.take() {
             let _ = self.udp.close(s);
         }
     }
@@ -319,7 +337,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// A datagram on socket `h`: consumed here if it is the SRP server's.
     pub(crate) fn srp_server_rx(&mut self, now: Instant, h: SocketHandle) -> bool {
-        if self.dnssrp.srpd.sock != Some(h) {
+        let d = &self.dnssrp.srpd;
+        if d.sock != Some(h) && d.dns_sock != Some(h) {
             return false;
         }
         let mut buf = [0u8; MAX_UDP_PAYLOAD];
@@ -327,7 +346,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             if info.truncated || self.dnssrp.srpd.state != SrpServerState::Running {
                 continue;
             }
-            self.srp_server_handle(now, h, info.meta.peer, info.meta.local, &buf[..info.len]);
+            let msg = &buf[..info.len];
+            // A query (opcode 0) is DNS-SD, an UPDATE (opcode 5) is SRP.
+            let is_query = msg.get(2).is_some_and(|b| (b >> 3) & 0xf == 0);
+            if is_query {
+                let mut out = [0u8; MAX_UDP_PAYLOAD];
+                if let Some(n) = self.dnssrp.srpd.store.handle_query(now, msg, &mut out) {
+                    self.srp_server_send(now, h, info.meta.peer, info.meta.local, &out[..n]);
+                }
+            } else if self.dnssrp.srpd.sock == Some(h) {
+                self.srp_server_handle(now, h, info.meta.peer, info.meta.local, msg);
+            }
         }
         true
     }
@@ -359,6 +388,17 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 let _ = self.core.settings.set(SettingsKey::SrpServerInfo, &port);
             }
         }
+        self.srp_server_send(now, sock, peer, local, &out[..r.len]);
+    }
+
+    fn srp_server_send(
+        &mut self,
+        now: Instant,
+        sock: SocketHandle,
+        peer: SocketAddrV6,
+        local: SocketAddrV6,
+        payload: &[u8],
+    ) {
         // Reply from the address the request was sent to (the anycast
         // address in anycast mode).
         let src = (!local.ip().is_multicast() && !local.ip().is_unspecified()).then(|| *local.ip());
@@ -371,7 +411,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             sock,
             Some(peer),
             &opts,
-            &out[..r.len],
+            payload,
             &mut pkt,
             &self.core.ip6.netif,
         ) {

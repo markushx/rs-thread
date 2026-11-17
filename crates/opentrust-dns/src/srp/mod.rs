@@ -624,6 +624,11 @@ impl<const S: usize> SrpClient<S> {
             .filter_map(|(i, s)| s.as_ref().map(|s| (ServiceId(i as u8), &s.cfg, s.state)))
     }
 
+    /// Did auto-start select the server (not an explicit `start`)?
+    pub fn is_server_selected_by_auto_start(&self) -> bool {
+        self.is_running() && self.requester == Requester::Auto
+    }
+
     /// Is the client started (not stopped)?
     pub fn is_running(&self) -> bool {
         self.state != ClientState::Stopped

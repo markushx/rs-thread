@@ -115,11 +115,14 @@ pub use commissioning::InstanceCrypto;
 pub use diag::RouteInfo;
 pub use diag::{ChildInfo, NeighborInfo, tlv as diag_tlv};
 pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES, SRP_SERVICES};
+#[cfg(feature = "srp-server")]
+pub use dns_srp::{RECORDS_MSG, records_of};
 pub use opentrust_coap::message::Code as CoapCode;
 pub use opentrust_coap::uri::Uri as TmfUri;
 pub use opentrust_core::types::{ExtAddress, Rloc16};
 pub use opentrust_dns::client::{
-    DnsError, QueryConfig, QueryId, ResolvedAddresses, ResolvedService,
+    DnsError, PartialConfig, QueryConfig, QueryId, ResolvedAddresses, ResolvedService, Section,
+    ServiceMode,
 };
 pub use opentrust_dns::rdata::TxtEntry;
 #[cfg(feature = "srp-server")]

@@ -1258,5 +1258,7 @@ fn verify_txt(d: &[u8]) -> bool {
     i == d.len()
 }
 
+mod dnssd;
+
 #[cfg(test)]
 mod tests;

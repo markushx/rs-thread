@@ -43,7 +43,7 @@ fn enabled(b: bool) -> &'static str {
 }
 
 /// `[key=hex, key, ...]` as OT prints TXT data.
-#[cfg(feature = "srp-server")]
+#[allow(dead_code)]
 pub(crate) fn output_txt<W: Write>(o: &mut W, txt: &[u8]) {
     use crate::util::hex;
     use opentrust_dns::rdata::TxtIter;
@@ -338,7 +338,8 @@ where
                 Ok(())
             }
             "add" => {
-                let (inst, svc) = (a.get(4), a.get(5));
+                let inst_s: heapless::String<64> = crate::util::unescape(a.get(4))?;
+                let (inst, svc) = (inst_s.as_str(), a.get(5));
                 let port = parse_u16(a.get(6))?;
                 let mut names = svc.split(',');
                 let base = names.next().unwrap_or("");
@@ -373,12 +374,14 @@ where
                 if a.get(5).is_empty() || !a.get(6).is_empty() {
                     return Err(E::INVALID_ARGS);
                 }
+                let inst: heapless::String<64> = crate::util::unescape(a.get(4))?;
                 let id = self
                     .i
                     .srp_client()
                     .services()
                     .find(|(_, c, _)| {
-                        c.instance_name.as_str() == a.get(4) && c.service_name.as_str() == a.get(5)
+                        c.instance_name.as_str() == inst.as_str()
+                            && c.service_name.as_str() == a.get(5)
                     })
                     .map(|(id, _, _)| id)
                     .ok_or(E::NOT_FOUND)?;
