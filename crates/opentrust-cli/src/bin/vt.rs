@@ -208,7 +208,7 @@ impl Node {
                     self.line.buf.pop();
                     self.out.push_str("\x08 \x08");
                 }
-                0x20..=0x7e if self.line.buf.len() < LINE_MAX - 1 => {
+                0x09 | 0x20..=0x7e if self.line.buf.len() < LINE_MAX - 1 => {
                     self.line.buf.push(c);
                     let _ = self.out.write_char(c as char);
                 }

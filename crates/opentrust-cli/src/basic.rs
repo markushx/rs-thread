@@ -49,6 +49,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "counters",
     "dataset",
     "detach",
+    "diag",
     "discover",
     "dns",
     "dua",
@@ -122,6 +123,7 @@ where
             let enabled = match *c {
                 "child" | "counters" | "neighbor" => cfg!(feature = "tables"),
                 "history" => cfg!(feature = "history"),
+                "diag" => cfg!(feature = "factory-diag"),
                 "router" => cfg!(all(feature = "tables", feature = "ftd")),
                 "routerselectionjitter"
                 | "routerupgradethreshold"

@@ -38,6 +38,8 @@ mod diag;
 #[cfg(feature = "dns")]
 mod dns;
 #[cfg(feature = "joiner")]
+#[cfg(feature = "factory-diag")]
+mod factorydiag;
 #[cfg(feature = "history")]
 mod history;
 mod joiner;
@@ -92,6 +94,8 @@ pub(crate) struct State {
     pub scan: Option<scan::Kind>,
     #[cfg(feature = "diag")]
     pub diag: Option<diag::Pending>,
+    #[cfg(feature = "factory-diag")]
+    pub factory_diag: factorydiag::State,
     #[cfg(feature = "linkmetrics")]
     pub linkmetrics: linkmetrics::Pending,
     #[cfg(feature = "dns")]
@@ -143,6 +147,8 @@ impl Cli {
                 scan: None,
                 #[cfg(feature = "diag")]
                 diag: None,
+                #[cfg(feature = "factory-diag")]
+                factory_diag: factorydiag::State::default(),
                 #[cfg(feature = "linkmetrics")]
                 linkmetrics: linkmetrics::Pending::default(),
                 #[cfg(feature = "dns")]
@@ -348,6 +354,8 @@ where
             "ping" => self.ping_cmd(a),
             #[cfg(feature = "history")]
             "history" => self.history(a),
+            #[cfg(feature = "factory-diag")]
+            "diag" => self.factory_diag(a),
             #[cfg(feature = "tables")]
             "child" => self.child(a),
             #[cfg(all(feature = "tables", feature = "ftd"))]

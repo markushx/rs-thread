@@ -218,7 +218,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
 | Link metrics / enhanced ack (Thread 1.2) | 5 | 0 | 3 | 2 | 0 | 0 |
 | Python unit tests of the cert libraries (no nodes) | 8 | 0 | 0 | 0 | 0 | 8 |
-| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 26 | 0 | 5 | 1 | 0 |
+| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 27 | 0 | 4 | 1 | 0 |
 
 #### SRP
 
@@ -255,7 +255,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_coap` | NA | 2/2 | Python unit test, no simulated nodes |
 | `test_coap_block` | pass | 2/2 |  |
 | `test_coap_observe` | pass | 2/2 |  |
-| `test_coaps` | fail | 1/2 | fails: all |
+| `test_coaps` | fail | 1/2 | fails: all; `coaps` CLI missing; the script needs DTLS PSK (`TLS_PSK_WITH_AES_128_CCM_8`) and X.509 certificates (ECDHE-ECDSA), OpenTrust's DTLS has EC-JPAKE only |
 
 #### Backbone router / DUA / MLR (Thread 1.2)
 
@@ -309,7 +309,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_child_supervision` | pass | 2/2 | secured empty frames, polls do not reset the supervision interval, failure counter kept across a detach, child table columns |
 | `test_dataset_updater` | pass | 2/2 | `dataset updater start|cancel`, 30 s default delay as OT |
 | `test_detach` | fail | 1/2 | fails: all; router stays `detached` (`detached` != `router`) |
-| `test_diag` | fail | 1/2 | fails: all; `diag` CLI missing |
+| `test_diag` | pass | 2/2 | `diag start|stop|channel|power|stats|send|repeat` as bookkeeping (no raw frames) |
 | `test_history_tracker` | pass | 2/2 | `history netinfo|rx|tx|rxtx` (feature `history`, on in `opentrust-cli-vt`); the other history lists are not implemented |
 | `test_inform_previous_parent_on_reattach` | pass | 2/2 | empty datagram to the previous parent, stale child removal also for plain frames |
 | `test_ipv6_fragmentation` | pass | 2/2 | UDP of 1952 bytes in two IPv6 fragments both ways (feature `ip6-fragmentation`, on in `opentrust-cli-vt`); the script's packet parser logs an extension-header error in all configurations |

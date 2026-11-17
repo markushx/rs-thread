@@ -56,7 +56,9 @@ sim = ["sim-mtd", "bbr-server", "opentrust-sim/ftd", "ftd", "commissioning", "sr
 cert-log = ["dep:log", "opentrust-meshcop/cert-log"]
 # Host binary `opentrust-cli-vt-mtd`: a minimal thread device (no router, no
 # commissioner, no Border Agent) on the virtual-time simulation platform.
-sim-mtd = ["dep:opentrust-sim", "bbr", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "joiner", "scan-servers", "cert-log", "ip6-fragmentation", "history", "opentrust-instance/srp-services-12"]
+sim-mtd = ["dep:opentrust-sim", "bbr", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "joiner", "scan-servers", "cert-log", "ip6-fragmentation", "history", "factory-diag", "opentrust-instance/srp-services-12"]
+# `diag` (OT factory diagnostics: bookkeeping only, no raw frames).
+factory-diag = []
 # `history` (OT History Tracker: netinfo, rx, tx, rxtx); RAM cost.
 history = ["opentrust-instance/history-tracker"]
 # IPv6 fragmentation and reassembly (UDP payloads up to 1952 bytes); RAM cost.
