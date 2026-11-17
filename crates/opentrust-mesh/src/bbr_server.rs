@@ -212,6 +212,7 @@ pub enum Reply {
 pub struct BbrServer {
     state: LocalState,
     seqno: u8,
+    seeded: bool,
     jitter: u8,
     delay: u16,
     mlr_timeout: u32,
@@ -231,6 +232,7 @@ impl BbrServer {
         Self {
             state: LocalState::Disabled,
             seqno: 0,
+            seeded: false,
             jitter: DEFAULT_REGISTRATION_JITTER,
             delay: DEFAULT_REGISTRATION_DELAY,
             mlr_timeout: DEFAULT_MLR_TIMEOUT,
@@ -243,9 +245,12 @@ impl BbrServer {
         }
     }
 
-    /// Pick a random initial sequence number (0..127), as OT does at boot.
+    /// Pick a random initial sequence number (0..127), as OT does at boot;
+    /// only the first call does (a configured number stays).
     pub fn seed<R: Rng + ?Sized>(&mut self, rng: &mut R) {
-        self.seqno = (rng.next_u32() % 127) as u8;
+        if !core::mem::replace(&mut self.seeded, true) {
+            self.seqno = (rng.next_u32() % 127) as u8;
+        }
     }
 
     /// Current state.

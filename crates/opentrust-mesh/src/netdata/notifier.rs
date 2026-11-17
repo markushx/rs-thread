@@ -142,6 +142,13 @@ impl Notifier {
             | NotifierEvent::RoleChanged
             | NotifierEvent::ChildRemoved => {
                 self.next_delay = Duration::from_secs(0);
+                // A request that is still out was sent from the old RLOC16:
+                // its response is addressed to an address the device no
+                // longer has, so do not wait for it (a retransmission or its
+                // failure may still report in).
+                if event == NotifierEvent::RoleChanged {
+                    self.waiting_for_response = false;
+                }
             }
             NotifierEvent::NetworkDataChanged | NotifierEvent::PartitionChanged => {}
         }

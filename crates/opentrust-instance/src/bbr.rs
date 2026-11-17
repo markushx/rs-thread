@@ -41,6 +41,9 @@ pub(crate) struct BbrGlue {
     /// The Backbone Router service of this device.
     #[cfg(feature = "ftd")]
     pub server: BbrServer,
+    /// The Domain Prefix of the Backbone Router role.
+    #[cfg(feature = "ftd")]
+    pub domain_prefix: Option<opentrust_mesh::netdata::local::OnMeshPrefixConfig>,
     pub dua: DuaManager<8>,
     pub mlr: MlrManager<8>,
     nd_hash: Option<u64>,
@@ -57,6 +60,8 @@ impl BbrGlue {
             bbr: BackboneRouterLeader::new(),
             #[cfg(feature = "ftd")]
             server: BbrServer::new(),
+            #[cfg(feature = "ftd")]
+            domain_prefix: None,
             dua: DuaManager::new(),
             mlr: MlrManager::new(),
             nd_hash: None,
@@ -128,6 +133,40 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.bbrg.dua.domain_unicast_address()
     }
 
+    /// Send a fake Address Notification for `target` with the mesh-local
+    /// interface identifier `ml_iid` to `dest` (reference device, OT
+    /// `otThreadSendAddressNotification`).
+    pub fn send_fake_address_notification(
+        &mut self,
+        dest: core::net::Ipv6Addr,
+        target: core::net::Ipv6Addr,
+        ml_iid: [u8; 8],
+        now: Instant,
+    ) -> opentrust_core::Result<()> {
+        let own = self.mle.rloc16();
+        if own == opentrust_core::types::Rloc16::INVALID {
+            return Err(opentrust_core::Error::InvalidState);
+        }
+        let a = opentrust_mesh::address::AddressAction::SendNotify {
+            dest,
+            notify: opentrust_mesh::address::AddressNotify {
+                target,
+                ml_eid_iid: opentrust_core::types::Iid(ml_iid),
+                rloc16: own,
+                last_transaction_time: None,
+            },
+        };
+        opentrust_mesh::address::send_action(
+            &mut self.agent,
+            now,
+            &mut self.prng,
+            &mut self.sink,
+            own,
+            &self.core,
+            &a,
+        )
+    }
+
     /// The fixed DUA interface identifier, if one is set (`dua iid`).
     pub fn dua_fixed_iid(&self) -> Option<[u8; 8]> {
         self.bbrg.dua.fixed_iid().map(|i| i.0)
@@ -144,6 +183,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let attached = role.is_attached();
         let ml_eid_iid = opentrust_core::types::ipv6::iid(&self.core.ml_eid_addr());
         let full = self.mle.is_full_thread_device();
+        let expected = self.expected_to_become_router();
         let view = self.core.netdata.view();
         let secret = self.core.iid_secret;
         let params = IidParams {
@@ -157,7 +197,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             attached,
             router_or_leader: role.is_router_or_leader(),
             full_thread_device: full,
-            expected_to_become_router: false,
+            expected_to_become_router: expected,
             bbr: &b.bbr,
             netdata: view,
             ml_eid_iid,
@@ -184,6 +224,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     #[inline(never)]
     pub(crate) fn service_bbr(&mut self, now: Instant) -> bool {
         let mut moved = false;
+        let expected = self.expected_to_become_router();
         let b = &mut self.bbrg;
         let role = self.mle.role();
         let attached = role.is_attached();
@@ -236,7 +277,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             attached,
             router_or_leader: role.is_router_or_leader(),
             full_thread_device: full,
-            expected_to_become_router: false,
+            expected_to_become_router: expected,
             bbr: &b.bbr,
             netdata: view,
             ml_eid_iid,
@@ -442,10 +483,51 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
     }
 
+    /// Set the Domain Prefix of the Backbone Router role (OT
+    /// `BackboneRouter::Local::SetDomainPrefix`); it joins the local Network
+    /// Data while the role is enabled.
+    pub(crate) fn bbr_set_domain_prefix(
+        &mut self,
+        cfg: opentrust_mesh::netdata::local::OnMeshPrefixConfig,
+    ) -> opentrust_core::Result<()> {
+        if let Some(old) = self.bbrg.domain_prefix
+            && self.bbrg.server.is_enabled()
+        {
+            let _ = self.local.remove_on_mesh_prefix(&old.prefix);
+        }
+        self.bbrg.domain_prefix = Some(cfg);
+        if self.bbrg.server.is_enabled() {
+            self.local.add_on_mesh_prefix(cfg)?;
+        }
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        Ok(())
+    }
+
+    /// Remove the Domain Prefix of the Backbone Router role;
+    /// [`opentrust_core::Error::NotFound`] if `prefix` is not it.
+    pub(crate) fn bbr_remove_domain_prefix(
+        &mut self,
+        prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
+    ) -> opentrust_core::Result<()> {
+        match self.bbrg.domain_prefix {
+            Some(d) if d.prefix == *prefix => {
+                if self.bbrg.server.is_enabled() {
+                    let _ = self.local.remove_on_mesh_prefix(prefix);
+                }
+                self.bbrg.domain_prefix = None;
+                self.notifier
+                    .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+                Ok(())
+            }
+            _ => Err(opentrust_core::Error::NotFound),
+        }
+    }
+
     /// Enable or disable the Backbone Router role (`bbr enable`).
     pub fn bbr_set_enabled(&mut self, enable: bool) {
+        self.bbrg.server.seed(&mut self.prng);
         if enable && !self.bbrg.server.is_enabled() {
-            self.bbrg.server.seed(&mut self.prng);
             let _ = self.agent.register(crate::TmfUri::DuaRegistrationRequest);
             let _ = self.agent.register(crate::TmfUri::Mlr);
         }
@@ -458,6 +540,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             };
             self.bbrg.server.set_enabled(enable, &ctx)
         };
+        if let Some(d) = self.bbrg.domain_prefix {
+            if enable {
+                let _ = self.local.add_on_mesh_prefix(d);
+            } else {
+                let _ = self.local.remove_on_mesh_prefix(&d.prefix);
+            }
+            self.notifier
+                .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        }
         self.apply_bbr_action(a);
     }
 
@@ -467,7 +558,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// The configured BBR dataset (`bbr config`).
-    pub fn bbr_config(&self) -> opentrust_mesh::netdata::backbone::BbrConfig {
+    pub fn bbr_config(&mut self) -> opentrust_mesh::netdata::backbone::BbrConfig {
+        self.bbrg.server.seed(&mut self.prng);
         self.bbrg.server.config()
     }
 
@@ -478,6 +570,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         delay: Option<u16>,
         timeout: Option<u32>,
     ) -> opentrust_core::Result<()> {
+        self.bbrg.server.seed(&mut self.prng);
         let a = {
             let ctx = BbrContext {
                 attached: self.mle.role().is_attached(),

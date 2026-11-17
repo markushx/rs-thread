@@ -715,6 +715,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// `otBorderRouterAddOnMeshPrefix`); the notifier registers it with the
     /// leader.
     pub fn add_on_mesh_prefix(&mut self, cfg: OnMeshPrefixConfig) -> Result<()> {
+        // As in OT, a Domain Prefix belongs to the Backbone Router role: it
+        // is in the Network Data only while that role is enabled.
+        #[cfg(feature = "ftd")]
+        if cfg.flags.has(opentrust_mesh::netdata::tlv::BrFlags::DP) {
+            return self.bbr_set_domain_prefix(cfg);
+        }
         self.local.add_on_mesh_prefix(cfg)?;
         self.notifier
             .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
@@ -736,6 +742,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         &mut self,
         prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
     ) -> Result<()> {
+        #[cfg(feature = "ftd")]
+        match self.bbr_remove_domain_prefix(prefix) {
+            Err(Error::NotFound) => {}
+            r => return r,
+        }
         self.local.remove_on_mesh_prefix(prefix)?;
         self.notifier
             .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);

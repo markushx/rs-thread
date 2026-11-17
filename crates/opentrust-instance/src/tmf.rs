@@ -251,7 +251,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                 }
             }
             #[cfg(feature = "ftd")]
-            Uri::DuaRegistrationRequest | Uri::Mlr => {
+            Uri::DuaRegistrationRequest | Uri::Mlr if self.bbrg.server.is_enabled() => {
                 self.handle_bbr_request(uri, req, rsp);
             }
             Uri::AnycastLocate => {

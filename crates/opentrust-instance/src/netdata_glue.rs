@@ -318,6 +318,18 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.core.push_event(Event::NetworkDataChanged);
     }
 
+    /// OT `IsExpectedToBecomeRouterSoon`.
+    pub(crate) fn expected_to_become_router(&self) -> bool {
+        #[cfg(feature = "ftd")]
+        {
+            self.mle.is_expected_to_become_router_soon()
+        }
+        #[cfg(not(feature = "ftd"))]
+        {
+            false
+        }
+    }
+
     /// One round of the Network Data glue.
     #[inline(never)]
     pub(crate) fn service_netdata(&mut self, now: Instant) -> bool {
@@ -447,7 +459,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             let input = SyncInput {
                 attached,
                 router_or_leader: role.is_router_or_leader(),
-                expected_to_become_router: false,
+                expected_to_become_router: self.expected_to_become_router(),
                 rloc16: rloc,
                 local: opentrust_mesh::netdata::NetworkDataView(&local_buf[..ln]),
                 leader: view,

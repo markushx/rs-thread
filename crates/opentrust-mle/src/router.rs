@@ -856,6 +856,15 @@ impl<const C: usize> Mle<C> {
         Ok(())
     }
 
+    /// A child that is about to take the router role (OT
+    /// `IsExpectedToBecomeRouterSoon`): eligible, and the role transition
+    /// timer or an Address Solicit is running.
+    pub fn is_expected_to_become_router_soon(&self) -> bool {
+        self.role == Role::Child
+            && self.is_router_eligible()
+            && ((self.rtr.transition > 0 && self.rtr.transition <= 10) || self.rtr.solicit_pending)
+    }
+
     /// `true` while an Address Solicit is outstanding.
     pub fn is_address_solicit_pending(&self) -> bool {
         self.rtr.solicit_pending

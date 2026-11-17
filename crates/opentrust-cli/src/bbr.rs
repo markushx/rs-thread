@@ -44,6 +44,19 @@ where
         }
     }
 
+    /// `fake /a/an <dst> <target> <mliid>` (reference device).
+    pub(crate) fn fake(&mut self, a: &Args<'_>) -> R {
+        if a.get(1) != "/a/an" {
+            return Err(E::INVALID_COMMAND);
+        }
+        let dst = crate::util::parse_ip6(a.get(2))?;
+        let target = crate::util::parse_ip6(a.get(3))?;
+        let iid = parse_hex_exact::<8>(a.get(4))?;
+        self.i
+            .send_fake_address_notification(dst, target, iid, self.now)
+            .map_err(E::from)
+    }
+
     pub(crate) fn bbr(&mut self, a: &Args<'_>) -> R {
         if a.get(1).is_empty() {
             match self.i.primary_backbone_router() {

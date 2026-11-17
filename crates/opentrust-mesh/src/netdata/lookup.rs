@@ -200,7 +200,8 @@ pub fn border_agent_locator(view: &NetworkDataView<'_>) -> Option<u16> {
 
 /// The RLOC16 an anycast locator resolves to (OT `AnycastLookup`): the
 /// leader, the best DHCPv6 / ND agent Border Router of a context, the best
-/// server of a service, the Border Agent of the commissioner. A child is
+/// server of a service, the Border Agent of the commissioner, the Primary
+/// Backbone Router. A child is
 /// replaced by its parent unless that is this device. [`Error::NotFound`]
 /// if there is none, [`Error::Drop`] for an unsupported locator.
 pub fn anycast_lookup<M: MeshInfo + ?Sized>(
@@ -234,6 +235,11 @@ pub fn anycast_lookup<M: MeshInfo + ?Sized>(
         }
         ALOC16_COMMISSIONER_START..=ALOC16_COMMISSIONER_END => {
             border_agent_locator(view).ok_or(Error::NotFound)?
+        }
+        ALOC16_BACKBONE_ROUTER_PRIMARY => {
+            super::backbone::primary_backbone_router(view, mesh.leader_rloc16())
+                .ok_or(Error::Drop)?
+                .server16
         }
         ALOC16_ND_AGENT_START..=ALOC16_ND_AGENT_END => {
             let p = prefix_for_context(view, (aloc16 - ALOC16_ND_AGENT_START + 1) as u8)

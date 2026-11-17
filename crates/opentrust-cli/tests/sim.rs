@@ -656,3 +656,49 @@ fn linkmetrics_single_probe() {
         "{o}"
     );
 }
+
+/// The Backbone Router role through the CLI, in the order the thread-cert
+/// scripts use (`bbr enable` before the interface is up).
+#[test]
+fn backbone_router_commands() {
+    let mut h = H::new(&[Kind::Router, Kind::Router, Kind::Router], 12);
+    for i in 0..3 {
+        h.net.medium.connect(i, (i + 1) % 3, -60);
+    }
+    let setup = [
+        "dataset init new",
+        "dataset channel 11",
+        "dataset panid 0xface",
+        "dataset networkkey 00112233445566778899aabbccddeeff",
+        "dataset extpanid dead00beef00cafe",
+        "dataset meshlocalprefix fd00:db8::/64",
+        "dataset commit active",
+    ];
+    for c in setup {
+        assert_eq!(h.cmd(0, c), "Done\n", "{c}");
+    }
+    let ds = h.cmd(0, "dataset active -x");
+    let hex = ds.lines().next().unwrap().to_string();
+    for i in 1..3 {
+        assert_eq!(h.cmd(i, &format!("dataset set active {hex}")), "Done\n");
+        assert_eq!(h.cmd(i, "routerselectionjitter 1"), "Done\n");
+    }
+    assert_eq!(h.cmd(0, "bbr"), "BBR Primary: None\nDone\n");
+    assert_eq!(h.cmd(1, "bbr state"), "Disabled\nDone\n");
+    assert_eq!(h.cmd(1, "bbr jitter 2"), "Done\n");
+    assert_eq!(h.cmd(1, "bbr enable"), "Done\n");
+    assert_eq!(h.cmd(1, "bbr state"), "Secondary\nDone\n");
+    for i in 0..3 {
+        assert_eq!(h.cmd(i, "ifconfig up"), "Done\n");
+    }
+    assert_eq!(h.cmd(0, "thread start"), "Done\n");
+    h.wait_state(0, "leader", 20);
+    assert_eq!(h.cmd(1, "thread start"), "Done\n");
+    h.run(10);
+    assert_eq!(h.cmd(1, "state"), "router\nDone\n");
+    assert_eq!(h.cmd(1, "bbr state"), "Primary\nDone\n");
+    let o = h.cmd(0, "bbr");
+    assert!(o.starts_with("BBR Primary:\nserver16: 0x"), "{o}");
+    assert!(o.contains("delay:    5 secs\ntimeout:  3600 secs\n"), "{o}");
+    assert_eq!(h.cmd(1, "bbr mgmt mlr listener"), "Done\n");
+}
