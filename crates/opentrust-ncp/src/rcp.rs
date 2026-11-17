@@ -482,7 +482,9 @@ impl<R: Radio> Rcp<R> {
             prop::PHY_TX_POWER => w.i8(s.tx_power),
             prop::PHY_RX_SENSITIVITY => w.i8(c.receive_sensitivity),
             prop::PHY_FEM_LNA_GAIN => w.i8(s.fem_lna_gain),
-            prop::RADIO_CAPS => w.packed(u32::from(c.phy.bits())),
+            prop::RADIO_CAPS => {
+                w.packed(u32::from((c.phy | Capabilities::TRANSMIT_RETRIES).bits()))
+            }
             prop::MAC_15_4_LADDR => w.array(&s.config.ext_addr.unwrap_or(0).to_be_bytes()),
             prop::MAC_15_4_SADDR => w.u16(s.config.short_addr.unwrap_or(0xfffe)),
             prop::MAC_15_4_ALT_SADDR => w.u16(s.config.alt_short_addr.unwrap_or(0xfffe)),
@@ -842,23 +844,44 @@ impl<R: Radio> Rcp<R> {
             tx.tx_at_us = Some(at);
         }
         let cca = req.csma.then_some(self.st.cca_threshold);
-        let result = {
-            let Self {
-                radio,
-                tx_buf,
-                ack_buf,
-                ..
-            } = &mut *self;
-            radio
-                .transmit(
-                    &mut tx_buf[..len],
-                    &mut tx,
-                    req.channel,
-                    power,
-                    cca,
-                    Some(ack_buf),
-                )
-                .await
+        // The host expects the RCP to retry unacknowledged frames
+        // (`TRANSMIT_RETRIES` is always reported): a radio that does not do
+        // so itself is retried here.
+        let attempts = if self.caps.phy.contains(Capabilities::TRANSMIT_RETRIES) {
+            1
+        } else {
+            1 + usize::from(req.max_retries)
+        };
+        let mut attempt = 1;
+        let result = loop {
+            let r = {
+                let Self {
+                    radio,
+                    tx_buf,
+                    ack_buf,
+                    ..
+                } = &mut *self;
+                radio
+                    .transmit(
+                        &mut tx_buf[..len],
+                        &mut tx,
+                        req.channel,
+                        power,
+                        cca,
+                        Some(ack_buf),
+                    )
+                    .await
+            };
+            match &r {
+                Err(e)
+                    if attempt < attempts
+                        && matches!(status_of(e.kind()), status::NO_ACK | status::CCA_FAILURE) =>
+                {
+                    attempt += 1;
+                    tx.retransmission = true;
+                }
+                _ => break r,
+            }
         };
         // The radio returns to the receive channel the host asked for.
         if self.st.rx_on {
@@ -923,6 +946,7 @@ struct TxRequest {
     len: usize,
     channel: u8,
     max_csma_backoffs: u8,
+    max_retries: u8,
     csma: bool,
     header_updated: bool,
     retransmission: bool,
@@ -950,6 +974,7 @@ impl TxRequest {
             len: data.len(),
             channel,
             max_csma_backoffs: 4,
+            max_retries: 15,
             csma: true,
             header_updated: false,
             retransmission: false,
@@ -962,7 +987,7 @@ impl TxRequest {
         // Optional fields: stop at the first one that is missing.
         let _ = (|| -> opentrust_spinel::Result<()> {
             q.max_csma_backoffs = r.u8()?;
-            let _max_retries = r.u8()?;
+            q.max_retries = r.u8()?;
             q.csma = r.bool()?;
             q.header_updated = r.bool()?;
             q.retransmission = r.bool()?;

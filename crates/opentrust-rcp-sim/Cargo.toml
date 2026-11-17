@@ -1,0 +1,28 @@
+[package]
+name = "opentrust-rcp-sim"
+description = "OpenThread-compatible simulation RCP: OpenTrust radio over HDLC/Spinel on stdio and OpenThread's simulation radio protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+publish = false
+
+[[bin]]
+name = "opentrust-rcp-sim"
+path = "src/main.rs"
+
+[dependencies]
+opentrust-core = { workspace = true }
+opentrust-platform = { workspace = true }
+opentrust-mac = { workspace = true }
+opentrust-ncp = { workspace = true }
+socket2 = { version = "0.6", features = ["all"] }
+
+[lints]
+workspace = true

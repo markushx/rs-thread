@@ -137,8 +137,9 @@ fn boot_notification_and_identity() {
     let (_, _, _, hw) = parsed(&f[5]);
     assert_eq!(hw, [1, 2, 3, 4, 5, 6, 7, 8]);
     assert_eq!(parsed(&f[6]).3, [11]);
-    // Radio caps: the PHY capability bits of the radio (energy scan).
-    assert_eq!(parsed(&f[7]).3, [0x02]);
+    // Radio caps: the PHY capability bits of the radio (energy scan) plus the
+    // frame retries the RCP does itself.
+    assert_eq!(parsed(&f[7]).3, [0x06]);
 }
 
 #[test]
@@ -203,11 +204,20 @@ fn config_and_receive() {
 }
 
 fn tx_request(psdu: &[u8], channel: u8, csma: bool) -> impl FnOnce(&mut Writer<'_>) + '_ {
+    tx_request_retries(psdu, channel, csma, 15)
+}
+
+fn tx_request_retries(
+    psdu: &[u8],
+    channel: u8,
+    csma: bool,
+    retries: u8,
+) -> impl FnOnce(&mut Writer<'_>) + '_ {
     move |w| {
         w.data(psdu).unwrap();
         w.u8(channel).unwrap();
         w.u8(4).unwrap(); // max CSMA backoffs
-        w.u8(15).unwrap(); // max retries
+        w.u8(retries).unwrap(); // max retries
         w.bool(csma).unwrap();
         w.bool(false).unwrap(); // header updated
         w.bool(false).unwrap(); // retransmission
@@ -272,21 +282,42 @@ fn transmit_with_ack_and_failure() {
     assert_eq!(r.data().unwrap(), [0x12, 0x00, 0x09, 0, 0]);
     assert_eq!(r.i8().unwrap(), -50);
 
-    // No ACK: NO_ACK status, no frame.
+    // A missing ACK is retried by the RCP (the test radio does not retry).
+    rcp.radio().fail_next_tx(RadioErrorKind::TxAckTimeout);
+    assert!(
+        rcp.radio()
+            .queue_ack(&[0x02, 0x00, 0x09, 0, 0], rx_info(15))
+    );
+    let mut host = Host::new(2);
+    host.push(&req(
+        11,
+        cmd::PROP_VALUE_SET,
+        prop::STREAM_RAW,
+        tx_request(&psdu, 15, true),
+    ));
+    run(&mut rcp, &mut host);
+    assert_eq!(parsed(&host.frames[1]).3[0], status::OK as u8);
+
+    // No ACK in 1 + 15 attempts is not testable with a single injected
+    // failure; with retries exhausted (max retries 0): NO_ACK, no frame.
     rcp.radio().fail_next_tx(RadioErrorKind::TxAckTimeout);
     let mut host = Host::new(2);
     host.push(&req(
         10,
         cmd::PROP_VALUE_SET,
         prop::STREAM_RAW,
-        tx_request(&psdu, 15, false),
+        tx_request_retries(&psdu, 15, false, 0),
     ));
     run(&mut rcp, &mut host);
     let (tid, _, k, v) = parsed(&host.frames[1]);
     assert_eq!((tid, k), (10, prop::LAST_STATUS));
     assert_eq!(v[..], [status::NO_ACK as u8, 0, 0]);
     // Without CSMA no CCA is requested.
-    assert_eq!(rcp.radio().pop_tx().unwrap().cca_threshold, None);
+    let mut last = None;
+    while let Some(r) = rcp.radio().pop_tx() {
+        last = Some(r);
+    }
+    assert_eq!(last.unwrap().cca_threshold, None);
 }
 
 #[test]
