@@ -857,12 +857,7 @@ impl<const C: usize> Mle<C> {
         let (ext, mode, requested, sup, addrs) = {
             let c = self.children.get(idx).ok_or(Error::NotFound)?;
             let mut entries = Vec::<AddressEntry, 10>::new();
-            if let Some(iid) = c.ml_eid_iid() {
-                let _ = entries.push(AddressEntry::Compressed {
-                    context_id: 0,
-                    iid: iid.0,
-                });
-            }
+            // The ML-EID is not echoed (OT `AppendAddressRegistrationTlv`).
             for a in c.addresses() {
                 let e = match env.lowpan_context_for(a) {
                     Some(context_id) => AddressEntry::Compressed {
@@ -1185,12 +1180,7 @@ impl<const C: usize> Mle<C> {
         let (mode, margin, timeout, sup, addrs) = match idx.and_then(|i| self.children.get(i)) {
             Some(c) => {
                 let mut entries = Vec::<AddressEntry, 10>::new();
-                if let Some(iid) = c.ml_eid_iid() {
-                    let _ = entries.push(AddressEntry::Compressed {
-                        context_id: 0,
-                        iid: iid.0,
-                    });
-                }
+                // The ML-EID is not echoed (OT `AppendAddressRegistrationTlv`).
                 for a in c.addresses() {
                     let _ = entries.push(match env.lowpan_context_for(a) {
                         Some(context_id) => AddressEntry::Compressed {
