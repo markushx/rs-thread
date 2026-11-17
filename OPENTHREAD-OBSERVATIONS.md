@@ -60,3 +60,17 @@ from a security point of view. Each entry is a candidate for a later review
 
 - **OpenThread:** the simulation radio reports `OT_RADIO_LQI_NONE` (0) for every received frame; `Neighbor::AggregateLinkMetrics` still counts the frame, with LQI 0.
 - **OpenTrust:** counts such frames with LQI 0 as well.
+
+## Simulated radio acknowledges frames for short address 0x0000 on every node
+
+In the OpenThread simulation platform (examples/platforms/simulation/radio.c) a
+node whose RLOC16 is not 0x0000 still sends an enhanced ACK for a frame
+addressed to the short address 0x0000 (observed: the leader acks the frames a
+child sends to its router with Router ID 0). The sender gets two ACKs for one
+frame; the first one comes from a node that cannot have the right key and
+the radio reports it as the ACK of the transmission, so every transmission to
+the router fails its 15 retries. The alternate short address of the simulated
+radio is probably never initialised to invalid. About 1 run in 62 gives the
+router Router ID 0; the thread-cert and mtd tests flaked at that rate.
+The OpenTrust virtual-time simulator drops an ACK from a node whose
+known short address differs from a 0x0000 destination.
