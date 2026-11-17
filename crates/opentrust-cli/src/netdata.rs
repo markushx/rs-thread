@@ -256,6 +256,31 @@ where
                 Ok(())
             }
             "publish" if a.get(2) == "dnssrp" => self.publish_dnssrp(a),
+            "publish" if a.get(2) == "prefix" => {
+                let cfg = parse_on_mesh(a, 3)?;
+                self.i
+                    .publish_on_mesh_prefix(cfg, self.now)
+                    .map_err(E::from)
+            }
+            "publish" if a.get(2) == "route" => {
+                let cfg = parse_route(a, 3)?;
+                self.i
+                    .publish_external_route(cfg, self.now)
+                    .map_err(E::from)
+            }
+            "publish" if a.get(2) == "replace" => {
+                let (addr, len) = parse_prefix(a.get(3))?;
+                let old = NetPrefix::from_addr(&addr, len)?;
+                let cfg = parse_route(a, 4)?;
+                self.i
+                    .replace_published_external_route(old, cfg, self.now)
+                    .map_err(E::from)
+            }
+            "unpublish" if a.get(2) != "dnssrp" && !a.get(2).is_empty() => {
+                let (addr, len) = parse_prefix(a.get(2))?;
+                let prefix = NetPrefix::from_addr(&addr, len)?;
+                self.i.unpublish_prefix(&prefix, self.now).map_err(E::from)
+            }
             "unpublish" if a.get(2) == "dnssrp" => {
                 self.i.unpublish_dns_srp_service(self.now);
                 Ok(())
@@ -317,40 +342,8 @@ where
     pub(crate) fn prefix(&mut self, a: &Args<'_>) -> R {
         match a.get(1) {
             "add" => {
-                let (addr, len) = parse_prefix(a.get(2))?;
-                let prefix = NetPrefix::from_addr(&addr, len)?;
-                let mut flags = BrFlags::default();
-                let mut stable = false;
-                let mut pref = 0i8;
-                for arg in a.rest(3) {
-                    if let Some(p) = parse_preference(arg) {
-                        pref = p;
-                        continue;
-                    }
-                    for c in arg.chars() {
-                        match c {
-                            'p' => flags = flags.with(BrFlags::PREFERRED, true),
-                            'a' => flags = flags.with(BrFlags::SLAAC, true),
-                            'd' => flags = flags.with(BrFlags::DHCP, true),
-                            'c' => flags = flags.with(BrFlags::CONFIGURE, true),
-                            'r' => flags = flags.with(BrFlags::DEFAULT_ROUTE, true),
-                            'o' => flags = flags.with(BrFlags::ON_MESH, true),
-                            's' => stable = true,
-                            'n' => flags = flags.with(BrFlags::ND_DNS, true),
-                            'D' => flags = flags.with(BrFlags::DP, true),
-                            '-' => {}
-                            _ => return Err(E::INVALID_ARGS),
-                        }
-                    }
-                }
-                flags.0 |= ((pref as u16) & 3) << 14;
-                self.i
-                    .add_on_mesh_prefix(OnMeshPrefixConfig {
-                        prefix,
-                        flags,
-                        stable,
-                    })
-                    .map_err(E::from)
+                let cfg = parse_on_mesh(a, 2)?;
+                self.i.add_on_mesh_prefix(cfg).map_err(E::from)
             }
             "remove" => {
                 let (addr, len) = parse_prefix(a.get(2))?;
@@ -364,30 +357,7 @@ where
     pub(crate) fn route(&mut self, a: &Args<'_>) -> R {
         match a.get(1) {
             "add" => {
-                let (addr, len) = parse_prefix(a.get(2))?;
-                let prefix = NetPrefix::from_addr(&addr, len)?;
-                let mut cfg = ExternalRouteConfig {
-                    prefix,
-                    preference: 0,
-                    nat64: false,
-                    adv_pio: false,
-                    stable: false,
-                };
-                for arg in a.rest(3) {
-                    if let Some(p) = parse_preference(arg) {
-                        cfg.preference = p;
-                        continue;
-                    }
-                    for c in arg.chars() {
-                        match c {
-                            's' => cfg.stable = true,
-                            'n' => cfg.nat64 = true,
-                            'p' => cfg.adv_pio = true,
-                            '-' => {}
-                            _ => return Err(E::INVALID_ARGS),
-                        }
-                    }
-                }
+                let cfg = parse_route(a, 2)?;
                 self.i.add_external_route(cfg).map_err(E::from)
             }
             "remove" => {
@@ -398,4 +368,70 @@ where
             _ => Err(E::INVALID_COMMAND),
         }
     }
+}
+
+/// `<prefix> [padcrosnD] [high|med|low]` from argument `at` on (OT
+/// `ParsePrefix`).
+fn parse_on_mesh(a: &Args<'_>, at: usize) -> core::result::Result<OnMeshPrefixConfig, E> {
+    let (addr, len) = parse_prefix(a.get(at))?;
+    let prefix = NetPrefix::from_addr(&addr, len)?;
+    let mut flags = BrFlags::default();
+    let mut stable = false;
+    let mut pref = 0i8;
+    for arg in a.rest(at + 1) {
+        if let Some(p) = parse_preference(arg) {
+            pref = p;
+            continue;
+        }
+        for c in arg.chars() {
+            match c {
+                'p' => flags = flags.with(BrFlags::PREFERRED, true),
+                'a' => flags = flags.with(BrFlags::SLAAC, true),
+                'd' => flags = flags.with(BrFlags::DHCP, true),
+                'c' => flags = flags.with(BrFlags::CONFIGURE, true),
+                'r' => flags = flags.with(BrFlags::DEFAULT_ROUTE, true),
+                'o' => flags = flags.with(BrFlags::ON_MESH, true),
+                's' => stable = true,
+                'n' => flags = flags.with(BrFlags::ND_DNS, true),
+                'D' => flags = flags.with(BrFlags::DP, true),
+                '-' => {}
+                _ => return Err(E::INVALID_ARGS),
+            }
+        }
+    }
+    flags.0 |= ((pref as u16) & 3) << 14;
+    Ok(OnMeshPrefixConfig {
+        prefix,
+        flags,
+        stable,
+    })
+}
+
+/// `<prefix> [sn] [high|med|low]` from argument `at` on (OT `ParseRoute`).
+fn parse_route(a: &Args<'_>, at: usize) -> core::result::Result<ExternalRouteConfig, E> {
+    let (addr, len) = parse_prefix(a.get(at))?;
+    let prefix = NetPrefix::from_addr(&addr, len)?;
+    let mut cfg = ExternalRouteConfig {
+        prefix,
+        preference: 0,
+        nat64: false,
+        adv_pio: false,
+        stable: false,
+    };
+    for arg in a.rest(at + 1) {
+        if let Some(p) = parse_preference(arg) {
+            cfg.preference = p;
+            continue;
+        }
+        for c in arg.chars() {
+            match c {
+                's' => cfg.stable = true,
+                'n' => cfg.nat64 = true,
+                'p' => cfg.adv_pio = true,
+                '-' => {}
+                _ => return Err(E::INVALID_ARGS),
+            }
+        }
+    }
+    Ok(cfg)
 }

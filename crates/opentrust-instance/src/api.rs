@@ -930,6 +930,73 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.poll(now);
     }
 
+    /// Run a publisher operation on a prefix or route and deliver its events.
+    fn publisher_prefix_op(
+        &mut self,
+        now: Instant,
+        f: impl FnOnce(
+            &mut opentrust_mesh::netdata::publisher::Publisher<3>,
+            &mut opentrust_mesh::netdata::local::LocalData,
+            &mut dyn FnMut(opentrust_mesh::netdata::publisher::PublisherEvent),
+        ) -> Result<()>,
+    ) -> Result<()> {
+        let mut pe: heapless::Vec<_, 4> = heapless::Vec::new();
+        let r = f(&mut self.publisher, &mut self.local, &mut |e| {
+            let _ = pe.push(e);
+        });
+        for e in pe {
+            self.core.push_event(Event::Publisher(e));
+        }
+        self.poll(now);
+        r
+    }
+
+    /// Publish an on-mesh prefix: it is added to the local Network Data only
+    /// while fewer than the desired number of better entries exist (OT
+    /// `otNetDataPublishOnMeshPrefix`).
+    pub fn publish_on_mesh_prefix(&mut self, cfg: OnMeshPrefixConfig, now: Instant) -> Result<()> {
+        self.publisher_prefix_op(now, |p, l, ev| p.publish_on_mesh_prefix(cfg, l, now, ev))
+    }
+
+    /// Publish an external route (OT `otNetDataPublishExternalRoute`).
+    pub fn publish_external_route(&mut self, cfg: ExternalRouteConfig, now: Instant) -> Result<()> {
+        self.publisher_prefix_op(now, |p, l, ev| p.publish_external_route(cfg, l, now, ev))
+    }
+
+    /// Replace the published external route `old` (OT
+    /// `otNetDataReplacePublishedExternalRoute`).
+    pub fn replace_published_external_route(
+        &mut self,
+        old: opentrust_mesh::netdata::tlv::NetPrefix,
+        cfg: ExternalRouteConfig,
+        now: Instant,
+    ) -> Result<()> {
+        self.publisher_prefix_op(now, |p, l, ev| {
+            p.replace_external_route(old, cfg, l, now, ev)
+        })
+    }
+
+    /// Stop publishing a prefix or route (OT `otNetDataUnpublishPrefix`).
+    pub fn unpublish_prefix(
+        &mut self,
+        prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
+        now: Instant,
+    ) -> Result<()> {
+        let r = self.publisher_prefix_op(now, |p, l, ev| p.unpublish_prefix(prefix, l, ev));
+        self.notifier
+            .event(opentrust_mesh::netdata::notifier::NotifierEvent::LocalChanged);
+        r
+    }
+
+    /// The published prefix or route is in the local Network Data (OT
+    /// `otNetDataIsPrefixAdded`).
+    pub fn is_published_prefix_added(
+        &self,
+        prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
+    ) -> bool {
+        self.publisher.is_prefix_added(prefix)
+    }
+
     /// Stop publishing the DNS/SRP service.
     pub fn unpublish_dns_srp_service(&mut self, now: Instant) {
         let mut pe: heapless::Vec<_, 4> = heapless::Vec::new();

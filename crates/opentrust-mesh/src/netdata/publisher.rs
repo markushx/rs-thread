@@ -226,6 +226,23 @@ impl<const E: usize> Publisher<E> {
         self.publish_item(cfg.prefix, Item::OnMesh(cfg), local, now, ev)
     }
 
+    /// Replace the published entry for `old` with the external route `cfg`
+    /// (OT `ReplacePublishedExternalRoute`); a new entry if `old` is not
+    /// published.
+    pub fn replace_external_route<const P: usize, const R: usize, const S: usize>(
+        &mut self,
+        old: NetPrefix,
+        cfg: ExternalRouteConfig,
+        local: &mut LocalData<P, R, S>,
+        now: Instant,
+        ev: &mut dyn FnMut(PublisherEvent),
+    ) -> Result<()> {
+        if !cfg.stable {
+            return Err(Error::InvalidArgs);
+        }
+        self.publish_item(old, Item::Route(cfg), local, now, ev)
+    }
+
     /// Publish an external route (OT `PublishExternalRoute`).
     pub fn publish_external_route<const P: usize, const R: usize, const S: usize>(
         &mut self,
@@ -240,6 +257,8 @@ impl<const E: usize> Publisher<E> {
         self.publish_item(cfg.prefix, Item::Route(cfg), local, now, ev)
     }
 
+    /// Publish `item` in the entry that holds `prefix` (or a free one); the
+    /// item's own prefix differs from `prefix` when an entry is replaced.
     fn publish_item<const P: usize, const R: usize, const S: usize>(
         &mut self,
         prefix: NetPrefix,

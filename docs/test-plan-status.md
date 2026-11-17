@@ -218,7 +218,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
 | Link metrics / enhanced ack (Thread 1.2) | 5 | 0 | 3 | 2 | 0 | 0 |
 | Python unit tests of the cert libraries (no nodes) | 8 | 0 | 0 | 0 | 0 | 8 |
-| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 23 | 0 | 8 | 1 | 0 |
+| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 24 | 0 | 7 | 1 | 0 |
 
 #### SRP
 
@@ -318,7 +318,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_leader_reboot_multiple_link_request` | pass | 2/2 |  |
 | `test_mac_scan` | pass | 2/2 |  |
 | `test_mle_msg_key_seq_jump` | pass | 2/2 | reestablish link with a child, key sequence stored while disabled |
-| `test_netdata_publisher` | fail | 1/2 | fails: all |
+| `test_netdata_publisher` | pass | 2/2 | `netdata publish prefix|route|replace|dnssrp`, `netdata unpublish`, desired entry counts and preference rules |
 | `test_on_mesh_prefix` | pass | 2/2 |  |
 | `test_ping` | pass | 2/2 |  |
 | `test_ping_lla_src` | pass | 2/2 |  |
