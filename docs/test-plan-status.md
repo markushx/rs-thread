@@ -218,7 +218,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | CSL | 2 | 1 | 0 | 0 | 1 | 0 |
 | Link metrics / enhanced ack (Thread 1.2) | 5 | 0 | 3 | 2 | 0 | 0 |
 | Python unit tests of the cert libraries (no nodes) | 8 | 0 | 0 | 0 | 0 | 8 |
-| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 21 | 0 | 10 | 1 | 0 |
+| Other (routing, MLE, ping, network data, diagnostics, ...) | 32 | 22 | 0 | 9 | 1 | 0 |
 
 #### SRP
 
@@ -311,7 +311,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_detach` | fail | 1/2 | fails: all; router stays `detached` (`detached` != `router`) |
 | `test_diag` | fail | 1/2 | fails: all; `diag` CLI missing |
 | `test_history_tracker` | fail | 1/2 | fails: all; `Error 35: InvalidCommand` (history CLI missing) |
-| `test_inform_previous_parent_on_reattach` | fail | 1/2 | fails: all; old parent still lists the child |
+| `test_inform_previous_parent_on_reattach` | pass | 2/2 | empty datagram to the previous parent, stale child removal also for plain frames |
 | `test_ipv6_fragmentation` | fail | 1/2 | fails: all; timeout (large ping / fragmentation path) |
 | `test_ipv6_source_selection` | pass | 2/2 |  |
 | `test_key_rotation_and_key_guard_time` | pass | 2/2 | Dataset Updater; minimum key rotation time 2 as OT |

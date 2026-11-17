@@ -234,6 +234,7 @@ impl<const C: usize> Mle<C> {
             sed_datagram_count: 0,
             csl_accuracy: crate::tlv::CslClockAccuracy::WORST,
         });
+        self.previous_parent_rloc = info.rloc16.parent();
         self.set_role(env, Role::Detached);
         self.set_rloc16(env, info.rloc16);
         env.keys_mut().start(now);

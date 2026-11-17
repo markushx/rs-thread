@@ -11,9 +11,7 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
-#[cfg(feature = "ftd")]
-use crate::util::parse_u16;
-use crate::util::{Args, E, R, hex, ln, out, table_header};
+use crate::util::{Args, E, R, hex, ln, out, parse_u16, table_header};
 
 /// Thread version reported for neighbors (Thread 1.4).
 const NEIGHBOR_VERSION: u8 = 5;
@@ -29,6 +27,7 @@ where
         let table = match a.get(1) {
             "table" => true,
             "list" => false,
+            id if !id.is_empty() => return self.child_info(id),
             _ => return Err(E::INVALID_COMMAND),
         };
         if table {
@@ -60,8 +59,8 @@ where
                 out!(self.o, "| {:10} ", c.timeout_secs);
                 // Age, LQ In and QMsgCnt are not tracked per child by the
                 // instance API.
-                out!(self.o, "| {:10} ", 0);
-                out!(self.o, "| {:5} ", 0);
+                out!(self.o, "| {:10} ", c.age_secs);
+                out!(self.o, "| {:5} ", c.link_quality_in);
                 out!(self.o, "| {:4} ", c.network_data_version);
                 out!(self.o, "|{:1}", u8::from(c.rx_on_when_idle));
                 out!(self.o, "|{:1}", u8::from(c.full_thread_device));
@@ -80,6 +79,49 @@ where
         if !table {
             ln!(self.o);
         }
+        Ok(())
+    }
+
+    /// `child <id>`: the id is a child ID or an RLOC16 (OT
+    /// `otThreadGetChildInfoById`).
+    fn child_info(&mut self, id: &str) -> R {
+        let id = parse_u16(id)?;
+        let id = if id & !0x1ff != 0 { id & 0x1ff } else { id };
+        let c = self
+            .i
+            .child_table()
+            .into_iter()
+            .find(|c| c.rloc16.0 & 0x1ff == id)
+            .ok_or(E::NOT_FOUND)?;
+        let o = &mut *self.o;
+        ln!(o, "Child ID: {}", c.rloc16.0 & 0x1ff);
+        ln!(o, "Rloc: {:04x}", c.rloc16.0);
+        out!(o, "Ext Addr: ");
+        hex(o, &c.ext.0);
+        ln!(o);
+        out!(o, "Mode: ");
+        let mut any = false;
+        for (on, ch) in [
+            (c.rx_on_when_idle, 'r'),
+            (c.full_thread_device, 'd'),
+            (c.full_thread_device, 'n'),
+        ] {
+            if on {
+                let _ = o.write_char(ch);
+                any = true;
+            }
+        }
+        if !any {
+            let _ = o.write_char('-');
+        }
+        ln!(o);
+        ln!(o, "CSL Synchronized: {} ", u8::from(c.csl_synchronized));
+        ln!(o, "Net Data: {}", c.network_data_version);
+        ln!(o, "Timeout: {}", c.timeout_secs);
+        ln!(o, "Age: {}", c.age_secs);
+        ln!(o, "Link Quality In: {}", c.link_quality_in);
+        ln!(o, "RSSI: {}", c.average_rssi);
+        ln!(o, "Supervision Interval: {}", c.supervision_interval);
         Ok(())
     }
 
@@ -264,8 +306,52 @@ where
         match a.get(1) {
             "" => {
                 ln!(self.o, "mac");
+                ln!(self.o, "mle");
                 Ok(())
             }
+            "mle" => match a.get(2) {
+                "" => {
+                    let c = self.i.mle_counters();
+                    let k = c.counts;
+                    let o = &mut *self.o;
+                    for (n, v) in [
+                        ("Role Disabled", k.disabled_role),
+                        ("Role Detached", k.detached_role),
+                        ("Role Child", k.child_role),
+                        ("Role Router", k.router_role),
+                        ("Role Leader", k.leader_role),
+                        ("Attach Attempts", k.attach_attempts),
+                        ("Partition Id Changes", k.partition_id_changes),
+                        (
+                            "Better Partition Attach Attempts",
+                            k.better_partition_attach_attempts,
+                        ),
+                        (
+                            "Better Parent Attach Attempts",
+                            k.better_parent_attach_attempts,
+                        ),
+                        ("Parent Changes", k.parent_changes),
+                    ] {
+                        ln!(o, "{n}: {v}");
+                    }
+                    for (n, v) in [
+                        ("Disabled", c.disabled_ms),
+                        ("Detached", c.detached_ms),
+                        ("Child", c.child_ms),
+                        ("Router", c.router_ms),
+                        ("Leader", c.leader_ms),
+                    ] {
+                        ln!(o, "Time {n} Milli: {v}");
+                    }
+                    ln!(o, "Time Tracked Milli: {}", c.tracked_ms);
+                    Ok(())
+                }
+                "reset" if a.get(3).is_empty() => {
+                    self.i.reset_mle_counters();
+                    Ok(())
+                }
+                _ => Err(E::INVALID_COMMAND),
+            },
             "mac" => {
                 let c = *self.i.mac_counters();
                 let o = &mut *self.o;

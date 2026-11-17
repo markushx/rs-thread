@@ -41,6 +41,10 @@ pub(crate) struct GlueState {
     pub replay_drops: u32,
     pub commissioner_aloc: Option<u16>,
     pub key_sequence: Option<u32>,
+    /// Milliseconds spent in each role up to `role_time_mark` (indexed by
+    /// [`crate::diag::role_index`]).
+    pub role_ms: [u64; 5],
+    pub role_time_mark: u64,
 }
 
 impl GlueState {
@@ -173,6 +177,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         match ev {
             MleEvent::RoleChanged { old, new } => {
+                let t = now.as_millis();
+                self.glue.role_ms[crate::diag::role_index(old)] +=
+                    t.saturating_sub(self.glue.role_time_mark);
+                self.glue.role_time_mark = t;
                 self.notifier.event(NotifierEvent::RoleChanged);
                 #[cfg(feature = "ftd")]
                 if new == Role::Leader {
@@ -194,6 +202,15 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     self.fwd.clear();
                 }
                 self.core.push_event(Event::RoleChanged { old, new });
+            }
+            MleEvent::InformPreviousParent { rloc16 } => {
+                // OT `InformPreviousParent`: an empty datagram (next header
+                // "none") to the previous parent's RLOC, so that it drops
+                // the child.
+                let dst = self.core.cfg.cur.mesh_local_prefix.rloc(rloc16);
+                let mut info = opentrust_net::ip6::SendInfo::new(dst);
+                info.src = Some(self.core.ml_eid_addr());
+                let _ = self.ip6_send(now, &info, opentrust_net::header::PROTO_NONE, &[]);
             }
             MleEvent::Rloc16Changed(r) => {
                 self.core.push_event(Event::Rloc16Changed(r));

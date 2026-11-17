@@ -60,7 +60,7 @@ pub mod security;
 pub mod tlv;
 
 pub use env::{MleEnv, MleEvent, Role, StoredDataset};
-pub use mle::{Mle, MleConfig};
+pub use mle::{Mle, MleConfig, MleCounters};
 pub use router_config::{DeviceProperties, PowerSupply, RouterConfig, RoutingPolicy};
 
 #[cfg(all(test, feature = "ftd"))]

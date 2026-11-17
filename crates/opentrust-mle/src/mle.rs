@@ -126,10 +126,56 @@ pub(crate) enum NbRef {
     Router(u8),
 }
 
+/// Event counters of the MLE layer (OT `Mle::Counters`; the time spent in
+/// each role is tracked by the instance, which owns the clock).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MleCounters {
+    /// Times the device entered the Disabled role.
+    pub disabled_role: u16,
+    /// Times the device entered the Detached role.
+    pub detached_role: u16,
+    /// Times the device entered the Child role.
+    pub child_role: u16,
+    /// Times the device entered the Router role.
+    pub router_role: u16,
+    /// Times the device entered the Leader role.
+    pub leader_role: u16,
+    /// Attach attempts while detached.
+    pub attach_attempts: u16,
+    /// Changes of the partition ID.
+    pub partition_id_changes: u16,
+    /// Attempts to attach to a better partition.
+    pub better_partition_attach_attempts: u16,
+    /// Attempts to find a better parent.
+    pub better_parent_attach_attempts: u16,
+    /// Times the parent changed.
+    pub parent_changes: u16,
+}
+
+impl MleCounters {
+    /// All counters zero.
+    pub const fn new() -> Self {
+        Self {
+            disabled_role: 0,
+            detached_role: 0,
+            child_role: 0,
+            router_role: 0,
+            leader_role: 0,
+            attach_attempts: 0,
+            partition_id_changes: 0,
+            better_partition_attach_attempts: 0,
+            better_parent_attach_attempts: 0,
+            parent_changes: 0,
+        }
+    }
+}
+
 /// The MLE state machine. `C` is the child table capacity (0 for end
 /// devices).
 #[derive(Debug)]
 pub struct Mle<const C: usize> {
+    pub(crate) counters: MleCounters,
+    pub(crate) previous_parent_rloc: Rloc16,
     pub(crate) cfg: MleConfig,
     pub(crate) role: Role,
     pub(crate) rloc16: Rloc16,
@@ -157,6 +203,8 @@ impl<const C: usize> Mle<C> {
     /// A stopped core ([`Role::Disabled`]).
     pub fn new(cfg: MleConfig) -> Self {
         Self {
+            counters: MleCounters::new(),
+            previous_parent_rloc: Rloc16::INVALID,
             cfg,
             role: Role::Disabled,
             rloc16: Rloc16::INVALID,
@@ -188,6 +236,17 @@ impl<const C: usize> Mle<C> {
     }
 
     // ------------------------------------------------------------ accessors
+
+    /// The MLE counters (OT `Mle::Counters`, without the role times, which
+    /// the instance tracks).
+    pub fn counters(&self) -> &MleCounters {
+        &self.counters
+    }
+
+    /// Reset the MLE counters (OT `ResetCounters`).
+    pub fn reset_counters(&mut self) {
+        self.counters = MleCounters::new();
+    }
 
     /// Current role.
     pub fn role(&self) -> Role {
@@ -418,6 +477,15 @@ impl<const C: usize> Mle<C> {
         if self.role != role {
             let old = self.role;
             self.role = role;
+            let c = &mut self.counters;
+            let n = match role {
+                Role::Disabled => &mut c.disabled_role,
+                Role::Detached => &mut c.detached_role,
+                Role::Child => &mut c.child_role,
+                Role::Router => &mut c.router_role,
+                Role::Leader => &mut c.leader_role,
+            };
+            *n = n.wrapping_add(1);
             self.store_pending |= role.is_attached();
             if role != Role::Child && self.csl_applied.is_some() {
                 self.csl_applied = None;
@@ -459,6 +527,7 @@ impl<const C: usize> Mle<C> {
     /// `SetLeaderData`): the router table of the old partition is void.
     pub(crate) fn update_leader_data<E: MleEnv>(&mut self, env: &mut E, ld: LeaderData) {
         if ld.partition_id != self.leader_data.partition_id {
+            self.counters.partition_id_changes = self.counters.partition_id_changes.wrapping_add(1);
             #[cfg(feature = "ftd")]
             self.handle_partition_change(env);
             self.leader_data = ld;

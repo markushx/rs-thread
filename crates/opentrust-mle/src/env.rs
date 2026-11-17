@@ -104,6 +104,13 @@ pub enum MleEvent {
     },
     /// The parent was lost (timeouts, rejection); a re-attach follows.
     ParentLost,
+    /// The device attached to a new parent: the previous parent (given by
+    /// its RLOC16) is to be told so it drops the child (OT
+    /// `InformPreviousParent`).
+    InformPreviousParent {
+        /// RLOC16 of the previous parent.
+        rloc16: Rloc16,
+    },
     /// Network Data of the given Leader Data was stored through
     /// [`MleEnv::set_network_data`].
     NetworkDataChanged,

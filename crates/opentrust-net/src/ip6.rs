@@ -478,7 +478,10 @@ impl<const U: usize, const M: usize, const SEEDS: usize, const BUFS: usize> Ip6<
                 receive = false;
             }
         }
-        if p.upper_proto == PROTO_NONE {
+        // Only a datagram for this device is dropped; one that is merely
+        // forwarded may carry no payload (OT `HandleExtensionHeaders` only
+        // looks at the headers while receiving).
+        if receive && p.upper_proto == PROTO_NONE {
             return Err(Error::Drop);
         }
 

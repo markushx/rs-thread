@@ -116,7 +116,7 @@ pub use commissioning::BaDatagram;
 pub use commissioning::InstanceCrypto;
 #[cfg(feature = "ftd")]
 pub use diag::RouteInfo;
-pub use diag::{ChildInfo, NeighborInfo, tlv as diag_tlv};
+pub use diag::{ChildInfo, MleCountersInfo, NeighborInfo, tlv as diag_tlv};
 pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES, SRP_SERVICES};
 #[cfg(feature = "srp-server")]
 pub use dns_srp::{RECORDS_MSG, records_of};

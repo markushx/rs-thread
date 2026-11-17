@@ -257,9 +257,23 @@ impl<const C: usize> Mle<C> {
         self.attach.candidate = None;
         self.attach.state = AttachState::Start;
         self.attach.mode = mode;
+        match mode {
+            AttachMode::BetterPartition => {
+                self.counters.better_partition_attach_attempts = self
+                    .counters
+                    .better_partition_attach_attempts
+                    .wrapping_add(1);
+            }
+            AttachMode::BetterParent => {
+                self.counters.better_parent_attach_attempts =
+                    self.counters.better_parent_attach_attempts.wrapping_add(1);
+            }
+            _ => {}
+        }
         let delay = self.attach_start_delay(env);
         self.attach.deadline = Some(now.saturating_add(delay));
         if self.role == Role::Detached {
+            self.counters.attach_attempts = self.counters.attach_attempts.wrapping_add(1);
             self.attach.counter = self.attach.counter.saturating_add(1);
         }
     }
@@ -898,6 +912,12 @@ impl<const C: usize> Mle<C> {
             parent: ext,
             parent_rloc16: source,
         });
+        let previous = self.previous_parent_rloc;
+        self.previous_parent_rloc = source;
+        if previous != Rloc16::INVALID && previous != source {
+            self.counters.parent_changes = self.counters.parent_changes.wrapping_add(1);
+            env.event(MleEvent::InformPreviousParent { rloc16: previous });
+        }
         Ok(RxClass::Peer)
     }
 }

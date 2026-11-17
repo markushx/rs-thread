@@ -128,6 +128,37 @@ pub struct NeighborInfo {
     pub is_child: bool,
 }
 
+/// Index of a role in the per-role time array.
+pub(crate) const fn role_index(r: opentrust_mle::Role) -> usize {
+    use opentrust_mle::Role;
+    match r {
+        Role::Disabled => 0,
+        Role::Detached => 1,
+        Role::Child => 2,
+        Role::Router => 3,
+        Role::Leader => 4,
+    }
+}
+
+/// The MLE counters (OT `otMleCounters`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MleCountersInfo {
+    /// The event counters.
+    pub counts: opentrust_mle::MleCounters,
+    /// Milliseconds in the Disabled role.
+    pub disabled_ms: u64,
+    /// Milliseconds in the Detached role.
+    pub detached_ms: u64,
+    /// Milliseconds in the Child role.
+    pub child_ms: u64,
+    /// Milliseconds in the Router role.
+    pub router_ms: u64,
+    /// Milliseconds in the Leader role.
+    pub leader_ms: u64,
+    /// Milliseconds tracked by the role times.
+    pub tracked_ms: u64,
+}
+
 /// An entry of the child table (OT `otChildInfo`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildInfo {
@@ -145,6 +176,10 @@ pub struct ChildInfo {
     pub full_thread_device: bool,
     /// Network Data version the child last received.
     pub network_data_version: u8,
+    /// Seconds since a message was last heard from the child.
+    pub age_secs: u32,
+    /// Incoming link quality (0..=3).
+    pub link_quality_in: u8,
     /// Supervision interval the child asked for, seconds (0 = none).
     pub supervision_interval: u16,
     /// CSL transmissions of the child are synchronized.
@@ -477,6 +512,30 @@ where
         self.diag_request(opentrust_coap::uri::Uri::DiagnosticReset, dst, types, now)
     }
 
+    /// The MLE counters (OT `otThreadGetMleCounters`).
+    pub fn mle_counters(&self) -> MleCountersInfo {
+        let mut ms = self.glue.role_ms;
+        let t = self.core.now.as_millis();
+        ms[role_index(self.mle.role())] += t.saturating_sub(self.glue.role_time_mark);
+        MleCountersInfo {
+            counts: *self.mle.counters(),
+            disabled_ms: ms[0],
+            detached_ms: ms[1],
+            child_ms: ms[2],
+            router_ms: ms[3],
+            leader_ms: ms[4],
+            tracked_ms: ms.iter().sum(),
+        }
+    }
+
+    /// Reset the MLE counters (OT `otThreadResetMleCounters`), including the
+    /// role times.
+    pub fn reset_mle_counters(&mut self) {
+        self.mle.reset_counters();
+        self.glue.role_ms = [0; 5];
+        self.glue.role_time_mark = self.core.now.as_millis();
+    }
+
     /// The MAC counters (OT `otLinkGetCounters`).
     pub fn mac_counters(&self) -> &MacCounters {
         self.core.mac.counters()
@@ -522,6 +581,12 @@ where
                 rx_on_when_idle: c.neighbor.mode.rx_on_when_idle(),
                 full_thread_device: c.neighbor.mode.full_thread_device(),
                 network_data_version: c.network_data_version,
+                age_secs: self
+                    .core
+                    .now
+                    .saturating_duration_since(c.neighbor.last_heard)
+                    .as_secs() as u32,
+                link_quality_in: c.neighbor.link_info.link_quality_in() as u8,
                 supervision_interval: c.supervision_interval,
                 csl_synchronized: c.csl_synchronized,
             });

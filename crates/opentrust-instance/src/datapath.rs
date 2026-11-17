@@ -503,15 +503,20 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         {
             self.mle.parent_frame_received(now);
         }
-        // The mesh source of a mesh header frame, to find children that
-        // moved (OT `UpdateEidRlocCacheAndStaleChild`).
+        // The mesh source of a mesh header frame (the short MAC source
+        // otherwise), to find children that moved (OT
+        // `UpdateEidRlocCacheAndStaleChild`).
         let mesh_src = match opentrust_lowpan::forward::parse_frame(payload) {
             Ok(opentrust_lowpan::forward::LowpanFrame::Mesh { header, .. })
                 if !dst.is_broadcast() =>
             {
                 Some(Rloc16(header.source))
             }
-            _ => None,
+            Ok(opentrust_lowpan::forward::LowpanFrame::Mesh { .. }) => None,
+            _ => match src {
+                Address::Short(s) if !dst.is_broadcast() => Some(Rloc16(s.0)),
+                _ => None,
+            },
         };
         let mut dg = [0u8; opentrust_mesh::forwarder::MTU];
         let mut dg_len = 0usize;
