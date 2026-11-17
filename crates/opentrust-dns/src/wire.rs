@@ -241,11 +241,11 @@ impl<'a> Name<'a> {
     }
 
     /// Does this name equal `labels` (ASCII case-insensitive)?
-    pub fn eq_labels(&self, labels: &[&str]) -> bool {
+    pub fn eq_labels<L: AsRef<[u8]>>(&self, labels: &[L]) -> bool {
         let mut it = self.labels();
         for want in labels {
             match it.next() {
-                Some(Ok(l)) if l.eq_ignore_ascii_case(want.as_bytes()) => {}
+                Some(Ok(l)) if l.eq_ignore_ascii_case(want.as_ref()) => {}
                 _ => return false,
             }
         }
@@ -705,8 +705,29 @@ impl<'a> Writer<'a> {
         self.write_labels(&labels[..k], compress)
     }
 
+    /// Write the name in `wire` (uncompressed wire format with the root
+    /// label) as a name.
+    pub fn write_wire_name(&mut self, wire: &[u8], compress: bool) -> Result<()> {
+        let mut labels: [&[u8]; 127] = [&[]; 127];
+        let mut k = 0usize;
+        let mut i = 0usize;
+        loop {
+            let n = usize::from(*wire.get(i).ok_or(Error::Parse)?);
+            if n == 0 {
+                break;
+            }
+            if n > MAX_LABEL_LEN || k >= labels.len() {
+                return Err(Error::Parse);
+            }
+            labels[k] = wire.get(i + 1..i + 1 + n).ok_or(Error::Parse)?;
+            k += 1;
+            i += 1 + n;
+        }
+        self.write_labels(&labels[..k], compress)
+    }
+
     /// Write `labels` as a name.
-    pub fn write_labels(&mut self, labels: &[&str], compress: bool) -> Result<()> {
+    pub fn write_labels<L: AsRef<[u8]>>(&mut self, labels: &[L], compress: bool) -> Result<()> {
         let start_len = self.len;
         let start_targets = self.ntargets;
         let r = self.write_labels_inner(labels, compress);
@@ -717,7 +738,7 @@ impl<'a> Writer<'a> {
         r
     }
 
-    fn write_labels_inner(&mut self, labels: &[&str], compress: bool) -> Result<()> {
+    fn write_labels_inner<L: AsRef<[u8]>>(&mut self, labels: &[L], compress: bool) -> Result<()> {
         // Longest suffix already present in the message.
         let mut ptr_to = None;
         let mut emit = labels.len();
@@ -735,9 +756,10 @@ impl<'a> Writer<'a> {
             }
         }
         for l in &labels[..emit] {
+            let l = l.as_ref();
             let off = self.len;
             self.put(&[l.len() as u8])?;
-            self.put(l.as_bytes())?;
+            self.put(l)?;
             if compress && off <= MAX_POINTER_OFFSET && self.ntargets < MAX_COMPRESS_TARGETS {
                 self.targets[self.ntargets] = off as u16;
                 self.ntargets += 1;
