@@ -937,3 +937,14 @@ Where OpenThread's output is lossy, malformed or undefined for an input, OpenTru
 - `Instance::link_metrics_manager_set_enabled` (feature `link-metrics-manager`, on in `opentrust-cli`'s `linkmetrics` group, off elsewhere; about 450 B of `Instance`) ports `Utils::LinkMetricsManager`: after attach (5 s) and every 150 s it registers Enhanced-ACK probing for link margin and RSSI at each neighbor from `neighbor_table()`, renews it, drops neighbors that are gone or not Thread 1.2 capable and gives up after three attempts. OT starts and stops it from the role-changed notification; here `service_lmm` compares the role on every `poll`. The pool holds 16 subjects (OT: the child count). Enabling does not replace the application's link metrics callbacks as OT does: `Event::LinkMetricsManagement` / `Event::EnhAckLinkMetrics` are still delivered.
 - The acknowledged-data-frame keep-alive postponement only applies while the poll period equals the child-timeout based default (OT `mPollPeriod == GetDefaultPollPeriod()`). `Mac::set_mle_poll_period` tells the poll sender that default when the application set a shorter period with `set_poll_period`, because the two are merged to one period before the MAC. Without it every ping of a child polling every 2 s delayed its next poll by 2 s and the reply missed a 2 s ping timeout (LowPower 7.1.2).
 - `mac send emptydata` / `mac send datarequest` (reference device commands) are `Instance::send_mac_empty_data` / `send_mac_data_request`; the empty data frame goes to the parent's short address, secured, ack requested, direct (not through the forwarder's queues).
+
+## Stop / start after instance creation
+
+OpenThread restores the network information once, in Instance init. In
+OpenTrust the first `thread_start` after the instance was created does the
+same. A later start after `thread_stop` attaches from scratch for a child (the
+parent is invalid after a stop, as in OT), and restores the router role with
+Link Requests for a router or leader that was stopped without a graceful
+detach. OT keeps the RLOC16 in memory; OpenTrust reads the stored role instead.
+A router that detached gracefully (Address Release) attaches with a Parent
+Request on the next start.

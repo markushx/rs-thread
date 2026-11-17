@@ -427,6 +427,9 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     /// was created (OT restores it at initialisation only; a later
     /// stop / start attaches from scratch).
     pub(crate) restore_pending: bool,
+    /// A router sent an Address Release when it detached gracefully: its
+    /// RLOC16 is gone, the next start attaches with a Parent Request.
+    pub(crate) rloc_released: bool,
 }
 
 impl<S, C: InstanceCrypto, R> core::fmt::Debug for Instance<S, C, R> {
@@ -593,6 +596,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             addr_of_mut!((*p).ip6_enabled).write(false);
             addr_of_mut!((*p).started).write(false);
             addr_of_mut!((*p).restore_pending).write(true);
+            addr_of_mut!((*p).rloc_released).write(false);
             let inst = &mut *p;
             inst.restore_boot_identity();
             inst
