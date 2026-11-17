@@ -970,6 +970,7 @@ mod tests {
         i.set_active_dataset(&ds, now).unwrap();
         i.ip6_set_enabled(true);
         i.become_leader(now).unwrap();
+        i.poll(now);
         while i.poll_radio_action(now).is_some() {}
         let opts = opentrust_mle::env::TxOptions {
             channel: Some(21),
@@ -984,14 +985,17 @@ mod tests {
         let mut t = now;
         for _ in 0..50 {
             while let Some(a) = i.poll_radio_action(t) {
-                if let RadioAction::Transmit(tx) = a
-                    && tx.channel == 21
-                {
-                    let f =
-                        opentrust_mac::frame::Frame::parse(&tx.psdu[..tx.psdu.len() - 2]).unwrap();
-                    if f.dst_pan_id().map(|p| p.0) == Some(0xbeef) {
-                        seen = true;
+                if let RadioAction::Transmit(tx) = a {
+                    if tx.channel == 21 {
+                        let f = opentrust_mac::frame::Frame::parse(&tx.psdu[..tx.psdu.len() - 2])
+                            .unwrap();
+                        if f.dst_pan_id().map(|p| p.0) == Some(0xbeef) {
+                            seen = true;
+                        }
                     }
+                    // Other frames (Advertisements) finish, so that the
+                    // queue moves on.
+                    i.handle_radio_tx_done(opentrust_mac::mac::TxOutcome::Sent, t);
                 }
             }
             if seen {
