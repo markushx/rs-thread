@@ -40,6 +40,17 @@ pub const CHILDREN: usize = 10;
 
 /// UDP sockets of the application.
 pub const UDP_SOCKETS: usize = 5;
+/// Buffers that hold datagrams while an address query runs (the default of
+/// the forwarder; two full-size datagrams with IPv6 fragmentation).
+pub const HOLD_BUFS: usize = if cfg!(feature = "ip6-fragmentation") {
+    24
+} else {
+    12
+};
+/// Payload capacity of a queued UDP datagram.
+pub const UDP_BUF: usize = opentrust_net::header::MAX_DATAGRAM_LEN;
+/// The UDP socket table of the instance.
+pub type Sockets = opentrust_net::udp::UdpSockets<{ UDP_SOCKETS }, 2, { UDP_BUF }, 4, 16>;
 
 /// Network Data capacity in bytes.
 pub const NETDATA_LEN: usize = 512;

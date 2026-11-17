@@ -327,6 +327,8 @@ pub struct Ip6<
     /// Which echo requests are answered.
     pub echo_mode: EchoMode,
     limiter: ErrorLimiter,
+    #[cfg(feature = "ip6-fragmentation")]
+    reasm: crate::fragment::Reassembler,
 }
 
 impl<const U: usize, const M: usize, const SEEDS: usize, const BUFS: usize> Default
@@ -345,6 +347,8 @@ impl<const U: usize, const M: usize, const SEEDS: usize, const BUFS: usize> Ip6<
             mpl: Mpl::new(),
             echo_mode: EchoMode::All,
             limiter: ErrorLimiter::new(),
+            #[cfg(feature = "ip6-fragmentation")]
+            reasm: crate::fragment::Reassembler::new(),
         }
     }
 
@@ -461,10 +465,41 @@ impl<const U: usize, const M: usize, const SEEDS: usize, const BUFS: usize> Ip6<
         if p.routing && receive {
             return Err(Error::Drop);
         }
-        if p.fragment.is_some_and(|f| !f.is_atomic()) {
-            // No IPv6 reassembly: fragments are dropped as in OT without
-            // IP6_FRAGMENTATION_ENABLE.
-            return Err(Error::Drop);
+        if let Some(f) = p.fragment.filter(|f| !f.is_atomic()) {
+            // A fragment that is only forwarded passes untouched (OT looks
+            // at the extension headers only while receiving).
+            if receive {
+                #[cfg(feature = "ip6-fragmentation")]
+                {
+                    // OT `HandleFragment`: reassemble; the datagram is
+                    // handled again once complete.
+                    if depth > 0 {
+                        return Err(Error::Drop);
+                    }
+                    let n = self
+                        .reasm
+                        .add(ctx.now, datagram, p.upper_offset, &f, inner)?
+                        .ok_or(Error::Drop)?;
+                    let i =
+                        self.handle_at(ctx, meta, &mut inner[..n], &mut [], reply, depth + 1)?;
+                    out.deliver = i.deliver.map(|d| Delivery {
+                        from_inner: true,
+                        ..d
+                    });
+                    out.inner_forward_thread = i.forward_thread;
+                    out.reply_len = i.reply_len;
+                    out.forward_host = false;
+                    out.forward_thread = false;
+                    return Ok(out);
+                }
+                // No IPv6 reassembly: fragments for this device are dropped
+                // as in OT without IP6_FRAGMENTATION_ENABLE.
+                #[cfg(not(feature = "ip6-fragmentation"))]
+                {
+                    let _ = f;
+                    return Err(Error::Drop);
+                }
+            }
         }
         if let Some(opt) = p.mpl {
             let role = ctx.env.role();

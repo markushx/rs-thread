@@ -42,6 +42,8 @@ extern crate std;
 
 pub mod addr;
 pub mod checksum;
+#[cfg(feature = "ip6-fragmentation")]
+pub mod fragment;
 pub mod header;
 pub mod icmp6;
 pub mod ip6;

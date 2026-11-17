@@ -12,7 +12,12 @@ use crate::Ctx;
 use crate::util::{Args, E, Ip6, R, ln, out, parse_hex, parse_ip6, parse_u16};
 
 /// Largest payload of `udp send` and of a printed datagram.
-const MAX_PAYLOAD: usize = 512;
+/// Largest payload of `udp send -s` and of a printed datagram.
+const MAX_PAYLOAD: usize = if cfg!(feature = "ip6-fragmentation") {
+    opentrust_net::header::MAX_DATAGRAM_LEN - 48
+} else {
+    512
+};
 
 impl<S, C, Rn, W> Ctx<'_, S, C, Rn, W>
 where

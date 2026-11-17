@@ -431,9 +431,9 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) solicit: RouterIdOutbox,
     /// Non-cryptographic randomness (CoAP tokens, MPL and TMF jitter).
     pub(crate) prng: MacRng,
-    pub(crate) udp: UdpSockets<{ UDP_SOCKETS }>,
+    pub(crate) udp: stack::Sockets,
     pub(crate) resolver: AddressResolver<8>,
-    pub(crate) fwd: MeshForwarder<2, 2, 4>,
+    pub(crate) fwd: MeshForwarder<2, 2, 4, { stack::HOLD_BUFS }>,
     #[cfg(feature = "ftd")]
     pub(crate) leader: Leader<{ NETDATA_LEN }>,
     pub(crate) local: LocalData,

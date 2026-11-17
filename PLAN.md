@@ -114,7 +114,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` not planned
 - [x] DHCPv6 address allocation (OT `Dhcp6Client`/`Dhcp6Server`: Solicit / Rapid Commit / Reply, DHCP agent ALOCs; `opentrust-instance` `dhcp6`; needed by thread-cert 5.3.8 / 5.3.9)
 - [x] Domain Unicast Address client (Thread 1.2, `/n/dr`, `/n/dn`, duplicate DUA handling in `/a/ae`: `opentrust_mesh::dua`); `/b/bq` / `/b/bb` belong to the Backbone Router server role (Phase 9)
 - [x] Multicast Listener Registration (MLR, `/n/mr`) for subscribed multicast groups (`opentrust_mesh::mlr`, Phase 9)
-- [ ] IPv6 fragmentation/reassembly above the 6LoWPAN layer (OT `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`, off by default; not needed for 1280-byte Thread datagrams)
+- [x] IPv6 fragmentation/reassembly above the 6LoWPAN layer (OT `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`; feature `ip6-fragmentation` of `opentrust-net` / `opentrust-instance` / `opentrust-cli`, on in the simulator nodes, off in the firmware; `test_ipv6_fragmentation` passes)
 - [ ] Host (border router) interface: `RemoveMplOption` before passing to host, host-origin multicast policy (Phase 9, border routing)
 
 ## Phase 5 – CoAP / CoAPS

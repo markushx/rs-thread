@@ -13,6 +13,9 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
+# IPv6 fragmentation and reassembly above 6LoWPAN (OT
+# `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`): datagrams of up to 2000 bytes.
+ip6-fragmentation = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-lowpan/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-lowpan/log"]
 

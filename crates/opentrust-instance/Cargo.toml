@@ -27,6 +27,10 @@ tcat = ["opentrust-meshcop/tcat"]
 scan-servers = []
 # The Link Metrics Manager (OT `Utils::LinkMetricsManager`).
 link-metrics-manager = []
+# IPv6 fragmentation and reassembly above 6LoWPAN (OT
+# `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`): UDP datagrams of up to 1952
+# bytes. Costs RAM (reassembly slots, larger buffers); off in firmware.
+ip6-fragmentation = ["opentrust-net/ip6-fragmentation"]
 
 # The SRP server (OT `Srp::Server`): registers hosts and services of clients
 # in the mesh, publishes itself in the Network Data.

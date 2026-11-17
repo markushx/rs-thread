@@ -31,8 +31,16 @@ pub use opentrust_lowpan::ip6::{
 pub const PROTO_NONE: u8 = 59;
 
 /// Maximum IPv6 datagram length handled (OT `OPENTHREAD_CONFIG_IP6_MAX_DATAGRAM_LENGTH`
-/// = IPv6 minimum MTU).
-pub const MAX_DATAGRAM_LEN: usize = 1280;
+/// = IPv6 minimum MTU; with the `ip6-fragmentation` feature the size of a
+/// reassembled datagram, OT `IP6_MAX_ASSEMBLED_DATAGRAM`).
+pub const MAX_DATAGRAM_LEN: usize = if cfg!(feature = "ip6-fragmentation") {
+    2000
+} else {
+    1280
+};
+/// IPv6 minimum MTU: the largest datagram sent in one piece and the largest
+/// ICMPv6 error message.
+pub const MIN_MTU: usize = 1280;
 /// Default hop limit for originated datagrams (OT `kDefaultHopLimit`).
 pub const DEFAULT_HOP_LIMIT: u8 = 64;
 /// Size unit of extension headers (RFC 8200).

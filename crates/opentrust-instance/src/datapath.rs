@@ -897,6 +897,24 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         link_security: LinkSecurity,
         mpl: bool,
     ) -> SendResult {
+        // A datagram longer than the IPv6 minimum MTU leaves as fragments
+        // (OT `FragmentDatagram`).
+        #[cfg(feature = "ip6-fragmentation")]
+        if dg.len() > opentrust_net::header::MIN_MTU {
+            let id = self.prng.next_u32();
+            let mut result = SendResult::Sent;
+            let r = opentrust_net::fragment::fragment_datagram(dg, id, |f| {
+                let r = self.send_ip6_with(now, f, link_security, mpl);
+                if !matches!(result, SendResult::Dropped(_)) {
+                    result = r;
+                }
+                Ok(())
+            });
+            return match r {
+                Ok(()) => result,
+                Err(_) => SendResult::Dropped(DropReason::Invalid),
+            };
+        }
         let mut events: Vec<ResolverEvent, 4> = Vec::new();
         let mut notes = FwdNotes::default();
         let r = with_routing!(self, |r| {

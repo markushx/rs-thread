@@ -10,7 +10,7 @@ use core::net::Ipv6Addr;
 use opentrust_core::{Error, Result};
 
 use crate::checksum;
-use crate::header::{Ipv6Header, MAX_DATAGRAM_LEN, PROTO_ICMP6};
+use crate::header::{Ipv6Header, MIN_MTU, PROTO_ICMP6};
 
 /// Destination Unreachable.
 pub const TYPE_DST_UNREACH: u8 = 1;
@@ -198,7 +198,7 @@ pub fn build_error(
     invoking: &[u8],
     out: &mut [u8],
 ) -> Result<usize> {
-    let room = MAX_DATAGRAM_LEN - Ipv6Header::LEN - Icmp6Header::LEN;
+    let room = MIN_MTU - Ipv6Header::LEN - Icmp6Header::LEN;
     let msg = Icmp6Message {
         ty,
         code,

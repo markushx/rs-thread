@@ -13,9 +13,8 @@ use opentrust_meshcop::joiner::{JoinerEvent, JoinerIo};
 #[cfg(feature = "ftd")]
 use opentrust_meshcop::joiner_router::JoinerRouterIo;
 use opentrust_net::ip6::{Ip6, SendInfo};
-use opentrust_net::udp::{ReceiverId, UdpSockets};
+use opentrust_net::udp::ReceiverId;
 
-use crate::UDP_SOCKETS;
 use crate::stack::{Outbox, StackMac};
 
 /// Receiver of the Joiner UDP port (Joiner and Joiner Router).
@@ -38,7 +37,7 @@ pub(crate) struct LinkIo<'a, C: CryptoBackend> {
     pub ip6: &'a mut Ip6,
     pub ext: &'a mut ExtAddress,
     pub out: &'a mut Outbox,
-    pub udp: &'a mut UdpSockets<{ UDP_SOCKETS }>,
+    pub udp: &'a mut crate::stack::Sockets,
     /// The unsecure Joiner UDP port (link-local only).
     pub joiner_port: &'a mut Option<u16>,
     /// Highest key ID mode 0 frame counter accepted under the current KEK.
