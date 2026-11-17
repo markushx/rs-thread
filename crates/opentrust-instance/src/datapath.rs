@@ -402,13 +402,20 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.sync_key_reset();
         if let Some(sec) = &rx.security
             && let Some(ks) = sec.key_sequence
-            && self
-                .mle
-                .check_link_frame(src, ks, sec.frame_counter)
-                .is_err()
         {
-            self.glue.replay_drops = self.glue.replay_drops.wrapping_add(1);
-            return;
+            match self.mle.check_link_frame(src, ks, sec.frame_counter) {
+                Err(_) => {
+                    self.glue.replay_drops = self.glue.replay_drops.wrapping_add(1);
+                    return;
+                }
+                // A frame from a neighbor with a newer key sequence moves
+                // this device to it, subject to the key switch guard (OT
+                // `Mac::ProcessReceiveSecurity`).
+                Ok(true) if link_security => {
+                    self.core.mac.security_mut().on_rx_key_sequence(ks, now);
+                }
+                Ok(_) => {}
+            }
         }
         if link_security {
             self.mle.data_frame_received(src, now);

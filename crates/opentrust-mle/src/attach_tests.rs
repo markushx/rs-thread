@@ -327,7 +327,7 @@ fn selects_better_link_quality() {
     // Link-layer replay protection for data frames from the parent.
     let parent = opentrust_mac::frame::Address::Short(Rloc16(0x0400).into());
     let fc = p.router.neighbor.link_counters.frame_counter().unwrap();
-    assert_eq!(child.check_link_frame(parent, 5, fc + 10), Ok(()));
+    assert_eq!(child.check_link_frame(parent, 5, fc + 10), Ok(true));
     assert_eq!(
         child.check_link_frame(parent, 5, fc + 10),
         Err(opentrust_core::Error::Drop),
@@ -345,7 +345,7 @@ fn selects_better_link_quality() {
     );
     // Unknown sources pass (MLE has its own protection for attaching devices).
     let other = opentrust_mac::frame::Address::Short(Rloc16(0x1234).into());
-    assert_eq!(child.check_link_frame(other, 5, 0), Ok(()));
+    assert_eq!(child.check_link_frame(other, 5, 0), Ok(false));
     let p = child.parent().unwrap();
     assert_eq!(p.leader_cost, 1);
     assert!(env.has_event(MleEvent::Attached {

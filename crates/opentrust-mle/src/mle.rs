@@ -711,7 +711,7 @@ impl<const C: usize> Mle<C> {
         src: opentrust_mac::frame::Address,
         key_sequence: u32,
         frame_counter: u32,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         use opentrust_mac::frame::Address;
         let nb = match src {
             Address::Extended(e) => self.find_neighbor(&e, false),
@@ -737,11 +737,11 @@ impl<const C: usize> Mle<C> {
             }
             Address::None => None,
         };
-        let Some(nb) = nb else { return Ok(()) };
+        let Some(nb) = nb else { return Ok(false) };
         let n = self.neighbor_mut(nb);
         n.link_counters.check(key_sequence, frame_counter)?;
         n.link_counters.update(key_sequence, frame_counter);
-        Ok(())
+        Ok(true)
     }
 
     /// A secured data frame (key ID mode 1) arrived from `src`: from a
