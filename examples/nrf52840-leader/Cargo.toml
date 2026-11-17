@@ -42,6 +42,9 @@ cli-all = [
     "cli-udp", "cli-commissioning",
 ]
 
+# RCP firmware (`rcp` binary): the radio behind Spinel on the DK's VCOM UART.
+rcp = ["dep:opentrust-ncp"]
+
 # Test aid: behave as if Button 1 were held at boot (factory reset on every start).
 test-factory-reset = []
 
@@ -53,6 +56,7 @@ opentrust-embassy = { path = "../../crates/opentrust-embassy", default-features 
 opentrust-flash = { path = "../../crates/opentrust-flash", features = ["defmt"] }
 opentrust-cli = { path = "../../crates/opentrust-cli", default-features = false, features = ["ftd"], optional = true }
 opentrust-nrf = { path = "../../crates/opentrust-nrf", default-features = false, features = ["defmt"] }
+opentrust-ncp = { path = "../../crates/opentrust-ncp", features = ["defmt"], optional = true }
 
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { version = "0.5", features = ["defmt"] }
@@ -76,6 +80,11 @@ nrf-mpsl = { version = "0.4", default-features = false, features = ["nrf52840"],
 name = "cli"
 path = "src/bin/cli.rs"
 required-features = ["cli"]
+
+[[bin]]
+name = "rcp"
+path = "src/bin/rcp.rs"
+required-features = ["rcp"]
 
 [profile.release]
 opt-level = "s"

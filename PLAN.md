@@ -310,7 +310,12 @@ Security-relevant decisions for the review before M4:
   - [x] Light on real hardware, nRF52840 DK (`examples/nrf52840-light`): `radio-nrf802154`, embassy-time `Alarm` / `Clock`, flash-backed Thread settings and rs-matter KV (`opentrust-flash`, wear levelling), RNG entropy, RustCrypto `Crypto`, BLE commissioning (`opentrust_matter::ble`, `ThreadCoexRunner`), commissioned with chip-tool over BLE (`pairing ble-thread`) and on-network through `ot-br-posix`; 62 min soak with 123/123 toggles, random resets, factory reset back to BLE advertising (`docs/thread-border-router.md`, `docs/memory-budget.md`)
   - Light on ESP32-C6: see Phase 14
 - [x] OT-compatible CLI (`ot-cli` command subset) — required to drive OT test scripts: `crates/opentrust-cli` (`no_std`, no alloc, feature-gated command groups, sim tests driving 1 to 3 nodes by CLI strings only; see OPENTRUST-OPENTHREAD-DIFFERENCES.md for what is missing)
-- [ ] Spinel/NCP (RCP host side & NCP device side) — optional, enables `ot-br-posix` interop
+- [ ] Spinel/NCP (`docs/spinel.md`): optional, enables `ot-br-posix` interop
+  - [x] `opentrust-spinel` (`no_std`, no alloc): HDLC-lite, Spinel data types, frame header and parsing, constants; unit tests with the OpenThread `test_hdlc` vectors
+  - [x] RCP: any `Radio` behind the Spinel radio property set of `RadioSpinel` (`opentrust_ncp::rcp::Rcp`; software frame retries and transmit security for radios without them); `opentrust-rcp-sim` (stdio + OpenThread's real-time simulation radio); interop with the OpenThread posix host: network formed with the OpenTrust RCP, an `ot-cli-ftd` joins, pings both ways, and the reverse (`crates/opentrust-rcp-sim/tests/posix_host.rs`, `openthread-sys` feature `posix-host`); subset of OpenThread's `posix-*.exp` scripts
+  - [x] RCP firmware for the nRF52840 DK (`examples/nrf52840-leader --bin rcp`, builds: about 105 KB flash, 16 KB RAM)
+  - [ ] RCP, open: run on hardware (DK VCOM link, `ot-br-posix`), USB CDC transport for the Dongle, enhanced ACK probing (`RCP_ENH_ACK_PROBING`), CSL IE phase of CSL child frames and enhanced ACKs in the simulation RCP, coexistence, power tables, counters, multi-PAN
+  - [ ] NCP (the OpenTrust stack behind Spinel for `spinel-cli.py` / `wpantund`-style hosts): `NET_*`, `THREAD_*`, `IPV6_*`, `STREAM_NET` on `opentrust-instance`
 
 ## Phase 11 – Simulation & testing (reuse OpenThread test framework)
 
@@ -394,6 +399,7 @@ Security-relevant decisions for the review before M4:
 ## Phase 16 – Port ot-br-posix
 
 - [ ] Port ot-br-posix to Rust
+  - Context: `ot-br-posix` talks to its radio through the OpenThread posix platform and Spinel, so an OpenTrust RCP (`docs/spinel.md`) already works under the unmodified C++ border router; a Rust border router would use the host side of Spinel (`opentrust-spinel` codec, a `RadioSpinel`-like `Radio` implementation over a `Transport`, the OpenTrust stack on the host) in place of the OpenThread posix platform
 
 ## Phase 17 – Publish OpenTrust
 

@@ -980,3 +980,12 @@ Thread starts, so the address persists through the network information only.
 The firmware no longer keeps its own copy in flash (the CLI and node examples
 use the sentinel). The Matter light keeps passing its persisted address (its
 key-value store) explicitly; the stack knows nothing of that store.
+
+## Spinel (RCP, `opentrust-ncp` / `opentrust-spinel` / `opentrust-rcp-sim`, [docs/spinel.md](docs/spinel.md))
+
+- **OpenThread:** an RCP is OpenThread's radio platform (`otPlatRadio*`) behind `NcpBase`; the platform does the frame retries, the transmit security (frame counter, key index, AES-CCM*) and the CSL IE of the frames, and reports the capabilities it has.
+- **OpenTrust:** the RCP is generic over the `Radio` trait. It always reports `TRANSMIT_RETRIES` and `TRANSMIT_SEC`: a radio without them is retried by the RCP on a missing ACK or a CCA failure (`max_frame_retries` of the request, backoff left to the radio), and the RCP assigns the frame counter and key index and seals the frame with the current key (`opentrust_mac::security::seal_psdu`) from `RCP_MAC_KEY` / `RCP_MAC_FRAME_COUNTER`. `TRANSMIT_TIMING` and `RECEIVE_TIMING` are reported only if the radio has them (no software replacement: the RCP has no timer).
+- **OpenTrust:** the CSL IE phase of frames a CSL child sends is not updated by the RCP (`csl_present` is never set), `RCP_ENH_ACK_PROBING` is not implemented, and the simulation RCP (`opentrust-rcp-sim`) sends immediate ACKs only.
+- **OpenTrust:** `PHY_RSSI` is a 1 ms energy scan (the `Radio` trait has no instantaneous RSSI); `MAC_SCAN_STATE` energy scans run inline and block the RCP (no frames are received meanwhile); `RESET` does not restart the processor, it clears the RCP state and reports `RESET_SOFTWARE`.
+- **OpenTrust:** the source match table is configured as a whole (`SrcMatchConfig`, 16 short and 16 extended entries); more entries answer `NOMEM`.
+- **OpenTrust:** `opentrust-rcp-sim` reports RSSI -20 dBm for every frame and energy -100 dBm for every energy scan (as the OpenThread simulation) and runs in real time only: a posix host cannot drive it in virtual time.
