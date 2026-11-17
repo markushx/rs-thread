@@ -620,6 +620,29 @@ Reference: `meshcop/tcat_agent.{hpp,cpp}`, `radio/ble_secure.cpp`, `meshcop/secu
 - Network Data is fed to `SrpClient::handle_network_data` whenever the Network Data bytes or the mesh-local prefix change (hash comparison), the interface addresses to `on_addresses_changed` when the set of preferred non-link-local non-mesh-local addresses changes.
 - `Instance::publish_dns_srp_service` / `unpublish_dns_srp_service` expose the Network Data Publisher's DNS/SRP entry (`otNetDataPublishDnsSrpService*`).
 
+### SRP server and DNS-SD server (`opentrust-dns::srp::server`, `opentrust-instance::srp_server`; feature `srp-server`)
+
+The SRP server (OT `Srp::Server`) and the DNS-SD answers from the SRP registrations (`Dns::ServiceDiscovery::Server::ResolveBySrp`) are behind the feature `srp-server` (instance, dns, cli; default in the CLI and the simulator, off in the nRF52840 light). The update processing follows `srp_server.cpp` step by step (zone, service discovery, host and service description instructions, name conflicts, Update Lease option, SIG(0), commit with granted lease / key lease / TTL, lease timer). The SIG(0) check hashes the SIG rdata without signature, the uncompressed signer name, the header with the additional count decremented and the message up to the SIG record, like OT, and verifies with ECDSA P-256 (`EcdsaP256::verify_digest`; the default implementation returns `NotImplemented`, so a backend without it refuses every update). Key binding of names (the same key owns host and service instance names, YXDOMAIN otherwise) is OT's.
+
+| Area | OpenThread | OpenTrust | Why | Interop impact |
+|------|------------|-----------|-----|----------------|
+| Storage | heap lists | `SrpServer<H, S, U>`: 8 hosts, 16 services in total, 8 services per update message in the instance (`SRP_SERVER_HOSTS`, `_SERVICES`, `_UPDATE_SERVICES`); names at most 128 bytes in wire format, 6 subtypes, 8 addresses, TXT at most 256 bytes; about 25 kB RAM in the `Instance` | no heap | an update that does not fit is answered SERVFAIL (OT: never); `test_srp_register_500_services` fails (it also fails against OpenThread in the simulator) |
+| Advertising proxy, service update handler | optional | none: every valid update is committed at once | no mDNS | none |
+| Duplicate delete-all record for a service in one update | silently ends the section, see OPENTHREAD-OBSERVATIONS.md | rejected with FORMERR | OT's behaviour is accidental | such a message is malformed anyway |
+| Address cache snooping (`UpdateAddrResolverCacheTable`) | adds the registered addresses to the address cache | not done | no cache API | the first query to a registered address may need an address query |
+| Auto-enable, fast start mode (`srp server auto`, `faststart`) | yes | not implemented | no border routing | none |
+| Response counters | `otSrpServerGetResponseCounters` | not kept | scope | none |
+| DNS-SD server lifetime | started when attached, always | opened (port 53) while the SRP server is running; in anycast mode the SRP socket on port 53 answers both (UPDATE: SRP, QUERY: DNS-SD) | no idle socket | a node that does not run the SRP server does not answer DNS queries |
+| DNS-SD scope | SOA / NS answers, upstream forwarding, discovery proxy | PTR (service and subtype), SRV, TXT, AAAA and KEY from SRP data, SRV + TXT in one query, additional section for a single PTR match; no SOA / NS | scope | NS / SOA queries get NXDOMAIN |
+| DNS answer size | message chains | one 1232-byte buffer; a response that does not fit is SERVFAIL | no heap | none for the tested sizes |
+| Port persistence | `SrpServerInfo` setting (little-endian port) | the same, written when the first update of a run is committed in unicast or unicast-force-add mode | as OT | same layout |
+| DNS client record query result | iterates the response | `DnsOutcome::Records` keeps the response message (at most 512 bytes) | owned results | longer responses fail with NoBufs |
+| DNS default config | address adopted from the SRP client, port 53 kept | the same (`DnsClient::on_srp_server_selected`, `set_default_config` with the user-address flag); `set_default_server` marks the address as user-set | OT semantic | none |
+| `srp client callback` | prints results | the flag is stored, nothing is printed | scope | none |
+| CLI argument escapes | the OT CLI unescapes | `Args` keeps backslash escapes in the argument (an escaped space does not split); `srp client service add/remove` and `dns service/query` unescape the instance name | one splitter | none |
+| Auto-start of the SRP client | enabled at boot | enabled by `opentrust_sim::vt::new_instance` for the simulated CLI nodes; the library default stays disabled | library users decide | none |
+| SRP client re-registration jitter | 10 s only for SLAAC address add / remove | the same (`on_addresses_changed(slaac)`); the refresh is triggered by added / removed addresses only, not by a changed preferred flag | OT semantic | none |
+
 ### Sleepy children attaching and polling (Instance glue)
 
 - The parent queues link-local unicast messages for a valid sleepy child by RLOC16 once the child is `Child::confirmed` (it has sent a Child Update Request, or was restored). Until then, the Child ID Response (the message queued before the child confirms anything) is queued by extended addresses (own extended address to the child's), like OT `SendChildIdResponse`; the child's data poll by extended address finds it (`poll_child` accepts a child that is not valid yet when it polls by extended address, the source match table holds both addresses of a queued child). The queue keeps the link security of each entry (MLE messages have none, as in OT); the fragment payload limit follows the entry's addressing and security.
