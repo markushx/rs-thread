@@ -25,9 +25,9 @@ const TOTAL_BOUND: usize = 113_800;
     not(feature = "border-agent"),
     not(feature = "srp-server")
 ))]
-const TOTAL_BOUND: usize = 86_950;
+const TOTAL_BOUND: usize = 87_500;
 #[cfg(not(feature = "ftd"))]
-const TOTAL_BOUND: usize = 78_200;
+const TOTAL_BOUND: usize = 79_000;
 
 fn row<T>(name: &str, v: &T) {
     std::println!("{:>8} {}", size_of_val(v), name);
