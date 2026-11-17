@@ -6,7 +6,7 @@ use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, R, ln, parse_hex_exact};
-#[cfg(feature = "ftd")]
+#[cfg(feature = "bbr-server")]
 use crate::util::{Ip6, parse_ip6, parse_u8, parse_u16, parse_u32};
 
 fn output_config<W: core::fmt::Write>(o: &mut W, c: &opentrust_mesh::netdata::backbone::BbrConfig) {
@@ -44,6 +44,7 @@ where
         }
     }
 
+    #[cfg(feature = "bbr-server")]
     /// `fake /a/an <dst> <target> <mliid>` (reference device).
     pub(crate) fn fake(&mut self, a: &Args<'_>) -> R {
         if a.get(1) != "/a/an" {
@@ -69,15 +70,15 @@ where
             }
             return Ok(());
         }
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         {
             self.bbr_ftd(a)
         }
-        #[cfg(not(feature = "ftd"))]
+        #[cfg(not(feature = "bbr-server"))]
         Err(E::INVALID_COMMAND)
     }
 
-    #[cfg(feature = "ftd")]
+    #[cfg(feature = "bbr-server")]
     fn bbr_ftd(&mut self, a: &Args<'_>) -> R {
         use opentrust_mesh::bbr_server::LocalState;
         match a.get(1) {
@@ -135,7 +136,7 @@ where
         }
     }
 
-    #[cfg(feature = "ftd")]
+    #[cfg(feature = "bbr-server")]
     fn bbr_mgmt(&mut self, a: &Args<'_>) -> R {
         match a.get(2) {
             "dua" => {

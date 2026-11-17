@@ -16,7 +16,7 @@ readme = "../../README.md"
 default = ["ftd"]
 # Router-capable nodes with the commissioner and Border Agent compiled in.
 # Without it the virtual-time node is a minimal thread device (MTD) build.
-ftd = ["opentrust-instance/ftd", "opentrust-instance/commissioner", "opentrust-instance/border-agent", "opentrust-instance/scan-servers"]
+ftd = ["opentrust-instance/ftd", "opentrust-instance/bbr-server", "opentrust-instance/commissioner", "opentrust-instance/border-agent", "opentrust-instance/scan-servers"]
 # The async test harness (`testing` module): an in-memory 802.15.4 medium,
 # a lock-step virtual-time driver for `opentrust_embassy::OpenTrust::run`
 # futures and a virtual `embassy-time` driver (one per test binary).

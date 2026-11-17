@@ -726,7 +726,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     pub fn add_on_mesh_prefix(&mut self, cfg: OnMeshPrefixConfig) -> Result<()> {
         // As in OT, a Domain Prefix belongs to the Backbone Router role: it
         // is in the Network Data only while that role is enabled.
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         if cfg.flags.has(opentrust_mesh::netdata::tlv::BrFlags::DP) {
             return self.bbr_set_domain_prefix(cfg);
         }
@@ -751,7 +751,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         &mut self,
         prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
     ) -> Result<()> {
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         match self.bbr_remove_domain_prefix(prefix) {
             Err(Error::NotFound) => {}
             r => return r,

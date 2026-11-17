@@ -276,11 +276,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         if c.ip6.netif.rloc() != rloc.map(|r| mlp.rloc(r)) {
             let _ = c.ip6.netif.set_rloc16(rloc);
         }
-        // A REED (router-eligible FTD child) listens on the all-routers
-        // groups too (OT `Mle::SetStateChild`): it answers Address Queries
-        // for its own addresses itself, its parent does not register them.
+        // An FTD child listens on the all-routers groups too (OT
+        // `Mle::HandleChildStart`): it answers Address Queries for its own
+        // addresses itself, its parent does not register them.
         #[cfg(feature = "ftd")]
-        let reed = role == crate::Role::Child && self.mle.is_router_eligible();
+        let reed = role == crate::Role::Child && self.mle.is_full_thread_device();
         #[cfg(not(feature = "ftd"))]
         let reed = false;
         if enabled {
@@ -414,7 +414,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             attached.then_some(rloc.0),
             self.glue.commissioner_aloc,
         );
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         if attached
             && self.bbrg.server.is_primary()
             && !want.contains(&opentrust_mesh::bbr_server::ALOC16_PRIMARY_BBR)

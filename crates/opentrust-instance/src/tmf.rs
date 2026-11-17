@@ -250,7 +250,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                     let _ = self.bbrg.ntf_inbox.push_back(v);
                 }
             }
-            #[cfg(feature = "ftd")]
+            #[cfg(feature = "bbr-server")]
             Uri::DuaRegistrationRequest | Uri::Mlr if self.bbrg.server.is_enabled() => {
                 self.handle_bbr_request(uri, req, rsp);
             }
@@ -357,7 +357,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
     }
 }
 
-#[cfg(feature = "ftd")]
+#[cfg(feature = "bbr-server")]
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> NodeHandler<'_, S, C, R> {
     /// `/n/dr` and `/n/mr` at the Backbone Router (OT
     /// `Manager::HandleDuaRegistration`, `HandleMulticastListenerRegistration`).

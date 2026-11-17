@@ -313,7 +313,7 @@ where
             "bbr" => self.bbr(a),
             #[cfg(feature = "bbr")]
             "dua" => self.dua(a),
-            #[cfg(feature = "bbr")]
+            #[cfg(feature = "bbr-server")]
             "fake" => self.fake(a),
             "factoryreset" => {
                 self.i.factory_reset();

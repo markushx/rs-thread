@@ -13,8 +13,11 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "commissioner", "border-agent", "scan-servers"]
+default = ["ftd", "bbr-server", "commissioner", "border-agent", "scan-servers"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
+# The Thread 1.2 Backbone Router role of this device (BBR service, answering
+# DUA and MLR registrations).
+bbr-server = ["ftd"]
 commissioner = ["ftd", "opentrust-meshcop/commissioner"]
 border-agent = ["commissioner", "opentrust-meshcop/border-agent"]
 tcat = ["opentrust-meshcop/tcat"]

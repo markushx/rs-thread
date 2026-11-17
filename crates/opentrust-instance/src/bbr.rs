@@ -7,7 +7,7 @@ use heapless::{Deque, Vec};
 use opentrust_coap::message::Code;
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::Instant;
-#[cfg(feature = "ftd")]
+#[cfg(feature = "bbr-server")]
 use opentrust_mesh::bbr_server::{BbrContext, BbrServer, ServiceAction};
 #[cfg(feature = "ftd")]
 use opentrust_mesh::dua::{ChildNotification, send_child_notification};
@@ -39,10 +39,10 @@ pub(crate) enum Outcome {
 pub(crate) struct BbrGlue {
     pub bbr: BackboneRouterLeader,
     /// The Backbone Router service of this device.
-    #[cfg(feature = "ftd")]
+    #[cfg(feature = "bbr-server")]
     pub server: BbrServer,
     /// The Domain Prefix of the Backbone Router role.
-    #[cfg(feature = "ftd")]
+    #[cfg(feature = "bbr-server")]
     pub domain_prefix: Option<opentrust_mesh::netdata::local::OnMeshPrefixConfig>,
     pub dua: DuaManager<8>,
     pub mlr: MlrManager<8>,
@@ -58,9 +58,9 @@ impl BbrGlue {
     pub(crate) fn new() -> Self {
         Self {
             bbr: BackboneRouterLeader::new(),
-            #[cfg(feature = "ftd")]
+            #[cfg(feature = "bbr-server")]
             server: BbrServer::new(),
-            #[cfg(feature = "ftd")]
+            #[cfg(feature = "bbr-server")]
             domain_prefix: None,
             dua: DuaManager::new(),
             mlr: MlrManager::new(),
@@ -74,9 +74,9 @@ impl BbrGlue {
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         let server = self.server.next_poll();
-        #[cfg(not(feature = "ftd"))]
+        #[cfg(not(feature = "bbr-server"))]
         let server = None;
         [self.dua.next_deadline(), self.mlr.next_deadline(), server]
             .into_iter()
@@ -259,9 +259,9 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             b.nd_hash = None;
         }
         // The Backbone Router service of this device.
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         let mut actions: Vec<ServiceAction, 3> = Vec::new();
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         if b.server.is_enabled() {
             let ctx = BbrContext {
                 attached,
@@ -441,7 +441,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         if let Some(c) = b.dua.take_dad_counter_update() {
             let _ = self.core.settings.set(SettingsKey::DadInfo, &[c]);
         }
-        #[cfg(feature = "ftd")]
+        #[cfg(feature = "bbr-server")]
         for a in actions {
             moved |= a != ServiceAction::None;
             self.apply_bbr_action(a);
@@ -471,7 +471,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 }
 
 /// Backbone Router role (OT `otBackboneRouter*`).
-#[cfg(feature = "ftd")]
+#[cfg(feature = "bbr-server")]
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {
     /// Put the outcome of a server step into the local Network Data.
     pub(crate) fn apply_bbr_action(&mut self, a: ServiceAction) {
