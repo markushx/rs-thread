@@ -222,6 +222,7 @@ pub fn step(i: usize, now: Instant, mle: &mut Mle<4>, env: &mut TestEnv, t: &mut
         attached,
         router_or_leader: role.is_router_or_leader(),
         full_thread_device: mle.is_full_thread_device(),
+        parent_1p1: false,
         expected_to_become_router: false,
         bbr: &b.bbr,
         netdata: view,

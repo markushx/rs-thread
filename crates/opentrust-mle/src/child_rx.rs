@@ -239,7 +239,7 @@ impl<const C: usize> Mle<C> {
         let dev = self.cfg.mode;
         let link_fc = env.keys().frame_counter();
         let mle_fc = self.mle_counter.current_for(env.keys().key_epoch());
-        let addrs = Self::address_entries(env, true);
+        let addrs = Self::address_entries(env, true, self.multicast_registration());
         let sup = (dev.is_sleepy() && self.cfg.supervision_interval != 0)
             .then_some(self.cfg.supervision_interval);
         let mut ch = [0u8; 8];

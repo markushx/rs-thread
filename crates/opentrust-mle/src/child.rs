@@ -280,7 +280,7 @@ impl<const C: usize> Mle<C> {
         let csl = self
             .is_csl_enabled()
             .then(|| (self.csl_channel_tlv(), self.effective_csl_timeout()));
-        let addrs = Self::address_entries(env, detached);
+        let addrs = Self::address_entries(env, detached, self.multicast_registration());
         let rloc = self.rloc16;
         let leader = self.leader_data;
         let is_child = self.role == Role::Child;

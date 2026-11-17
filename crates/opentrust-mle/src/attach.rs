@@ -776,7 +776,7 @@ impl<const C: usize> Mle<C> {
         let timeout = self.cfg.timeout_secs;
         let sup = (mode.is_sleepy() && self.cfg.supervision_interval != 0)
             .then_some(self.cfg.supervision_interval);
-        let addrs = Self::address_entries(env, false);
+        let addrs = Self::address_entries(env, false, self.multicast_registration());
         let active_ts = env.active_timestamp();
         let pending_ts = env.pending_timestamp();
         let tlvs: &[u8] = if ftd {

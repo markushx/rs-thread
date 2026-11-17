@@ -101,6 +101,9 @@ pub struct DuaContext<'a> {
     pub full_thread_device: bool,
     /// A REED that is about to become a router (registration waits).
     pub expected_to_become_router: bool,
+    /// An end device whose parent is a Thread 1.1 device: it registers its
+    /// DUA itself, through the service ALOC of the Backbone Router service.
+    pub parent_1p1: bool,
     /// Backbone Router state of the Network Data.
     pub bbr: &'a BackboneRouterLeader,
     /// Network Data (the DUA needs a 6LoWPAN context).
@@ -114,6 +117,8 @@ pub struct DuaContext<'a> {
 pub struct DuaRequest {
     /// RLOC16 of the Primary Backbone Router.
     pub server16: u16,
+    /// Send to the service ALOC of this Backbone Router service ID instead.
+    pub service_id: Option<u8>,
     /// Target EID TLV: the DUA.
     pub target: Ipv6Addr,
     /// ML-EID TLV: IID of the ML-EID of the DUA's owner.
@@ -421,7 +426,9 @@ impl<const CH: usize> DuaManager<CH> {
         rng: &mut R,
     ) {
         use crate::netdata::backbone::BbrState;
-        if matches!(state, BbrState::Added | BbrState::ToTriggerRereg) && ctx.full_thread_device {
+        if matches!(state, BbrState::Added | BbrState::ToTriggerRereg)
+            && (ctx.full_thread_device || ctx.parent_1p1)
+        {
             self.update_reregistration_delay(ctx, rng);
         }
     }
@@ -696,9 +703,16 @@ impl<const CH: usize> DuaManager<CH> {
             );
             return None;
         }
-        if !ctx.full_thread_device {
+        if !ctx.full_thread_device && !ctx.parent_1p1 {
             return None;
         }
+        let service_id = if ctx.full_thread_device {
+            None
+        } else {
+            Some(crate::netdata::backbone::backbone_router_service_id(
+                &ctx.netdata,
+            )?)
+        };
         let req = if self.state == DuaState::ToRegister && self.registration_delay.is_none() {
             let (target, _) = self.dua?;
             self.state = DuaState::Registering;
@@ -706,6 +720,7 @@ impl<const CH: usize> DuaManager<CH> {
             self.pending = Pending::Own;
             DuaRequest {
                 server16: bbr.server16,
+                service_id,
                 target,
                 ml_eid_iid: ctx.ml_eid_iid,
                 last_transaction_time: None,
@@ -730,6 +745,7 @@ impl<const CH: usize> DuaManager<CH> {
         self.pending = Pending::Child(c.ext);
         Some(DuaRequest {
             server16,
+            service_id: None,
             target: c.dua,
             ml_eid_iid: c.ml_eid_iid,
             last_transaction_time: Some(
@@ -945,7 +961,10 @@ pub fn send_dua_request<
         now,
         rng,
         sink,
-        mesh_local_prefix.rloc(Rloc16(req.server16)),
+        match req.service_id {
+            Some(id) => mesh_local_prefix.aloc(0xfc10 + u16::from(id))?,
+            None => mesh_local_prefix.rloc(Rloc16(req.server16)),
+        },
         Some(mesh_local_prefix.rloc(own_rloc16)),
         Priority::Net,
         Uri::DuaRegistrationRequest,

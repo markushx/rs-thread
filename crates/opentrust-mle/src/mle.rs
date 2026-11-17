@@ -964,6 +964,7 @@ impl<const C: usize> Mle<C> {
     pub(crate) fn address_entries<E: MleEnv>(
         env: &E,
         mesh_local_only: bool,
+        multicast: MulticastRegistration,
     ) -> Vec<
         AddressEntry,
         {
@@ -987,11 +988,33 @@ impl<const C: usize> Mle<C> {
                 };
                 let _ = v.push(e);
             });
-            env.registered_multicast_addresses(&mut |a| {
-                let _ = v.push(AddressEntry::Uncompressed(a));
-            });
+            if multicast != MulticastRegistration::None {
+                env.registered_multicast_addresses(&mut |a| {
+                    if multicast == MulticastRegistration::All || a.octets()[1] & 0x0f > 3 {
+                        let _ = v.push(AddressEntry::Uncompressed(a));
+                    }
+                });
+            }
         }
         v
+    }
+
+    /// Which external multicast addresses a child registers (OT
+    /// `AppendAddressRegistrationTlv`): all of them for a sleepy child
+    /// (indirect transmission), those larger than realm-local for a
+    /// Thread 1.2+ parent (Multicast Listener Registration), none for a
+    /// Thread 1.1 parent.
+    pub(crate) fn multicast_registration(&self) -> MulticastRegistration {
+        if !self.is_rx_on_when_idle() {
+            MulticastRegistration::All
+        } else if self
+            .parent()
+            .is_none_or(|p| p.router.neighbor.is_thread_version_1p2_or_higher())
+        {
+            MulticastRegistration::LargerThanRealmLocal
+        } else {
+            MulticastRegistration::None
+        }
     }
 
     /// Our Thread version.
@@ -1032,4 +1055,12 @@ pub(crate) fn tx_with<E: MleEnv>(
     } else {
         env.send_with(opts, src, dst, &buf[..n])
     }
+}
+
+/// See [`Mle::multicast_registration`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MulticastRegistration {
+    All,
+    LargerThanRealmLocal,
+    None,
 }

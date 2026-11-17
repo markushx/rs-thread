@@ -183,6 +183,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let attached = role.is_attached();
         let ml_eid_iid = opentrust_core::types::ipv6::iid(&self.core.ml_eid_addr());
         let full = self.mle.is_full_thread_device();
+        let p1p1 = !full
+            && role == Role::Child
+            && self
+                .mle
+                .parent()
+                .is_some_and(|p| p.router.neighbor.is_thread_version_1p1());
         let expected = self.expected_to_become_router();
         let view = self.core.netdata.view();
         let secret = self.core.iid_secret;
@@ -198,6 +204,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             router_or_leader: role.is_router_or_leader(),
             full_thread_device: full,
             expected_to_become_router: expected,
+            parent_1p1: p1p1,
             bbr: &b.bbr,
             netdata: view,
             ml_eid_iid,
@@ -232,6 +239,12 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         b.last_role = role;
         let ml_eid_iid = opentrust_core::types::ipv6::iid(&self.core.ml_eid_addr());
         let full = self.mle.is_full_thread_device();
+        let p1p1 = !full
+            && role == Role::Child
+            && self
+                .mle
+                .parent()
+                .is_some_and(|p| p.router.neighbor.is_thread_version_1p1());
 
         // Network Data changes.
         let mut nd_event: Option<(BbrState, DomainPrefixEvent)> = None;
@@ -278,6 +291,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             router_or_leader: role.is_router_or_leader(),
             full_thread_device: full,
             expected_to_become_router: expected,
+            parent_1p1: p1p1,
             bbr: &b.bbr,
             netdata: view,
             ml_eid_iid,
