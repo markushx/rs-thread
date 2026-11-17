@@ -8,10 +8,10 @@
 //! happens.
 //!
 //! The settings (datasets, network info with the frame counters stored ahead,
-//! child and parent info, the random extended address, ...) are persisted in
+//! child and parent info, ...) are persisted in
 //! the Thread region of flash (`opentrust-flash`, see `memory.x`) and survive
 //! a reset. `reset` restarts the chip; `factoryreset` erases the settings
-//! first (the next boot picks a new extended address), as does Button 1 held
+//! first (the next boot picks a new random extended address unless the network information restores one), as does Button 1 held
 //! at boot.
 //!
 //! Build: `cargo build --release --bin cli --features cli-all`; single
@@ -103,7 +103,7 @@ struct Line {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let Board {
-        mut rng,
+        rng,
         mut radio,
         mut flash,
         button1,
@@ -125,9 +125,8 @@ async fn main(spawner: Spawner) {
     .unwrap();
     info!("settings: {} bytes loaded", STORE.with(|i| i.used()));
     let caps = radio.init().await.unwrap();
-    let ext = nrf52840_leader::flash::ext_address(&STORE, &mut rng);
-    info!("OpenTrust CLI, ext address {:x}", ext.0);
-    let config = opentrust_instance::Config::router(ext, caps);
+    info!("OpenTrust CLI");
+    let config = opentrust_instance::Config::router(opentrust_instance::RANDOM_EXT_ADDRESS, caps);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
         Instance::init(slot, config, STORE.settings(), SoftCrypto, rng);
     });

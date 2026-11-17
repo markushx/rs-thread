@@ -332,10 +332,17 @@ pub enum Event {
     BorderAgent(opentrust_meshcop::border_agent::BorderAgentEvent),
 }
 
+/// Extended address value that asks the instance for a random one (OT picks
+/// a random extended address at every boot): drawn from the instance RNG when
+/// the instance is created, locally administered and unicast, replaced by the
+/// stored one when the network information of an attached device is restored.
+pub const RANDOM_EXT_ADDRESS: ExtAddress = ExtAddress([0; 8]);
+
 /// Configuration of an [`Instance`].
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// The device's extended address (IEEE EUI-64).
+    /// The device's extended address (IEEE EUI-64), or
+    /// [`RANDOM_EXT_ADDRESS`].
     pub ext_address: ExtAddress,
     /// MLE configuration (device mode, timeouts, router configuration).
     pub mle: MleConfig,
@@ -486,7 +493,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let mut ba_id = [0u8; 16];
         rng.fill_bytes(&mut ba_id);
 
-        let ext = config.ext_address;
+        let ext = if config.ext_address == RANDOM_EXT_ADDRESS {
+            let mut a = [0u8; 8];
+            rng.fill_bytes(&mut a);
+            a[0] = (a[0] | 0x02) & !0x01;
+            ExtAddress(a)
+        } else {
+            config.ext_address
+        };
         let p = slot.as_mut_ptr();
         // SAFETY: `p` is valid for writes of `Self`; every field of `Self`
         // and of `Core` is written exactly once below, then the value is
@@ -836,6 +850,10 @@ mod tests {
         Instance::new(cfg, RamSettings::new(), SoftCrypto, MacRng::new(42))
     }
 
+    fn instance_with(cfg: Config, seed: u64) -> Instance<RamSettings<2048>, SoftCrypto, MacRng> {
+        Instance::new(cfg, RamSettings::new(), SoftCrypto, MacRng::new(seed))
+    }
+
     #[test]
     fn start_needs_an_enabled_interface_and_a_dataset() {
         let mut i = instance();
@@ -978,14 +996,25 @@ mod tests {
         i.poll(now);
         let (ext, ml_eid) = (i.ext_address(), i.ml_eid());
         let settings = i.into_settings();
-        // After a reset the instance starts with another (random) address
-        // and takes the stored one before Thread starts.
-        let cfg = Config::router(ExtAddress([2, 0, 0, 0, 0, 0, 0, 9]), RadioCaps::default());
-        let i2 = Instance::new(cfg, settings, SoftCrypto, MacRng::new(7));
+        // After a reset the instance starts with a random address and takes
+        // the stored one before Thread starts.
+        let cfg = Config::router(RANDOM_EXT_ADDRESS, RadioCaps::default());
+        let i2 = Instance::new(cfg.clone(), settings, SoftCrypto, MacRng::new(7));
         assert_eq!(i2.role(), Role::Disabled);
         assert_eq!(i2.ext_address(), ext);
         // The prefix comes with the dataset at start; the IID is restored.
         assert_eq!(i2.ml_eid().octets()[8..], ml_eid.octets()[8..]);
+    }
+
+    #[test]
+    fn random_ext_address_without_stored_network() {
+        let cfg = Config::router(RANDOM_EXT_ADDRESS, RadioCaps::default());
+        let a = instance_with(cfg.clone(), 1).ext_address();
+        let b = instance_with(cfg, 2).ext_address();
+        assert_ne!(a, RANDOM_EXT_ADDRESS);
+        assert_ne!(a, b);
+        // Locally administered, unicast.
+        assert_eq!(a.0[0] & 0x03, 0x02);
     }
 
     #[test]

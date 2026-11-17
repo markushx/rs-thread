@@ -948,3 +948,13 @@ Link Requests for a router or leader that was stopped without a graceful
 detach. OT keeps the RLOC16 in memory; OpenTrust reads the stored role instead.
 A router that detached gracefully (Address Release) attaches with a Parent
 Request on the next start.
+
+## Random extended address
+
+`Config::ext_address = RANDOM_EXT_ADDRESS` makes `Instance::init` draw a
+locally administered unicast address from the instance RNG, as OT does at every
+boot. A restored network information record (attached role) replaces it before
+Thread starts, so the address persists through the network information only.
+The firmware no longer keeps its own copy in flash (the CLI and node examples
+use the sentinel). The Matter light keeps passing its persisted address (its
+key-value store) explicitly; the stack knows nothing of that store.

@@ -86,32 +86,6 @@ pub mod flash {
         flash.erase(NVM_START, NVM_END).await
     }
 
-    /// Key of the persisted MAC extended address in the Thread settings (a
-    /// vendor key, so `factoryreset` wipes it with everything else).
-    pub const EXT_ADDRESS_KEY: u16 = 0x8000;
-
-    /// The MAC extended address: random, generated when the settings hold
-    /// none (first start, after a factory reset) and kept afterwards.
-    ///
-    /// A fixed address would survive a factory reset while the MLE and MAC
-    /// frame counters restart at zero, and a peer that still has the device
-    /// as a neighbor would drop its frames as replays. OpenThread picks a
-    /// random extended address too (at every boot).
-    pub fn ext_address<const CAP: usize, const KEYS: usize>(
-        store: &opentrust_flash::Shared<CAP, KEYS>,
-        rng: &mut impl rand_core::Rng,
-    ) -> opentrust_instance::ExtAddress {
-        let mut a = [0u8; 8];
-        if store.with(|i| i.get(EXT_ADDRESS_KEY, 0, &mut a)) == Ok(8) {
-            return opentrust_instance::ExtAddress(a);
-        }
-        rng.fill_bytes(&mut a);
-        // Locally administered, unicast.
-        a[0] = (a[0] | 0x02) & !0x01;
-        let _ = store.with(|i| i.set(EXT_ADDRESS_KEY, &a));
-        opentrust_instance::ExtAddress(a)
-    }
-
     /// Check that the constants agree with the linker script and the flash
     /// size, so the program image cannot overlap the settings.
     pub fn check() {

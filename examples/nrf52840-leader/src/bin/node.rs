@@ -63,7 +63,7 @@ const PING_PAYLOAD: usize = 32;
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let Board {
-        mut rng,
+        rng,
         mut radio,
         mut flash,
         button1,
@@ -101,9 +101,8 @@ async fn main(spawner: Spawner) {
         );
     }
     let caps = radio.init().await.unwrap();
-    let ext = nrf52840_leader::flash::ext_address(&STORE, &mut rng);
-    info!("ext address {:x}", ext.0);
-    let mut config = opentrust_instance::Config::router(ext, caps);
+    let mut config =
+        opentrust_instance::Config::router(opentrust_instance::RANDOM_EXT_ADDRESS, caps);
     config.mle.router.eligible = !cfg!(feature = "child-only");
     info!("router eligible: {}", config.mle.router.eligible);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
