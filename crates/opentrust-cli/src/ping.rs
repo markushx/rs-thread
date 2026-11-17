@@ -93,6 +93,7 @@ where
     pub(crate) fn ping_cmd(&mut self, a: &Args<'_>) -> R {
         if a.get(1) == "stop" {
             self.st.ping = None;
+            self.st.ping_id = self.st.ping_id.wrapping_add(1);
             return Ok(());
         }
         let mut k = 1;
@@ -141,6 +142,7 @@ where
         if !a.get(k + 6).is_empty() || usize::from(size) > MAX_PAYLOAD {
             return Err(E::INVALID_ARGS);
         }
+        self.st.ping_id = self.st.ping_id.wrapping_add(1);
         let mut p = Ping {
             dst,
             src,
@@ -148,7 +150,7 @@ where
             count,
             interval: Duration::from_millis(u64::from(interval)),
             timeout: Duration::from_millis(u64::from(timeout)),
-            id: 0x4f54,
+            id: self.st.ping_id,
             sent: 0,
             received: 0,
             is_async,

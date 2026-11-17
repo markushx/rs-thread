@@ -83,6 +83,9 @@ pub(crate) struct State {
     pub dataset: opentrust_meshcop::dataset::Dataset,
     #[cfg(feature = "ping")]
     pub ping: Option<ping::Ping>,
+    /// Echo identifier of the last ping (OT `PingSender::mIdentifier`).
+    #[cfg(feature = "ping")]
+    pub ping_id: u16,
     #[cfg(feature = "scan")]
     pub scan: Option<scan::Kind>,
     #[cfg(feature = "diag")]
@@ -132,6 +135,8 @@ impl Cli {
                 dataset: opentrust_meshcop::dataset::Dataset::new(),
                 #[cfg(feature = "ping")]
                 ping: None,
+                #[cfg(feature = "ping")]
+                ping_id: 0,
                 #[cfg(feature = "scan")]
                 scan: None,
                 #[cfg(feature = "diag")]
