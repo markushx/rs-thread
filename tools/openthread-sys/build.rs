@@ -185,6 +185,9 @@ fn main() {
         fs::copy(&from, bin_dir.join("ot-cli-ftd-1.1"))
             .unwrap_or_else(|e| panic!("cannot copy {}: {e}", from.display()));
     }
+    if cfg!(feature = "posix-host") {
+        build_posix_host(&src, &out, &bin_dir);
+    }
     println!("cargo:bin_dir={}", bin_dir.display());
 
     // The differential-test shim (C++ over OpenThread's internal classes) is
@@ -230,6 +233,76 @@ fn main() {
     println!("cargo:rustc-link-lib=p256m");
 
     gen_bindings(&include, &out);
+}
+
+/// Real-time builds for the Spinel interoperability tests (feature
+/// `posix-host`), copied to `bin_dir`:
+///
+/// - `ot-cli-posix`: the OpenThread posix host (`OT_PLATFORM=posix`) with the
+///   HDLC RCP bus, started as
+///   `ot-cli-posix 'spinel+hdlc+forkpty://<rcp>?forkpty-arg=<node id>'`;
+/// - `ot-cli-ftd-rt` / `ot-rcp-rt`: the simulation platform in real time
+///   (UDP multicast radio, `PORT_BASE` / `PORT_OFFSET`), the peers of an RCP
+///   under test and OpenThread's own simulation RCP.
+fn build_posix_host(src: &Path, out: &Path, bin_dir: &Path) {
+    let common = [
+        "-GNinja",
+        "-DCMAKE_BUILD_TYPE=MinSizeRel",
+        "-DBUILD_TESTING=OFF",
+        "-DOT_THREAD_VERSION=1.4",
+        "-DOT_COMPILE_WARNING_AS_ERROR=OFF",
+    ];
+    let sim = out.join("ot-build-rt");
+    let mut conf = Command::new("cmake");
+    conf.args(common)
+        .args([
+            "-DOT_PLATFORM=simulation",
+            "-DOT_SIMULATION_VIRTUAL_TIME=OFF",
+            "-DOT_SIMULATION_INFRA_IF=OFF",
+            "-DOT_FTD=ON",
+            "-DOT_MTD=OFF",
+            "-DOT_RCP=ON",
+            "-DOT_APP_CLI=ON",
+            "-DOT_APP_NCP=OFF",
+            "-DOT_APP_RCP=ON",
+        ])
+        .arg("-S")
+        .arg(src)
+        .arg("-B")
+        .arg(&sim);
+    run(&mut conf, "cmake configure (real-time simulation)");
+    run(
+        Command::new("ninja")
+            .arg("-C")
+            .arg(&sim)
+            .args(["ot-cli-ftd", "ot-rcp"]),
+        "ninja (real-time simulation)",
+    );
+    let posix = out.join("ot-build-posix");
+    let mut conf = Command::new("cmake");
+    conf.args(common)
+        .args([
+            "-DOT_PLATFORM=posix",
+            "-DOT_POSIX_RCP_HDLC_BUS=ON",
+            "-DOT_DAEMON=OFF",
+        ])
+        .arg("-S")
+        .arg(src)
+        .arg("-B")
+        .arg(&posix);
+    run(&mut conf, "cmake configure (posix host)");
+    run(
+        Command::new("ninja").arg("-C").arg(&posix).arg("ot-cli"),
+        "ninja (posix host)",
+    );
+    for (from, to) in [
+        (sim.join("examples/apps/cli/ot-cli-ftd"), "ot-cli-ftd-rt"),
+        (sim.join("examples/apps/ncp/ot-rcp"), "ot-rcp-rt"),
+        (posix.join("src/posix/ot-cli"), "ot-cli-posix"),
+    ] {
+        fs::copy(&from, bin_dir.join(to))
+            .unwrap_or_else(|e| panic!("cannot copy {}: {e}", from.display()));
+    }
 }
 
 /// Compiles `shim/diff_shim.cpp` with the compiler flags ninja uses for the

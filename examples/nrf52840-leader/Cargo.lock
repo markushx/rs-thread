@@ -1142,6 +1142,7 @@ dependencies = [
  "opentrust-embassy",
  "opentrust-flash",
  "opentrust-instance",
+ "opentrust-ncp",
  "opentrust-nrf",
  "opentrust-platform",
  "panic-probe",
@@ -1354,6 +1355,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentrust-ncp"
+version = "0.1.0"
+dependencies = [
+ "defmt",
+ "embassy-futures",
+ "heapless",
+ "opentrust-core",
+ "opentrust-mac",
+ "opentrust-platform",
+ "opentrust-spinel",
+]
+
+[[package]]
 name = "opentrust-net"
 version = "0.1.0"
 dependencies = [
@@ -1389,6 +1403,13 @@ dependencies = [
  "heapless",
  "opentrust-core",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "opentrust-spinel"
+version = "0.1.0"
+dependencies = [
+ "defmt",
 ]
 
 [[package]]

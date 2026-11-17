@@ -1,6 +1,6 @@
 [package]
 name = "opentrust-ncp"
-description = "Spinel NCP/RCP support for the OpenTrust Thread stack"
+description = "Spinel RCP (radio co-processor) and NCP support for the OpenTrust Thread stack"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,14 +13,20 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-embassy/defmt"]
-log = ["dep:log", "opentrust-core/log", "opentrust-embassy/log"]
+defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-platform/defmt", "opentrust-mac/defmt", "opentrust-spinel/defmt", "heapless/defmt"]
+log = ["dep:log", "opentrust-core/log", "opentrust-platform/log", "opentrust-mac/log"]
 
 [dependencies]
 opentrust-core = { workspace = true }
-opentrust-embassy = { workspace = true }
+opentrust-platform = { workspace = true }
+opentrust-mac = { workspace = true }
+opentrust-spinel = { workspace = true }
+heapless = { workspace = true }
+embassy-futures = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
+
+[dev-dependencies]
 
 [lints]
 workspace = true

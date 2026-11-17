@@ -54,6 +54,9 @@ cli = []
 # ncp = []
 ftd = []
 mtd = []
+# Real-time simulation nodes and the OpenThread posix host (`ot-cli-posix`) for
+# the Spinel interoperability tests of `opentrust-rcp-sim`.
+posix-host = []
 # C++ shim over OpenThread internals for differential tests (`shim/diff_shim.cpp`).
 diff-shim = []
 # radio-only = []

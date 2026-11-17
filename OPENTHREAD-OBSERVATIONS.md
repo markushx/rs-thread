@@ -118,3 +118,36 @@ known short address differs from a 0x0000 destination.
 - **OpenThread:** the host description pass takes the first KEY record of the
   update section for the host regardless of its owner name.
 - **OpenTrust:** copies it (`host_description`).
+
+## `RCP_MAC_KEY` carries the shifted key ID mode
+
+`NcpBase::HandlePropertySet<SPINEL_PROP_RCP_MAC_KEY>` accepts only the key ID
+mode `Mac::Frame::kKeyIdMode1`, which is the security control bits of the
+802.15.4 auxiliary header (`1 << 3` = 8), not the mode number 1. The Spinel
+field is documented as "key ID mode", a host that sends 1 gets `InvalidArgs`.
+OpenTrust accepts 8 like OpenThread (`opentrust-ncp`).
+
+## Transmit done with a frame when no ACK was requested
+
+`NcpBase::LinkRawTransmitDone` packs a radio frame after the status when the
+transmission succeeded, also when no ACK was requested or received: a zero
+length frame with RSSI 0, noise floor -128, channel 0 and LQI 255. The host
+(`RadioSpinel::ParseRadioFrame`) reads it as "no ACK frame" only because the
+length is zero. OpenTrust sends the same bytes.
+
+## Posix host requires `tx-security` and `tx-timing` from every RCP
+
+A Thread 1.2+ posix host stops with `RadioSpinelIncompatible` for an RCP
+without the transmit security and transmit timing radio capabilities, also
+when CSL is not used. A software-only RCP therefore has to implement the
+transmit security (frame counter, key index, CCM*) itself.
+
+## Stale settings break a fresh run on the same node ID
+
+The posix host and the simulation nodes persist the MAC frame counter (and
+the dataset) in `tmp/<offset>_<id>.data` / `.flash`. A new run in the same
+directory restores the counter, while the peers have no state: with the
+counter below what the peer stored for the neighbor, the secured frames fail
+the replay check (`RxErrSec` in `counters mac`) and the network does not
+work. Observed while testing against an RCP; run every test in a fresh
+working directory.
