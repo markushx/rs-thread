@@ -41,7 +41,7 @@ rand_core = { workspace = true }
 # `central` is off: Matter commissioning is peripheral-only, and the central
 # role would pull the larger SoftDevice Controller variant.
 trouble-host = { version = "0.8", optional = true, default-features = false, features = ["peripheral", "gatt", "derive", "default-packet-pool"] }
-bt-hci = { version = "0.10", optional = true, default-features = false }
+bt-hci = { version = "0.11", optional = true, default-features = false }
 embedded-io = { version = "0.7", optional = true }
 static_cell = { version = "2", optional = true }
 defmt = { workspace = true, optional = true }
