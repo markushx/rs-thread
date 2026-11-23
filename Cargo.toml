@@ -67,13 +67,19 @@ embassy-sync = { version = "0.8", default-features = false }
 p256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 # Test-only: differential testing of CCM* against the RustCrypto `ccm` crate.
 ccm = { version = "0.6", default-features = false }
-rs-matter = { version = "0.4.1", default-features = false }
+# rs-matter: crates.io 0.4.1 reorganized the module layout (rs_matter::stack,
+# rs_matter::utils::timers etc. moved); rs-thread-matter needs migration first.
+# Pinned to the git rev used during development until that migration is done.
+rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
 # Virtual embassy-time driver of the test harness (rs-thread-sim `testing`).
 embassy-time-driver = { version = "0.2", default-features = false }
 embassy-time-queue-utils = { version = "0.3", default-features = false }
 critical-section = "1.1"
 tokio = { version = "1", features = ["fs", "net", "io-util", "rt-multi-thread", "macros", "process", "time"] }
 
+# rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.RSTHREAD.md).
+[patch."https://github.com/project-chip/rs-matter"]
+rs-matter-sc = { path = "third_party/rs-matter-sc" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
