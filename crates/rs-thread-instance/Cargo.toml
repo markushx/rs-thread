@@ -67,6 +67,9 @@ srp-server = ["ftd", "border-router", "rs-thread-dns/srp-server", "rs-thread-cor
 srp-services-8 = []
 srp-services-12 = []
 trel = ["rs-thread-mesh/trel"]
+# Host network interface: `Event::Ip6Datagram`, `take_ip6_datagram` and
+# `handle_ip6_from_host` for the border-router / host-side IP bridge.
+host-interface = []
 defmt = [
     "dep:defmt",
     "rs-thread-core/defmt",

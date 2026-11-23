@@ -790,6 +790,18 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         if out.forward_thread {
             self.send_ip6(now, dg, link_security);
         }
+        #[cfg(feature = "host-interface")]
+        if out.forward_host {
+            let mut slot = ([0u8; rs_thread_net::header::MAX_DATAGRAM_LEN], 0u16);
+            let len = dg.len().min(slot.0.len());
+            slot.0[..len].copy_from_slice(&dg[..len]);
+            slot.1 = len as u16;
+            if self.core.host_ip6.is_full() {
+                let _ = self.core.host_ip6.pop_front();
+            }
+            let _ = self.core.host_ip6.push_back(slot);
+            self.core.push_event(crate::Event::Ip6Datagram);
+        }
         if out.inner_forward_thread {
             let mut inner = [0u8; rs_thread_mesh::forwarder::MTU];
             let src = scratch.inner();

@@ -15,14 +15,28 @@ categories.workspace = true
 name = "rsthread-br-posix"
 path = "src/main.rs"
 
+[features]
+rest = ["dep:axum"]
+
 [dependencies]
+rs-thread-embassy = { workspace = true, features = ["log"] }
+# Extra instance features the embassy facade does not expose as its own.
+rs-thread-instance = { workspace = true, features = ["srp-server", "host-interface", "log"] }
+rs-thread-platform = { workspace = true }
+rs-thread-core = { workspace = true }
 rs-thread-br = { path = "../../crates/rs-thread-br" }
 rs-thread-ncp = { path = "../../crates/rs-thread-ncp", features = ["radio-spinel"] }
-tokio = { workspace = true }
+embassy-sync = { workspace = true }
+rand_core = { workspace = true }
+# OS entropy source for the instance RNG.
+getrandom = { version = "0.4", default-features = false }
+tokio = { workspace = true, features = ["signal"] }
 log = { workspace = true }
 env_logger = "0.11"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+# Optional REST API.
+axum = { version = "0.8", optional = true }
 
 [lints.rust]
 unsafe_code = "deny"

@@ -287,6 +287,9 @@ pub struct Core<S, C: CryptoBackend, R> {
     /// UDP port of the Border Agent (native commissioner flag of the
     /// Discovery Response).
     pub(crate) border_agent_port: Option<u16>,
+    /// Host-bound IPv6 datagrams (`forward_host`): ring of 2 × 1280-byte slots.
+    #[cfg(feature = "host-interface")]
+    pub(crate) host_ip6: Deque<([u8; rs_thread_net::header::MAX_DATAGRAM_LEN], u16), 2>,
 }
 
 /// Room for the Thread Discovery TLV value of a Discovery Response.

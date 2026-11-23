@@ -315,6 +315,10 @@ pub enum Event {
     /// A graceful detach finished ([`Instance::detach_gracefully`]); Thread
     /// is stopped.
     DetachedGracefully,
+    /// A Thread-originated IPv6 datagram must be forwarded to the host
+    /// network interface.  Drain it with [`Instance::take_ip6_datagram`].
+    #[cfg(feature = "host-interface")]
+    Ip6Datagram,
     /// An anycast locate request finished ([`Instance::anycast_locate`]): the
     /// Mesh-Local EID and RLOC16 of the closest destination, or the error.
     AnycastLocated(core::result::Result<(core::net::Ipv6Addr, u16), rs_thread_core::Error>),
@@ -633,6 +637,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             addr_of_mut!((*c).lmm).write(lmm::LinkMetricsManager::new());
             put(addr_of_mut!((*c).mactx), stack::MacTx::default);
             put(addr_of_mut!((*c).events), Deque::new);
+            #[cfg(feature = "host-interface")]
+            put(addr_of_mut!((*c).host_ip6), Deque::new);
             addr_of_mut!((*c).iid_secret).write(iid_secret);
             put(addr_of_mut!((*c).disc_rx), Deque::new);
             addr_of_mut!((*c).joiner_discovering).write(false);
@@ -930,6 +936,57 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// The next application event.
     pub fn poll_event(&mut self) -> Option<Event> {
         self.core.events.pop_front()
+    }
+
+    /// Drain one Thread-originated IPv6 datagram into `buf`, returning its
+    /// length.  Returns `None` when the queue is empty.
+    ///
+    /// Call after receiving [`Event::Ip6Datagram`] to retrieve the datagram
+    /// the IPv6 layer decided to forward to the host network interface.
+    #[cfg(feature = "host-interface")]
+    pub fn take_ip6_datagram(&mut self, buf: &mut [u8]) -> Option<usize> {
+        let (slot, len) = self.core.host_ip6.pop_front()?;
+        let n = (len as usize).min(buf.len());
+        buf[..n].copy_from_slice(&slot[..n]);
+        Some(n)
+    }
+
+    /// Feed an IPv6 datagram from the host network interface (backbone / TUN)
+    /// into the Thread IP layer.
+    ///
+    /// The IP layer routes the datagram into the Thread mesh via
+    /// `forward_thread`.  `forward_host` is cleared on the outcome to prevent
+    /// a forwarding loop.
+    #[cfg(feature = "host-interface")]
+    pub fn handle_ip6_from_host(&mut self, now: Instant, dg: &[u8]) {
+        use rs_thread_core::message::Origin;
+        use rs_thread_mesh::netdata::lookup::NetDataIp6Env;
+        use rs_thread_net::ip6::{Ctx, RxMeta, Scratch};
+
+        let mut buf = [0u8; rs_thread_net::header::MAX_DATAGRAM_LEN];
+        let Some(b) = buf.get_mut(..dg.len()) else {
+            return;
+        };
+        b.copy_from_slice(dg);
+        let mut scratch = Scratch::new();
+        let env = NetDataIp6Env {
+            view: self.core.netdata.view(),
+            mle: &self.mle,
+        };
+        let mut ctx = Ctx {
+            now,
+            rng: &mut self.prng,
+            env: &env,
+        };
+        let meta = RxMeta {
+            origin: Origin::HostTrusted,
+            link_security: true,
+            multicast_loop: false,
+        };
+        if let Ok(mut out) = self.core.ip6.handle(&mut ctx, meta, b, &mut scratch) {
+            out.forward_host = false;
+            self.ip6_outcome(now, &buf[..dg.len()], &scratch, out, true);
+        }
     }
 }
 

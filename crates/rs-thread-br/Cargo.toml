@@ -20,6 +20,8 @@ rs-thread-core = { workspace = true }
 rs-thread-spinel = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
+# Cross-platform async TUN interface (macOS utun, Linux /dev/net/tun, Windows wintun).
+tun2 = { version = "2", default-features = false, features = ["async"] }
 # mDNS for SRP advertising proxy.
 mdns-sd = "0.11"
 # DNS resolver for the DNS proxy.
