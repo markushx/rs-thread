@@ -19,7 +19,7 @@ readme = "../../README.md"
 default = ["ftd", "commissioner", "border-agent"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd"]
 # The Commissioner (on-mesh, and the core of an external Commissioner).
-commissioner = ["ftd"]
+commissioner = ["ftd", "opentrust-dtls/dtls-server"]
 # The Border Agent and the external Commissioner's client side.
 border-agent = ["commissioner"]
 # The TCAT Device's command engine (Thread 1.4.1 chapter 13, ADR 0002);

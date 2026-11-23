@@ -6,7 +6,7 @@ use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use opentrust_core::time::Instant;
 use opentrust_instance::{InstanceCrypto, RadioAction, TxOutcome};
-use opentrust_platform::radio::sim::MAX_PSDU_LEN;
+use opentrust_platform::radio::MAX_PSDU_LEN;
 use opentrust_platform::radio::{RSSI_INVALID, RadioError};
 use opentrust_platform::{Alarm, Clock, Radio, SettingsStore};
 use rand_core::{CryptoRng, Rng};
@@ -115,7 +115,9 @@ where
         let res = match action {
             RadioAction::Configure(cfg) => radio.set_config(&cfg).await,
             RadioAction::SetSrcMatch(cfg) => radio.set_src_match_config(&cfg).await,
+            #[cfg(feature = "csl")]
             RadioAction::SetCsl(csl) => radio.set_csl(&csl).await,
+            #[cfg(feature = "csl")]
             RadioAction::ReceiveAt {
                 channel,
                 start_us,

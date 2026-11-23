@@ -30,12 +30,17 @@
 
 use core::fmt::Debug;
 
+#[cfg(any(feature = "testing", test))]
 pub mod sim;
 mod soft_mac;
 #[cfg(test)]
 mod tests;
 
 pub use soft_mac::SoftMacNeeds;
+
+/// Maximum PSDU length (IEEE 802.15.4-2015 §11.3, `aMaxPHYPacketSize`),
+/// bytes, excluding the FCS.
+pub const MAX_PSDU_LEN: usize = 127;
 
 /// The 802.15.4 "invalid RSSI" value (+127 dBm), i.e. "no measurement".
 pub const RSSI_INVALID: i8 = 127;

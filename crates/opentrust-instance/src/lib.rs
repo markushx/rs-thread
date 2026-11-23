@@ -125,7 +125,9 @@ mod srp_server;
 mod stack;
 mod tmf;
 
-pub use api::{PingReply, UdpSocket};
+#[cfg(feature = "ping")]
+pub use api::PingReply;
+pub use api::UdpSocket;
 #[cfg(feature = "bbr")]
 pub use bbr::MlrRegisterResult;
 #[cfg(feature = "border-agent")]
@@ -328,6 +330,7 @@ pub enum Event {
     /// A UDP socket has data ([`Instance::udp_recv`]).
     UdpReadable(UdpSocket),
     /// An ICMPv6 echo reply arrived ([`Instance::take_ping_reply`]).
+    #[cfg(feature = "ping")]
     PingReply,
     /// A network answered the discovery scan ([`Instance::discover_start`]).
     DiscoverResult(DiscoverResult),
@@ -487,6 +490,7 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) diag_query_id: u16,
     pub(crate) cm: commissioning::Commissioning<C>,
     pub(crate) tmf_ext: Option<TmfExtension>,
+    #[cfg(feature = "ping")]
     pub(crate) ping: api::PingState,
     pub(crate) scan: scan::ScanState,
     pub(crate) ip6_enabled: bool,
@@ -678,6 +682,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).diag_in), Deque::new);
             addr_of_mut!((*p).diag_query_id).write((prng_seed >> 16) as u16);
             addr_of_mut!((*p).tmf_ext).write(None);
+            #[cfg(feature = "ping")]
             addr_of_mut!((*p).ping).write(api::PingState::default());
             put(addr_of_mut!((*p).scan), scan::ScanState::default);
             addr_of_mut!((*p).ip6_enabled).write(false);

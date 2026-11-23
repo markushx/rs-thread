@@ -13,6 +13,10 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
+# In-memory test radio (`radio::sim::TestRadio`) and mock clock.
+# Enabled automatically in test builds via `#[cfg(test)]` guards.
+# Enable explicitly when you need them from non-test code (the sim crate).
+testing = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "heapless/defmt"]
 log = ["dep:log", "opentrust-core/log"]
 

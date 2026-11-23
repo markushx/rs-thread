@@ -477,8 +477,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                                 )
                             {
                                 self.core.push_event(crate::Event::AnycastLocated(Ok((
-                                    l.ml_eid,
-                                    l.rloc16.0,
+                                    l.ml_eid, l.rloc16.0,
                                 ))));
                             }
                         }

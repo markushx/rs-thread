@@ -7,7 +7,7 @@ use opentrust_core::types::{ExtAddress, PanId};
 #[cfg(feature = "csl")]
 use opentrust_platform::radio::CslConfig;
 use opentrust_platform::radio::{
-    Config, MacKeys, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig, sim::MAX_PSDU_LEN,
+    Config, MAX_PSDU_LEN, MacKeys, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig,
 };
 
 #[cfg(feature = "link-metrics")]

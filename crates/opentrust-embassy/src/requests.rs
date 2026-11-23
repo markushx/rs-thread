@@ -14,6 +14,7 @@
 //! Timeouts are driven by the [`run`](OpenTrust::run) future (it wakes at the
 //! earliest request deadline), so they need no timer of their own.
 
+#[cfg(feature = "ping")]
 use core::net::Ipv6Addr;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -21,14 +22,16 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::Vec;
 use opentrust_core::Error;
 use opentrust_core::time::{Duration, Instant};
-use opentrust_instance::{DiscoverResult, InstanceCrypto, PingReply};
 #[cfg(feature = "dns-client")]
 use opentrust_instance::Instance;
+#[cfg(feature = "ping")]
+use opentrust_instance::PingReply;
 #[cfg(feature = "dns-client")]
 use opentrust_instance::{
     BrowseInstance, DnsError, DnsOutcome, MAX_BROWSE_INSTANCES, QueryConfig, QueryId,
     ResolvedAddresses, ResolvedService,
 };
+use opentrust_instance::{DiscoverResult, InstanceCrypto};
 #[cfg(feature = "srp-client")]
 use opentrust_instance::{ItemState, ServiceId};
 use opentrust_meshcop::joiner::JoinerConfig;
@@ -38,6 +41,7 @@ use rand_core::{CryptoRng, Rng};
 use crate::state::{OpenTrust, State};
 
 /// Identifier of the echo requests of [`OpenTrust::ping`].
+#[cfg(feature = "ping")]
 const PING_ID: u16 = 0x4f54;
 
 /// Error of the async DNS wrappers.
@@ -105,6 +109,7 @@ where
 
     /// Send an ICMPv6 echo request with `payload` and wait for its reply
     /// ([`Error::ResponseTimeout`] after `timeout`).
+    #[cfg(feature = "ping")]
     pub async fn ping(
         &self,
         dst: Ipv6Addr,

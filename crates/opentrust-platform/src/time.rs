@@ -29,7 +29,9 @@
 //! ([`RadioCaps::clock`](crate::radio::RadioCaps::clock)) can implement
 //! [`Clock`] on top of it so CSL arithmetic is in a single time base.
 
+#[cfg(any(feature = "testing", test))]
 use core::cell::Cell;
+#[cfg(any(feature = "testing", test))]
 use core::task::Waker;
 
 use opentrust_core::time::{Duration, Instant};
@@ -82,12 +84,14 @@ impl<T: Alarm + ?Sized> Alarm for &mut T {
 /// [`advance`](Self::advance) / [`set`](Self::set) moves time to the deadline.
 /// Single-threaded (`Cell`-based); it holds one waker, so it supports one
 /// pending `wait_until` at a time.
+#[cfg(any(feature = "testing", test))]
 #[derive(Default)]
 pub struct MockClock {
     now: Cell<Instant>,
     waker: Cell<Option<Waker>>,
 }
 
+#[cfg(any(feature = "testing", test))]
 impl core::fmt::Debug for MockClock {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("MockClock")
@@ -96,6 +100,7 @@ impl core::fmt::Debug for MockClock {
     }
 }
 
+#[cfg(any(feature = "testing", test))]
 impl MockClock {
     /// A clock at [`Instant::ZERO`].
     pub const fn new() -> Self {
@@ -122,12 +127,14 @@ impl MockClock {
     }
 }
 
+#[cfg(any(feature = "testing", test))]
 impl Clock for MockClock {
     fn now(&self) -> Instant {
         self.now.get()
     }
 }
 
+#[cfg(any(feature = "testing", test))]
 impl MockClock {
     /// An [`Alarm`] (and [`Clock`]) handle on this clock. The handle borrows
     /// the clock shared, so the test can keep advancing time while an alarm
@@ -138,15 +145,18 @@ impl MockClock {
 }
 
 /// An [`Alarm`] on a [`MockClock`]; see [`MockClock::alarm`].
+#[cfg(any(feature = "testing", test))]
 #[derive(Debug, Clone, Copy)]
 pub struct MockAlarm<'a>(&'a MockClock);
 
+#[cfg(any(feature = "testing", test))]
 impl Clock for MockAlarm<'_> {
     fn now(&self) -> Instant {
         self.0.now()
     }
 }
 
+#[cfg(any(feature = "testing", test))]
 impl Alarm for MockAlarm<'_> {
     async fn wait_until(&mut self, at: Instant) {
         let clock = self.0;

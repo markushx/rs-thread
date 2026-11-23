@@ -82,6 +82,7 @@ pub mod cert_log;
 pub mod commissioner;
 pub mod dataset;
 pub mod discovery;
+#[cfg(feature = "border-agent")]
 pub mod epskc;
 pub mod joiner;
 #[cfg(feature = "ftd")]

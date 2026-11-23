@@ -72,6 +72,7 @@ where
     /// Accept a session from `peer` (Border Agent / Joiner Router /
     /// Commissioner side). Cookies are bound to the peer's address and
     /// port.
+    #[cfg(feature = "dtls-server")]
     pub fn server(
         crypto: B,
         curve: C,

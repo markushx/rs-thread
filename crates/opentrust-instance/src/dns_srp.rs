@@ -15,33 +15,29 @@ use opentrust_core::time::Instant;
 use opentrust_net::udp::SocketHandle;
 
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use crate::Event;
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use crate::MAX_UDP_PAYLOAD;
+use crate::{Instance, InstanceCrypto};
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use core::net::Ipv6Addr;
+#[cfg(feature = "dns-client")]
+use heapless::String;
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
 use heapless::Vec;
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
 use opentrust_core::Error;
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
 use opentrust_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
-#[cfg(any(feature = "srp-client", feature = "dns-client"))]
-use opentrust_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
-#[cfg(any(feature = "srp-client", feature = "dns-client"))]
-use opentrust_net::udp::UdpSendOpts;
-use opentrust_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
-use crate::{Instance, InstanceCrypto};
-#[cfg(any(feature = "srp-client", feature = "dns-client"))]
-use crate::MAX_UDP_PAYLOAD;
-#[cfg(feature = "dns-client")]
-use heapless::String;
+#[cfg(feature = "srp-client")]
+use opentrust_core::crypto::ecdsa::SecretKey;
+#[cfg(feature = "srp-client")]
+use opentrust_core::settings::SettingsKey;
 #[cfg(feature = "dns-client")]
 use opentrust_dns::client::{
     DnsClient, DnsContext, DnsError, DnsResult, MAX_LABEL, QueryConfig, QueryId, ResolvedAddresses,
     ResolvedService,
 };
-#[cfg(any(feature = "srp-client", feature = "dns-client"))]
-use core::net::Ipv6Addr;
-#[cfg(feature = "srp-client")]
-use opentrust_core::crypto::ecdsa::SecretKey;
-#[cfg(feature = "srp-client")]
-use opentrust_core::settings::SettingsKey;
 #[cfg(feature = "srp-client")]
 use opentrust_dns::srp::discovery::NetDataService;
 #[cfg(feature = "srp-client")]
@@ -52,7 +48,11 @@ use opentrust_dns::srp::{
 #[cfg(feature = "srp-client")]
 use opentrust_mesh::netdata::ServiceEntry;
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
-use crate::Event;
+use opentrust_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
+#[cfg(any(feature = "srp-client", feature = "dns-client"))]
+use opentrust_net::udp::UdpSendOpts;
+use opentrust_platform::SettingsStore;
+use rand_core::{CryptoRng, Rng};
 
 /// Instances reported by one browse result.
 #[cfg(feature = "dns-client")]
@@ -171,10 +171,17 @@ impl DgramQueue {
 #[cfg(all(feature = "srp-client", feature = "srp-services-12"))]
 pub const SRP_SERVICES: usize = 12;
 /// See above.
-#[cfg(all(feature = "srp-client", feature = "srp-services-8", not(feature = "srp-services-12")))]
+#[cfg(all(
+    feature = "srp-client",
+    feature = "srp-services-8",
+    not(feature = "srp-services-12")
+))]
 pub const SRP_SERVICES: usize = 8;
 /// See above.
-#[cfg(all(feature = "srp-client", not(any(feature = "srp-services-8", feature = "srp-services-12"))))]
+#[cfg(all(
+    feature = "srp-client",
+    not(any(feature = "srp-services-8", feature = "srp-services-12"))
+))]
 pub const SRP_SERVICES: usize = 6;
 
 /// State of the SRP and DNS clients.
@@ -480,7 +487,6 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.poll(now);
         r
     }
-
 }
 
 #[cfg(feature = "srp-client")]
@@ -622,7 +628,6 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     pub fn srp_is_running(&self) -> bool {
         self.dnssrp.srp.is_running()
     }
-
 }
 
 #[cfg(feature = "dns-client")]
@@ -770,7 +775,6 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         found
     }
-
 }
 
 impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> {

@@ -49,13 +49,13 @@ use opentrust_core::{Error, Result};
 use rand_core::{CryptoRng, Rng};
 use zeroize::Zeroize;
 
-use crate::rdata::{MAX_LABEL, MAX_TXT};
-use crate::rdata::{LeaseOption, TxtEntry, encode_txt};
-use crate::wire::{Header, Parser, Part, Writer, class, opcode, rcode, rtype};
 use super::discovery::{
     ANYCAST_SERVER_PORT, AnycastInfo, NetDataService, UnicastInfo, UnicastType, anycast_entries,
     preferred_anycast, unicast_entries,
 };
+use crate::rdata::{LeaseOption, TxtEntry, encode_txt};
+use crate::rdata::{MAX_LABEL, MAX_TXT};
+use crate::wire::{Header, Parser, Part, Writer, class, opcode, rcode, rtype};
 
 /// Default domain.
 pub const DEFAULT_DOMAIN: &str = "default.service.arpa";

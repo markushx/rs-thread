@@ -57,6 +57,7 @@ pub(crate) struct State<S, C: InstanceCrypto, R> {
     pub(crate) req_deadline: Option<Instant>,
     /// The last Joiner result, `None` while joining or before a join.
     pub(crate) joiner_result: Option<Result<(), opentrust_core::Error>>,
+    #[cfg(feature = "ping")]
     pub(crate) ping_seq: u16,
     /// Results of the running discovery scan (`None`: done).
     pub(crate) disc_q: Deque<Option<DiscoverResult>, 16>,
@@ -216,6 +217,7 @@ impl<M: RawMutex, K: Clock, S, C: InstanceCrypto, R> Resources<M, K, S, C, R> {
             addr_of_mut!((*s).req_waiters).write(MultiWakerRegistration::new());
             addr_of_mut!((*s).req_deadline).write(None);
             addr_of_mut!((*s).joiner_result).write(None);
+            #[cfg(feature = "ping")]
             addr_of_mut!((*s).ping_seq).write(0);
             addr_of_mut!((*s).disc_q).write(Deque::new());
             addr_of_mut!((*s).energy_q).write(Deque::new());

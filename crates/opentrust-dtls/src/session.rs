@@ -237,8 +237,11 @@ pub struct Session<B: CryptoBackend, C: P256> {
     kkpp_len: usize,
 
     // Server: cookie secret and the transport identity of the client.
+    #[cfg(feature = "dtls-server")]
     cookie_key: [u8; 32],
+    #[cfg(feature = "dtls-server")]
     client_id: [u8; MAX_CLIENT_ID_LEN],
+    #[cfg(feature = "dtls-server")]
     client_id_len: usize,
 
     // Handshake sequencing.
@@ -266,6 +269,7 @@ pub struct Session<B: CryptoBackend, C: P256> {
 
     // Pending one-shot output.
     pending_alert: Option<[u8; 2]>,
+    #[cfg(feature = "dtls-server")]
     pending_hvr: Option<(u64, u16, [u8; COOKIE_LEN])>,
 }
 
@@ -283,6 +287,7 @@ impl<B: CryptoBackend, C: P256> fmt::Debug for Session<B, C> {
 impl<B: CryptoBackend, C: P256> Drop for Session<B, C> {
     fn drop(&mut self) {
         self.master.zeroize();
+        #[cfg(feature = "dtls-server")]
         self.cookie_key.zeroize();
         self.flight.clear();
     }
@@ -336,8 +341,11 @@ where
             cookie_len: 0,
             kkpp: [0; ROUND_ONE_MAX_LEN],
             kkpp_len: 0,
+            #[cfg(feature = "dtls-server")]
             cookie_key: [0; 32],
+            #[cfg(feature = "dtls-server")]
             client_id: [0; MAX_CLIENT_ID_LEN],
+            #[cfg(feature = "dtls-server")]
             client_id_len: 0,
             next_send_seq: 0,
             next_recv_seq: 0,
@@ -354,6 +362,7 @@ where
             timeout: cfg.hs_timeout_min,
             retransmissions: 0,
             pending_alert: None,
+            #[cfg(feature = "dtls-server")]
             pending_hvr: None,
         })
     }
@@ -381,6 +390,7 @@ where
     /// bound to it). The session waits for a ClientHello; ClientHellos
     /// without a valid cookie are answered with a HelloVerifyRequest
     /// without keeping state.
+    #[cfg(feature = "dtls-server")]
     pub fn server<R: CryptoRng + ?Sized>(
         crypto: B,
         curve: C,
@@ -482,6 +492,7 @@ where
         if let Some(alert) = self.pending_alert.take() {
             return self.write_alert(alert, out).ok();
         }
+        #[cfg(feature = "dtls-server")]
         if let Some((rec_seq, msg_seq, cookie)) = self.pending_hvr.take() {
             return Self::write_hvr(rec_seq, msg_seq, &cookie, out).ok();
         }
@@ -513,6 +524,7 @@ where
         }
     }
 
+    #[cfg(feature = "dtls-server")]
     fn write_hvr(rec_seq: u64, msg_seq: u16, cookie: &[u8], out: &mut [u8]) -> Result<usize> {
         let body_len = 3 + cookie.len();
         let total = record::HEADER_LEN + hs::HEADER_LEN + body_len;
@@ -774,6 +786,7 @@ where
         frag: &[u8],
     ) -> HsResult {
         let whole = fh.frag_off == 0 && fh.frag_len == fh.len;
+        #[cfg(feature = "dtls-server")]
         if self.hs == Hs::ServerWaitHello {
             // Any message_seq is adopted (RFC 6347 §4.2.2); like mbedTLS we
             // require an unfragmented ClientHello.
@@ -964,6 +977,7 @@ where
                 self.connected();
                 Ok(())
             }
+            #[cfg(feature = "dtls-server")]
             (Hs::ServerWaitCke, HT_CLIENT_KEY_EXCHANGE) => {
                 self.next_recv_seq = msg_seq + 1;
                 self.hash_message(msg_type, msg_seq, body);
@@ -973,6 +987,7 @@ where
                 self.hs = Hs::ServerWaitCcs;
                 Ok(())
             }
+            #[cfg(feature = "dtls-server")]
             (Hs::ServerWaitFinished, HT_FINISHED) => {
                 let expect = self.verify_data(b"client finished");
                 if !bool::from(expect.ct_eq(body)) {
@@ -1024,6 +1039,7 @@ where
         Ok(())
     }
 
+    #[cfg(feature = "dtls-server")]
     fn send_server_final_flight(&mut self, now: Instant) -> Result<()> {
         self.flight.clear();
         let seq = self.next_send_seq;
@@ -1053,6 +1069,7 @@ where
         self.master.zeroize();
     }
 
+    #[cfg(feature = "dtls-server")]
     fn make_cookie(&self, t: u32) -> [u8; COOKIE_LEN] {
         let mut mac = self.crypto.hmac_sha256(&self.cookie_key);
         mac.update(&t.to_be_bytes());
@@ -1064,6 +1081,7 @@ where
         c
     }
 
+    #[cfg(feature = "dtls-server")]
     fn cookie_valid(&self, now: Instant, cookie: &[u8]) -> bool {
         if cookie.len() != COOKIE_LEN {
             return false;
@@ -1076,6 +1094,7 @@ where
         bool::from(self.make_cookie(t).ct_eq(cookie))
     }
 
+    #[cfg(feature = "dtls-server")]
     fn server_on_client_hello<R: CryptoRng + ?Sized>(
         &mut self,
         now: Instant,
@@ -1120,6 +1139,7 @@ where
         hf(self.send_server_flight(now, rng, reneg, point_formats))
     }
 
+    #[cfg(feature = "dtls-server")]
     fn send_server_flight<R: CryptoRng + ?Sized>(
         &mut self,
         now: Instant,

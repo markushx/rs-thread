@@ -11,9 +11,9 @@ use opentrust_core::time::Instant;
 use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use sha2::{Digest, Sha256};
 
-use crate::srp::discovery::*;
 use super::*;
 use crate::rdata::{LeaseOption, TxtEntry};
+use crate::srp::discovery::*;
 use crate::test_util::TestRng;
 use crate::wire::{Header, Parser, Writer, class, opcode, rcode, rtype};
 

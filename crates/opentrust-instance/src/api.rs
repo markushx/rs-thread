@@ -4,6 +4,7 @@
 
 use core::net::{Ipv6Addr, SocketAddrV6};
 
+#[cfg(feature = "ping")]
 use heapless::Deque;
 use opentrust_core::settings::SettingsKey;
 use opentrust_core::time::Instant;
@@ -18,8 +19,12 @@ use opentrust_meshcop::tlv::SecurityPolicy;
 use opentrust_mle::Role;
 use opentrust_mle::persist::Restored;
 use opentrust_mle::tlv::{DeviceMode, LeaderData, Timestamp};
-use opentrust_net::header::{PROTO_ICMP6, PROTO_UDP};
+#[cfg(feature = "ping")]
+use opentrust_net::header::PROTO_ICMP6;
+use opentrust_net::header::PROTO_UDP;
+#[cfg(feature = "ping")]
 use opentrust_net::icmp6::{Icmp6Header, TYPE_ECHO_REPLY, TYPE_ECHO_REQUEST};
+#[cfg(feature = "ping")]
 use opentrust_net::ip6::{Delivery, SendInfo};
 use opentrust_net::netif::UnicastAddress;
 use opentrust_net::udp::{RecvInfo, SocketHandle, UdpSendOpts};
@@ -30,13 +35,16 @@ use crate::InstanceCrypto;
 
 #[cfg(feature = "border-router")]
 use crate::DnsSrpService;
-use crate::{Event, Instance};
+#[cfg(feature = "ping")]
+use crate::Event;
+use crate::Instance;
 
 /// A UDP socket of the application (OT `otUdpSocket`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UdpSocket(pub(crate) SocketHandle);
 
 /// A received ICMPv6 echo reply.
+#[cfg(feature = "ping")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PingReply {
     /// The replying address.
@@ -53,6 +61,7 @@ pub struct PingReply {
     pub at: Instant,
 }
 
+#[cfg(feature = "ping")]
 #[derive(Debug, Default)]
 pub(crate) struct PingState {
     replies: Deque<PingReply, 4>,
@@ -1184,6 +1193,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// Send an ICMPv6 echo request (OT `otIcmp6SendEchoRequest`); the reply
     /// is [`Event::PingReply`] / [`take_ping_reply`](Self::take_ping_reply).
+    #[cfg(feature = "ping")]
     pub fn ping(
         &mut self,
         dst: Ipv6Addr,
@@ -1217,12 +1227,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// The oldest unread echo reply.
+    #[cfg(feature = "ping")]
     pub fn take_ping_reply(&mut self) -> Option<PingReply> {
         self.ping.replies.pop_front()
     }
 
     /// The oldest unread echo reply with identifier `id` and sequence number
     /// `seq`; other replies stay queued.
+    #[cfg(feature = "ping")]
     pub fn take_ping_reply_matching(&mut self, id: u16, seq: u16) -> Option<PingReply> {
         let n = self.ping.replies.len();
         let mut found = None;
@@ -1239,6 +1251,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         found
     }
 
+    #[cfg(feature = "ping")]
     pub(crate) fn ping_received(&mut self, now: Instant, d: &Delivery, bytes: &[u8]) {
         let Ok(h) = Icmp6Header::parse(bytes) else {
             return;

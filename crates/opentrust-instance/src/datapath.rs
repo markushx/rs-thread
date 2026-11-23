@@ -1254,7 +1254,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// An echo reply or other ICMPv6 message for the application.
     fn handle_icmp(&mut self, now: Instant, d: &Delivery, bytes: &[u8]) {
+        #[cfg(feature = "ping")]
         self.ping_received(now, d, bytes);
+        #[cfg(not(feature = "ping"))]
+        let _ = (now, d, bytes);
     }
 
     /// Frames dropped by link-layer replay protection so far.

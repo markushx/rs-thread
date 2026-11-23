@@ -128,11 +128,13 @@ mod run;
 mod state;
 mod udp;
 
-pub use opentrust_instance::{DiscoverResult, PingReply};
-#[cfg(feature = "dns-client")]
-pub use opentrust_instance::{DnsError, QueryConfig, ResolvedAddresses, ResolvedService};
+pub use opentrust_instance::DiscoverResult;
+#[cfg(feature = "ping")]
+pub use opentrust_instance::PingReply;
 #[cfg(feature = "srp-client")]
 pub use opentrust_instance::ServiceId;
+#[cfg(feature = "dns-client")]
+pub use opentrust_instance::{DnsError, QueryConfig, ResolvedAddresses, ResolvedService};
 pub use opentrust_instance::{Event, Instance};
 pub use opentrust_meshcop::joiner::JoinerConfig;
 #[cfg(feature = "dns-client")]

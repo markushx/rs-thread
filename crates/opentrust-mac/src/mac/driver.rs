@@ -8,7 +8,7 @@ use core::pin::pin;
 
 use embassy_futures::select::{Either, Either3, select, select3};
 use opentrust_core::time::Instant;
-use opentrust_platform::radio::{RSSI_INVALID, RadioError, sim::MAX_PSDU_LEN};
+use opentrust_platform::radio::{MAX_PSDU_LEN, RSSI_INVALID, RadioError};
 use opentrust_platform::{Alarm, Clock, Radio};
 use rand_core::Rng;
 

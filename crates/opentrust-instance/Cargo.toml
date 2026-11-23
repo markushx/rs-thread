@@ -13,7 +13,7 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "bbr", "bbr-server", "border-router", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client", "link-metrics", "csl"]
+default = ["ftd", "bbr", "bbr-server", "border-router", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client", "link-metrics", "csl", "ping"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
 # Thread 1.2 Backbone Router client glue: Domain Unicast Address (DUA) and
 # Multicast Listener Registration (MLR). An end device without a Backbone
@@ -32,6 +32,10 @@ scan-servers = []
 # Thread 1.2 Link Metrics: initiator (querying) and subject (reporting) roles,
 # Enhanced-ACK based probing.
 link-metrics = ["opentrust-mle/link-metrics", "opentrust-mac/link-metrics", "opentrust-mesh/link-metrics"]
+# ICMPv6 echo-request sender and reply queue (OT `otIcmp6SendEchoRequest`).
+# ICMPv6 echo replies to incoming pings are always answered; this only gates
+# the application API for sending pings and reading replies.
+ping = []
 # Thread 1.2 Coordinated Sampled Listening: receiver side (child) and
 # parent-side child tracking.
 csl = ["opentrust-mle/csl", "opentrust-mac/csl", "opentrust-mesh/csl"]

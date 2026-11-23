@@ -13,9 +13,13 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["soft-crypto"]
+default = ["soft-crypto", "dtls-server"]
 # Software P-256 / AES / SHA-256 (RustCrypto) via opentrust-core.
 soft-crypto = ["opentrust-core/soft-crypto"]
+# DTLS server role: Session::server, Coaps::server, the cookie / HelloVerifyRequest
+# path and the server-side handshake. The Joiner uses only the client; disable
+# this for a Joiner-only build to remove the server code.
+dtls-server = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-coap/defmt"]
 log = ["dep:log", "opentrust-core/log", "opentrust-coap/log"]
 
