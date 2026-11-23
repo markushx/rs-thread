@@ -1,6 +1,6 @@
 [alias]
 # Check all no_std crates for the embedded targets.
 # Excluded: rs-thread-sim, rs-thread-br, rsthread-br-posix (std-only); openthread-sys (C++ build).
-check-nrf52 = "check --workspace --exclude rs-thread-sim --exclude rs-thread-br --exclude rsthread-br-posix --exclude openthread-sys --target thumbv7em-none-eabihf"
-check-nrf54 = "check --workspace --exclude rs-thread-sim --exclude rs-thread-br --exclude rsthread-br-posix --exclude openthread-sys --target thumbv8m.main-none-eabihf"
-check-esp32c6 = "check --workspace --exclude rs-thread-sim --exclude rs-thread-br --exclude rsthread-br-posix --exclude openthread-sys --target riscv32imac-unknown-none-elf"
+check-nrf52 = "check --workspace --exclude rs-thread-sim --exclude rs-thread-rcp-sim --exclude rs-thread-difftest --exclude rs-thread-br --exclude rsthread-br-posix --exclude openthread-sys --target thumbv7em-none-eabihf"
+check-nrf54 = "check --workspace --exclude rs-thread-sim --exclude rs-thread-rcp-sim --exclude rs-thread-difftest --exclude rs-thread-br --exclude rsthread-br-posix --exclude openthread-sys --target thumbv8m.main-none-eabihf"
+check-esp32c6 = "check --workspace --exclude rs-thread-sim --exclude rs-thread-rcp-sim --exclude rs-thread-difftest --exclude rs-thread-br --exclude rsthread-br-posix --exclude openthread-sys --target riscv32imac-unknown-none-elf"

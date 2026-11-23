@@ -1,11 +1,11 @@
 //! nRF52840 platform drivers for rs-thread.
 //!
-//! - [`NrfRadio`]: an [`rs_thread_platform::Radio`] over the 802.15.4 mode of
+//! - `NrfRadio`: an [`rs_thread_platform::Radio`] over the 802.15.4 mode of
 //!   the nRF52840 RADIO peripheral, wrapping `embassy-nrf`'s
 //!   `radio::ieee802154` driver.
-//! - [`EmbassyClock`] / [`EmbassyAlarm`]: [`rs_thread_platform::Clock`] and
+//! - `EmbassyClock` / `EmbassyAlarm`: [`rs_thread_platform::Clock`] and
 //!   [`rs_thread_platform::Alarm`] over `embassy-time`.
-//! - [`NrfRng`]: the RNG peripheral as a `rand_core` 0.10 `CryptoRng`
+//! - `NrfRng`: the RNG peripheral as a `rand_core` 0.10 `CryptoRng`
 //!   (re-exported from `embassy-nrf`, which implements the trait).
 //!
 //! # Backends
@@ -49,7 +49,7 @@
 //!
 //! ## `radio-embassy`
 //!
-//! The `embassy-nrf` driver has no MAC offload, so [`NrfRadio`] reports no MAC
+//! The `embassy-nrf` driver has no MAC offload, so `NrfRadio` reports no MAC
 //! capabilities: the rs-thread MAC does address filtering, software ACK, ACK
 //! matching, ACK timeout, retries, CSMA backoff and transmit security itself.
 //! The radio does CCA before a transmission (`transmit` fails with `TxFailed`
@@ -69,7 +69,7 @@
 //! `nrf_802154::OpenThreadRadio`, without the esp-rs `openthread` crate.
 //!
 //! MPSL (clocks, timeslots, BLE coexistence) must be initialised before the
-//! radio: [`init_mpsl`] with the 32.768 kHz crystal as LF clock source (the
+//! radio: `init_mpsl` with the 32.768 kHz crystal as LF clock source (the
 //! nRF52840 DK has one), then `MultiprotocolServiceLayer::run` on an
 //! executor. MPSL requires its own critical-section implementation (enabled
 //! by the feature, so the application must not enable
