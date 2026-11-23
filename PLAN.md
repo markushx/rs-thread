@@ -407,7 +407,7 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 
 ### 16a – Spinel host transport (`rs-thread-ncp`, `std` feature)
 
-- [ ] `rs-thread-ncp`: add a host-side `RadioSpinel` module (feature `radio-spinel`, `std`-only) that is the mirror of the existing device-side `Rcp`: it drives an RCP by sending Spinel property-get/set/insert/remove commands and dispatching unsolicited `STREAM_RAW` frames; implements `rs_thread_platform::radio::Radio` so the rs-thread MAC can use it transparently
+- [x] `rs-thread-ncp`: add a host-side `RadioSpinel` module (feature `radio-spinel`, `std`-only) that is the mirror of the existing device-side `Rcp`: it drives an RCP by sending Spinel property-get/set/insert/remove commands and dispatching unsolicited `STREAM_RAW` frames; implements `rs_thread_platform::radio::Radio` so the rs-thread MAC can use it transparently
   - Transport: reuse the existing `Transport` trait (`rcp.rs:48`); add a tokio-backed `UartTransport` (`tokio-serial` crate or `/dev/tty*` via `tokio::fs`) and a `SocketTransport` (Unix-domain or TCP socket, for use with `rs-thread-rcp-sim`)
   - Property mapping: `PROP_PHY_CHAN`, `PROP_MAC_15_4_PANID`, `PROP_MAC_15_4_LADDR/SADDR`, `PROP_STREAM_RAW` (TX with frame metadata, RX callback dispatch), `PROP_PHY_RSSI`, `PROP_MAC_ENERGY_SCAN_RESULT`, `PROP_MAC_SCAN_STATE`, `PROP_RADIO_CAPS`
   - `SoftMacNeeds`: derive from `PROP_RADIO_CAPS` exactly as the device side does (capabilities the RCP advertises → subtract from what the host does in software)
@@ -447,7 +447,7 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
   4. starts the SRP advertising proxy and DNS proxy
   5. serves a minimal REST API (`feature = "rest"`, `axum ≥ 0.8`) with `GET /node`, `GET /networks`, `GET /commissioner` mirroring the `ot-br-posix` REST surface (`src/rest/`)
   6. handles `SIGTERM`/`SIGINT` with a graceful `Instance::thread_stop`
-- [ ] Workspace `Cargo.toml`: add `examples/rsthread-br-posix`; shared `target/` dir
+- [x] Workspace `Cargo.toml`: add `examples/rsthread-br-posix`; shared `target/` dir
 - [ ] Integration test (`examples/rsthread-br-posix/tests/integration.rs`): start the binary with `rs-thread-rcp-sim` as the Spinel socket backend, attach a second rs-thread node through the virtual-time medium; assert: Thread attaches, the OMR prefix appears in Network Data, an SRP registration on Thread is bridged to the backbone `mdns-sd` responder, a DNS query from the Thread node resolves through the proxy
 - [ ] Hardware smoke test (`docs/thread-border-router.md` section: rsthread-br-posix): run `rsthread-br-posix` with the nRF52840 Dongle RCP (`/dev/tty.usbmodem*`), join the nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle
 
