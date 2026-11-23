@@ -1,7 +1,7 @@
-// C ABI over OpenThread's internal C++ classes, used by the OpenTrust
-// differential tests (`crates/opentrust-difftest`). Every function takes byte
+// C ABI over OpenThread's internal C++ classes, used by the rs-thread
+// differential tests (`crates/rs-thread-difftest`). Every function takes byte
 // buffers and returns byte buffers or fixed-layout structs; the struct layouts
-// are mirrored in `crates/opentrust-difftest/src/ffi.rs`.
+// are mirrored in `crates/rs-thread-difftest/src/ffi.rs`.
 //
 // Compiled by `build.rs` (feature `diff-shim`) with the flags of the
 // OpenThread core library and linked in front of it.
