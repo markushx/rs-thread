@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]    # only run on merge; PRs use pull_request trigger
     tags-ignore: ["v*"]   # release.yml handles tags
   pull_request:
 
