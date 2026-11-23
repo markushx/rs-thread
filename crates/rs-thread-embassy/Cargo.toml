@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-embassy"
-description = "Executor-agnostic async facade (embassy-sync) for the OpenTrust Thread stack"
+description = "Executor-agnostic async facade (embassy-sync) for the rs-thread Thread stack"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

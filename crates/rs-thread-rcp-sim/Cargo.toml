@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-rcp-sim"
-description = "OpenThread-compatible simulation RCP: OpenTrust radio over HDLC/Spinel on stdio and OpenThread's simulation radio protocol"
+description = "OpenThread-compatible simulation RCP: rs-thread radio over HDLC/Spinel on stdio and OpenThread's simulation radio protocol"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

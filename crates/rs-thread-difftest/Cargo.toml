@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-difftest"
-description = "Differential tests of OpenTrust codecs and crypto against OpenThread (dev-only)"
+description = "Differential tests of rs-thread codecs and crypto against OpenThread (dev-only)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

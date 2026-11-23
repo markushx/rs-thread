@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-platform"
-description = "Platform abstraction traits (radio, clock/alarm, entropy, settings) for OpenTrust"
+description = "Platform abstraction traits (radio, clock/alarm, entropy, settings) for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

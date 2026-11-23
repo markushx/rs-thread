@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-mle"
-description = "Mesh Link Establishment (MLE): attach, roles, partitions for OpenTrust"
+description = "Mesh Link Establishment (MLE): attach, roles, partitions for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

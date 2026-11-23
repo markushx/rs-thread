@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-instance"
-description = "Thread node integration layer (Instance) for OpenTrust"
+description = "Thread node integration layer (Instance) for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

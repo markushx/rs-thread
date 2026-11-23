@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-matter"
-description = "rs-matter integration for the OpenTrust Thread stack (Matter over Thread)"
+description = "rs-matter integration for the rs-thread Thread stack (Matter over Thread)"
 version.workspace = true
 edition.workspace = true
 # rs-matter needs 1.92 (the workspace MSRV is 1.85).

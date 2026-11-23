@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-spinel"
-description = "Spinel frame codec and HDLC-lite framing for OpenTrust (no_std, no alloc)"
+description = "Spinel frame codec and HDLC-lite framing for rs-thread (no_std, no alloc)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

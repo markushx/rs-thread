@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-ncp"
-description = "Spinel RCP (radio co-processor) and NCP support for the OpenTrust Thread stack"
+description = "Spinel RCP (radio co-processor) and NCP support for the rs-thread Thread stack"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

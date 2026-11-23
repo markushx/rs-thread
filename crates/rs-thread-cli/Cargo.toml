@@ -1,6 +1,7 @@
 [package]
 name = "rs-thread-cli"
-description = "OpenThread-compatible CLI for the OpenTrust Thread stack"
+publish = false
+description = "OpenThread-compatible CLI for the rs-thread Thread stack"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
