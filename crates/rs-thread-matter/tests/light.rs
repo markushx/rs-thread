@@ -319,11 +319,11 @@ fn run_light() {
                 };
                 let peer = Address::Udp(SocketAddr::V6(light_addr));
                 let result = commissioner
-                    .commission(peer, PASSCODE, &opts, DEVICE_NODE_ID, VALID_FOREVER)
+                    .commission(peer, PASSCODE, &opts, DEVICE_NODE_ID, VALID_FOREVER, ())
                     .await
                     .expect("PASE and commissioning over Thread");
                 match select(
-                    pin!(commissioner.complete_via_case(&result)),
+                    pin!(commissioner.complete_via_case(&result, ())),
                     pin!(resolver(ctrl_matter, DEVICE_NODE_ID, light_addr)),
                 )
                 .await

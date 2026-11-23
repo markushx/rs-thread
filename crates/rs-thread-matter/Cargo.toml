@@ -48,7 +48,7 @@ defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 
 [dev-dependencies]
-rs-thread-sim = { workspace = true, features = ["testing", "ftd"] }
+rs-thread-sim = { workspace = true, features = ["testing", "ftd", "csl"] }
 # `std` (alloc, no `os`: the test harness brings its own embassy-time driver)
 # and the RustCrypto backend for the Matter side of the tests.
 rs-matter = { workspace = true, features = ["std", "rustcrypto"] }
