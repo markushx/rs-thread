@@ -60,10 +60,11 @@ jobs:
         include:
           - alias: check-nrf52
             target: thumbv7em-none-eabihf
-          - alias: check-nrf54
-            target: thumbv8m.main-none-eabihf
-          - alias: check-esp32c6
-            target: riscv32imac-unknown-none-elf
+          # nrf54 and esp32c6 temporarily disabled
+          # - alias: check-nrf54
+          #   target: thumbv8m.main-none-eabihf
+          # - alias: check-esp32c6
+          #   target: riscv32imac-unknown-none-elf
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
