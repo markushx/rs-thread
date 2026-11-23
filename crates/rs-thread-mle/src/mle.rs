@@ -632,7 +632,7 @@ impl<const C: usize> Mle<C> {
                 let o = meta.peer.ip().octets();
                 let iid: [u8; 8] = [o[8], o[9], o[10], o[11], o[12], o[13], o[14], o[15]];
                 rs_thread_core::warn!(
-                    "MLE rx: parse/security failed: {:?} (peer iid {:02x?})",
+                    "MLE rx: parse/security failed: {:?} (peer iid {:?})",
                     e,
                     iid
                 );
@@ -663,13 +663,13 @@ impl<const C: usize> Mle<C> {
         );
         match &r {
             Err(e) => rs_thread_core::warn!(
-                "MLE rx: {:?} from {:02x?} dropped: {:?}",
+                "MLE rx: {:?} from {:?} dropped: {:?}",
                 rx.command,
                 rx.meta.sender_ext_address().0,
                 e
             ),
             Ok(_) if attach_msg => rs_thread_core::info!(
-                "MLE rx: {:?} from {:02x?} handled",
+                "MLE rx: {:?} from {:?} handled",
                 rx.command,
                 rx.meta.sender_ext_address().0
             ),

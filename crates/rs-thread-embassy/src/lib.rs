@@ -70,7 +70,7 @@
 //! use embassy_futures::select::select;
 //! use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 //! use rs_thread_core::crypto::soft::SoftCrypto;
-//! use rs_thread_embassy::{rs-thread, Resources, UdpSocket};
+//! use rs_thread_embassy::{RsThread, Resources, UdpSocket};
 //! use rs_thread_instance::{Config, Instance, Role};
 //! use rs_thread_platform::radio::sim::TestRadio;
 //! use rs_thread_platform::time::MockClock;
