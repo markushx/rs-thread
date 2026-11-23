@@ -72,7 +72,7 @@ impl SrpProxy {
 
     /// Starts the mDNS daemon and advertises `_meshcop._udp` for this border
     /// router on `border_agent_port`.
-    pub async fn start(&mut self, border_agent_port: u16) -> std::io::Result<()> {
+    pub fn start(&mut self, border_agent_port: u16) -> std::io::Result<()> {
         let daemon = ServiceDaemon::new()
             .map_err(|e| std::io::Error::other(format!("mdns-sd: {e}")))?;
 
@@ -118,7 +118,7 @@ impl SrpProxy {
     ///
     /// If a service with the same instance name already exists it is first
     /// unregistered, then re-registered with the new details.
-    pub async fn register(&mut self, service: SrpService) -> std::io::Result<()> {
+    pub fn register(&mut self, service: SrpService) -> std::io::Result<()> {
         let Some(daemon) = self.daemon.as_ref() else {
             return Err(std::io::Error::other("SrpProxy::start() not called"));
         };
@@ -187,7 +187,7 @@ impl SrpProxy {
 
     /// Removes all services registered for `host_name` (SRP host removal or
     /// lease expiry).
-    pub async fn unregister_host(&mut self, host_name: &str) -> std::io::Result<()> {
+    pub fn unregister_host(&mut self, host_name: &str) -> std::io::Result<()> {
         let Some(daemon) = self.daemon.as_ref() else {
             return Ok(());
         };

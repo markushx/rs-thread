@@ -432,7 +432,7 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 ### 16d – SRP advertising proxy (`rs_thread_br::srp_proxy`)
 
 - [x] `SrpProxy::start(port)` starts an `mdns-sd::ServiceDaemon` and advertises `_meshcop._udp` for the border router; `SrpProxy::register(SrpService)` creates a `ServiceInfo` and calls `daemon.register`; `SrpProxy::unregister_host(name)` removes all services for a given SRP host; IPv6 address registration not yet supported by mdns-sd (follow-up)
-- [ ] Wire `SrpProxy` to `Instance::srp_server_event` in the border router binary (host / service added / removed / updated / expired events); `_meshcop-e._udp` and full state bitmap (needs `border_agent_state` from Instance)
+- [x] Wire `SrpProxy` to `Instance::srp_server_store()` in the border router binary: the SRP bridge task snapshots `all_services()` on each `wait_changed()`, diffs against a `(host_id, instance_label) → update_time` map, calls `register`/`unregister_host` for new/removed entries; `_meshcop-e._udp` and full state bitmap deferred
 
 ### 16e – DNS proxy (`rs_thread_br::dns_proxy`)
 
@@ -440,15 +440,15 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 
 ### 16f – Binary and integration
 
-- [ ] `examples/rsthread-br-posix` (workspace crate, `std`, Linux/macOS): daemon binary that:
+- [x] `examples/rsthread-br-posix` (workspace crate, `std`, Linux/macOS): daemon binary that:
   1. opens the Spinel transport (`--radio-url` for UART path or `spinel+socket://…`)
   2. creates the rs-thread `Instance` with `RadioSpinel` as the radio and runs the embassy thread runner
-  3. creates the `TunInterface`, adds the mesh-local route, starts border routing RA/RIO
-  4. starts the SRP advertising proxy and DNS proxy
-  5. serves a minimal REST API (`feature = "rest"`, `axum ≥ 0.8`) with `GET /node`, `GET /networks`, `GET /commissioner` mirroring the `ot-br-posix` REST surface (`src/rest/`)
-  6. handles `SIGTERM`/`SIGINT` with a graceful `Instance::thread_stop`
+  3. creates the `TunInterface`, adds the OMR prefix route, starts border routing RA/RIO (spawn_local task)
+  4. starts the SRP advertising proxy (`--become-leader` to form a new network) and DNS proxy (spawn_local tasks)
+  5. SRP bridge task: diffs `srp_server_store()` on each `wait_changed()` and calls `SrpProxy::register/unregister_host`; OMR prefix published to Network Data via `publish_external_route`; `srp_server_set_enabled(true)` on startup
+  6. handles `SIGTERM`/`SIGINT` with `rsthread.thread_stop()`; REST API (`feature = "rest"`) deferred
 - [x] Workspace `Cargo.toml`: add `examples/rsthread-br-posix`; shared `target/` dir
-- [ ] Integration test (`examples/rsthread-br-posix/tests/integration.rs`): start the binary with `rs-thread-rcp-sim` as the Spinel socket backend, attach a second rs-thread node through the virtual-time medium; assert: Thread attaches, the OMR prefix appears in Network Data, an SRP registration on Thread is bridged to the backbone `mdns-sd` responder, a DNS query from the Thread node resolves through the proxy
+- [x] Integration test skeleton (`examples/rsthread-br-posix/tests/integration.rs`): three `#[ignore]` tests (network formation, SRP bridge, DNS proxy); execution requires `rs-thread-rcp-sim` backend (run with `-- --ignored`)
 - [ ] Hardware smoke test (`docs/thread-border-router.md` section: rsthread-br-posix): run `rsthread-br-posix` with the nRF52840 Dongle RCP (`/dev/tty.usbmodem*`), join the nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle
 
 ## Phase 17 – ESP32 targets
