@@ -376,12 +376,11 @@ async fn main(spawner: Spawner) {
     }
     info!(
         "pairing: discriminator {} passcode {} (rs-matter test device, vendor 0xFFF1 product 0x8000)",
-        TEST_DEV_COMM.discriminator, 20202021u32
+        TEST_DEV_COMM.discriminator(), 20202021u32
     );
-    info!(
-        "manual pairing code {}",
-        TEST_DEV_COMM.compute_pretty_pairing_code().as_str()
-    );
+    if let Some(basic) = TEST_DEV_COMM.passcode() {
+        info!("manual pairing code {}", basic.compute_pretty_pairing_code().as_str());
+    }
     // Logs `SetupQRCode: [MT:...]`.
     #[cfg(feature = "ble")]
     let discovery = rs_matter::pairing::DiscoveryCapabilities::BLE

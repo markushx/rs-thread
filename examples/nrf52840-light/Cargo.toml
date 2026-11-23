@@ -39,7 +39,7 @@ rs-thread-nrf = { path = "../../crates/rs-thread-nrf", default-features = false,
 rs-thread-matter = { path = "../../crates/rs-thread-matter", default-features = false, features = ["ftd", "defmt"] }
 # The pure-Rust RustCrypto backend (p256, aes, sha2, ...); it needs `alloc`
 # for a few convenience paths, so the firmware has a small heap.
-rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false, features = ["rustcrypto", "defmt", "case-responder-only"] }
+rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false, features = ["rustcrypto", "defmt", "case-responder-only"] }
 
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { version = "0.5", features = ["defmt"] }

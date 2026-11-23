@@ -15,7 +15,7 @@
 //! | [`rdata`] | TXT entries, KEY / SIG(0), EDNS(0) OPT with the Update Lease option (RFC 9664) |
 //!
 //! Deviations from OpenThread are listed in
-//! `OPENTRUST-OPENTHREAD-DIFFERENCES.md` ("DNS and SRP").
+//! `RSTHREAD-OPENTHREAD-DIFFERENCES.md` ("DNS and SRP").
 
 #[cfg(test)]
 extern crate std;

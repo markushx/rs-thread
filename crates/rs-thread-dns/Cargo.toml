@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-dns"
-description = "DNS codec, DNS / DNS-SD client and SRP client (RFC 9665) for OpenTrust"
+description = "DNS codec, DNS / DNS-SD client and SRP client (RFC 9665) for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

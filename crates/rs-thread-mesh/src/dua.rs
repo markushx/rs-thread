@@ -28,7 +28,7 @@
 //! that [`send_dua_request`] and [`send_child_notification`] turn into TMF
 //! messages. [`DuaManager::next_deadline`] says when to poll next.
 //!
-//! Differences from OT are listed in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`.
+//! Differences from OT are listed in `RSTHREAD-OPENTHREAD-DIFFERENCES.md`.
 
 use core::net::Ipv6Addr;
 

@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-meshcop"
-description = "Mesh Commissioning Protocol (MeshCoP): datasets, joiner, commissioner for OpenTrust"
+description = "Mesh Commissioning Protocol (MeshCoP): datasets, joiner, commissioner for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

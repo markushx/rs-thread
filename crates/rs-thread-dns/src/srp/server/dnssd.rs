@@ -3,7 +3,7 @@
 //! queries for names below `default.service.arpa.`.
 //!
 //! Not implemented: SOA / NS queries, upstream forwarding and the discovery
-//! proxy (see `OPENTRUST-OPENTHREAD-DIFFERENCES.md`).
+//! proxy (see `RSTHREAD-OPENTHREAD-DIFFERENCES.md`).
 
 use rs_thread_core::time::Instant;
 

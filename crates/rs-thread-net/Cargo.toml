@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-net"
-description = "IPv6/UDP/ICMPv6 core, MPL, address resolution, SRP/DNS-SD client for OpenTrust"
+description = "IPv6/UDP/ICMPv6 core, MPL, address resolution, SRP/DNS-SD client for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -15,7 +15,7 @@ curve P-256 (secp256r1). The password is the PSKd (Joiner) or the PSKc
 (`PMS = SHA-256(x(PMSK))`), the RFC 5246 PRF/key block and
 `KEK = SHA-256(key_block)[0..16]`, and the AEAD (RFC 6655 `AES_128_CCM_8`).
 
-What rs-thread already has (Phase 1, `opentrust_core::crypto`): AES-CCM*
+What rs-thread already has (Phase 1, `rs_thread_core::crypto`): AES-CCM*
 (incl. M=8, so `AES_128_CCM_8` record protection), SHA-256, HMAC-SHA256,
 the TLS 1.2 PRF (`kdf::tls12_prf_sha256`) and the KEK derivation
 (`kdf::kek_from_master_secret`). Missing: the EC-JPAKE key exchange on P-256
@@ -109,7 +109,7 @@ esp-rs/openthread and rs-matter's `mbedtls` backend already use) and call
 **Option (a)**: implement EC-JPAKE in Rust on RustCrypto `p256` (behind a
 narrow P-256 trait so a hardware or rs-matter-backed implementation can be
 substituted), and write a minimal sans-IO DTLS 1.2 that supports only
-`TLS_ECJPAKE_WITH_AES_128_CCM_8`, reusing `opentrust_core::crypto` (CCM*,
+`TLS_ECJPAKE_WITH_AES_128_CCM_8`, reusing `rs_thread_core::crypto` (CCM*,
 TLS PRF, KEK). mbedTLS is used **only as a test oracle**: its EC-JPAKE
 self-test vectors become Rust KATs, and `tools/openthread-sys` (OpenThread +
 mbedTLS) serves as the interop/differential peer for full Joiner and
@@ -123,7 +123,7 @@ Placement: EC-JPAKE in `rs-thread-core::crypto::ecjpake` (feature
 
 - `p256 = { version = "0.14", default-features = false, features =
   ["arithmetic"] }` (same line as rs-matter, so a combined build has a
-  single copy). Implemented: `opentrust_core::crypto::ecjpake` (feature
+  single copy). Implemented: `rs_thread_core::crypto::ecjpake` (feature
   `ecjpake`) and the `rs-thread-dtls` crate (with `coaps::Coaps` behind
   `SecureTransport`).
 - Security review of the EC-JPAKE/DTLS code is mandatory before M4

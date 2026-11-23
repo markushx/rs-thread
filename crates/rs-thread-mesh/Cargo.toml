@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-mesh"
-description = "Thread mesh routing, router IDs, child table and Network Data for OpenTrust"
+description = "Thread mesh routing, router IDs, child table and Network Data for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

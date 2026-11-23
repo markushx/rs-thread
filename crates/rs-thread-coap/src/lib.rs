@@ -15,7 +15,7 @@
 //! Generic TLV helpers shared with MLE/MeshCoP are in `rs_thread_core::tlv`.
 //! CoAPS (DTLS 1.2 with EC-JPAKE) plugs in through
 //! [`endpoint::SecureTransport`], implemented by `rs_thread_dtls::coaps::Coaps`. Deviations from OpenThread are listed in
-//! `OPENTRUST-OPENTHREAD-DIFFERENCES.md` ("CoAP / TMF").
+//! `RSTHREAD-OPENTHREAD-DIFFERENCES.md` ("CoAP / TMF").
 
 #[cfg(test)]
 extern crate std;

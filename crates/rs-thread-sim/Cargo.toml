@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-sim"
-description = "Simulated 802.15.4 medium and network harness for OpenTrust (std, for tests)"
+description = "Simulated 802.15.4 medium and network harness for rs-thread (std, for tests)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

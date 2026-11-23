@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-flash"
-description = "Power-fail-safe settings storage in NOR flash for OpenTrust (RAM image plus an async log-structured writer)"
+description = "Power-fail-safe settings storage in NOR flash for rs-thread (RAM image plus an async log-structured writer)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

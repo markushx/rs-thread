@@ -114,7 +114,7 @@ fn registers_with_srp_and_resolves_with_dns_sd() {
                         .iter()
                         .map(|s| s.split("._sub.").next().unwrap().to_string())
                         .collect();
-                    let d = TEST_DEV_COMM.discriminator;
+                    let d = TEST_DEV_COMM.discriminator();
                     assert!(subs.contains(&format!("_L{d}")), "{subs:?}");
                     assert!(subs.contains(&format!("_S{}", d >> 8)), "{subs:?}");
                     assert!(
@@ -322,7 +322,7 @@ fn registers_the_slaac_address_of_a_border_router_prefix() {
                         .iter()
                         .map(|s| s.split("._sub.").next().unwrap().to_string())
                         .collect();
-                    let d = TEST_DEV_COMM.discriminator;
+                    let d = TEST_DEV_COMM.discriminator();
                     for want in [format!("_L{d}"), format!("_S{}", d >> 8), "_CM".to_string()] {
                         assert!(subs.contains(&want), "{subs:?}");
                     }

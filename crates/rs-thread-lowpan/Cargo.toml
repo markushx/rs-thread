@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-lowpan"
-description = "6LoWPAN adaptation layer (IPHC/NHC, mesh and fragmentation headers) for OpenTrust"
+description = "6LoWPAN adaptation layer (IPHC/NHC, mesh and fragmentation headers) for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

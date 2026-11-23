@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-dtls"
-description = "Sans-IO DTLS 1.2 with TLS_ECJPAKE_WITH_AES_128_CCM_8 (Thread commissioning, CoAPS) for OpenTrust"
+description = "Sans-IO DTLS 1.2 with TLS_ECJPAKE_WITH_AES_128_CCM_8 (Thread commissioning, CoAPS) for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

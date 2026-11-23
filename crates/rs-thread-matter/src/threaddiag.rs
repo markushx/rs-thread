@@ -2,7 +2,7 @@
 //! [`ThreadNetCtl`].
 //!
 //! What the [`Instance`](rs_thread_instance::Instance) does not track is
-//! reported with defaults, listed in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`:
+//! reported with defaults, listed in `RSTHREAD-OPENTHREAD-DIFFERENCES.md`:
 //! neighbor `age`, frame counters, `last_rssi` and the error rates are 0 /
 //! `None`; router table `ext_address`, link qualities and `age` are 0; the
 //! MAC counters the MAC does not keep (unicast / broadcast split, duplicates,

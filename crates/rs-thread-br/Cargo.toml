@@ -1,5 +1,6 @@
 [package]
 name = "rs-thread-br"
+publish = false
 description = "Thread Border Router components: TUN interface, OMR prefix / routing, SRP advertising proxy, DNS proxy"
 version.workspace = true
 edition.workspace = true

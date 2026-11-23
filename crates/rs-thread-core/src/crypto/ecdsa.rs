@@ -9,7 +9,7 @@
 //!
 //! Private keys are plain 32-byte big-endian scalars ([`SecretKey`], wiped
 //! on drop). OT persists the key as an mbedTLS DER blob; the raw scalar is
-//! used here (see `OPENTRUST-OPENTHREAD-DIFFERENCES.md`).
+//! used here (see `RSTHREAD-OPENTHREAD-DIFFERENCES.md`).
 
 use zeroize::Zeroize;
 

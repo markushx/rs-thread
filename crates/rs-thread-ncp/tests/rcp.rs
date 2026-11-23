@@ -74,7 +74,7 @@ impl Transport for Host {
 
 fn info() -> RcpInfo {
     RcpInfo {
-        version: "OPENTRUST/test; RCP",
+        version: "RS-THREAD/test; RCP",
         eui64: [1, 2, 3, 4, 5, 6, 7, 8],
         now_us: || 1234,
     }
@@ -128,7 +128,7 @@ fn boot_notification_and_identity() {
     assert_eq!(f[1], [0x81, 0x06, 0x01, 4, 3]);
     let (tid, c, k, v) = parsed(&f[2]);
     assert_eq!((tid, c, k), (2, cmd::PROP_VALUE_IS, prop::NCP_VERSION));
-    assert_eq!(v, b"OPENTRUST/test; RCP\0");
+    assert_eq!(v, b"RS-THREAD/test; RCP\0");
     assert_eq!(f[3], [0x83, 0x06, 0x03, 3]);
     let (_, _, _, caps) = parsed(&f[4]);
     let mut r = Reader::new(&caps);

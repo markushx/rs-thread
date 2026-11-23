@@ -1,6 +1,6 @@
 [package]
 name = "rs-thread-mac"
-description = "IEEE 802.15.4 MAC layer (frames, security, CSMA-CA, CSL, link metrics) for OpenTrust"
+description = "IEEE 802.15.4 MAC layer (frames, security, CSMA-CA, CSL, link metrics) for rs-thread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

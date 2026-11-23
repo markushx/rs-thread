@@ -1,12 +1,12 @@
 """Lets thread-cert's packet verification run on macOS.
 
 `thread_cert.py` raises NotImplementedError in `tearDown` unless
-`os.uname().sysname == "Linux"`. With `OPENTRUST_FAKE_LINUX_UNAME=1` the
+`os.uname().sysname == "Linux"`. With `RSTHREAD_FAKE_LINUX_UNAME=1` the
 harness puts this directory on `PYTHONPATH` and `os.uname()` reports Linux.
 """
 import os
 
-if os.environ.get("OPENTRUST_FAKE_LINUX_UNAME") == "1":
+if os.environ.get("RSTHREAD_FAKE_LINUX_UNAME") == "1":
     _real_uname = os.uname
 
     def _uname():

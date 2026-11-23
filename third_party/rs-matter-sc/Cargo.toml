@@ -20,14 +20,14 @@ defmt = ["dep:defmt", "rs-matter-utils/defmt", "rs-matter-tlv/defmt", "rs-matter
 log = ["dep:log", "rs-matter-utils/log", "rs-matter-tlv/log", "rs-matter-crypto/log", "rs-matter-cert/log", "rs-matter-pairing/log", "rs-matter-dm-core/log", "rs-matter-node-core/log", "rs-matter-transport/log"]
 
 [dependencies]
-rs-matter-utils = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-rs-matter-tlv = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-rs-matter-crypto = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-rs-matter-cert = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-rs-matter-dm-core = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-rs-matter-node-core = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-rs-matter-pairing = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-rs-matter-transport = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
+rs-matter-utils = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
+rs-matter-tlv = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
+rs-matter-crypto = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
+rs-matter-cert = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
+rs-matter-dm-core = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
+rs-matter-node-core = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
+rs-matter-pairing = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
+rs-matter-transport = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false }
 num = { version = "0.4", default-features = false }
 rand_core = { version = "0.10", default-features = false }
 subtle = { version = "2.5", default-features = false }

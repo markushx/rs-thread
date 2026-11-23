@@ -4,7 +4,7 @@ Adapted from docs/radio-contract.md of https://github.com/esp-rs/openthread
 Apache-2.0. Modified for rs-thread: the `otPlatRadio*` / `OpenThread::run_radio`
 references describe the contract of the C stack that esp-rs/openthread drives;
 rs-thread's pure-Rust MAC (`rs-thread-mac`) is the consumer of the same
-`opentrust_platform::radio::Radio` trait and upholds the same expectations
+`rs_thread_platform::radio::Radio` trait and upholds the same expectations
 towards the radio driver. Where the text says "the crate" or "glue", read
 "the rs-thread MAC layer".
 -->

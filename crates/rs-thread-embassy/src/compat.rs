@@ -3,7 +3,7 @@
 //! mapped onto the native API of this crate.
 //!
 //! What differs from esp-rs `openthread` (also listed in
-//! `OPENTRUST-OPENTHREAD-DIFFERENCES.md`):
+//! `RSTHREAD-OPENTHREAD-DIFFERENCES.md`):
 //!
 //! - [`OpenThread`] has the generics of [`RsThread`] (raw mutex, clock and
 //!   the instance types) because there is no single global instance; it is
