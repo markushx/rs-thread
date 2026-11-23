@@ -2326,14 +2326,14 @@ dependencies = [
  "embedded-storage-async",
  "nrf-mpsl",
  "nrf-sdc",
- "opentrust-core",
- "opentrust-embassy",
- "opentrust-flash",
- "opentrust-instance",
- "opentrust-nrf",
- "opentrust-platform",
  "panic-probe",
  "rand_core 0.10.1",
+ "rs-thread-core",
+ "rs-thread-embassy",
+ "rs-thread-flash",
+ "rs-thread-instance",
+ "rs-thread-nrf",
+ "rs-thread-platform",
  "static_cell",
 ]
 
@@ -2354,17 +2354,17 @@ dependencies = [
  "embedded-alloc",
  "nrf-sdc",
  "nrf52840-leader",
- "opentrust-core",
- "opentrust-embassy",
- "opentrust-flash",
- "opentrust-instance",
- "opentrust-matter",
- "opentrust-nrf",
- "opentrust-platform",
  "panic-probe",
  "rand_core 0.10.1",
  "rand_core 0.9.5",
  "rs-matter",
+ "rs-thread-core",
+ "rs-thread-embassy",
+ "rs-thread-flash",
+ "rs-thread-instance",
+ "rs-thread-matter",
+ "rs-thread-nrf",
+ "rs-thread-platform",
  "static_cell",
 ]
 
@@ -2504,231 +2504,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "opentrust-coap"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "opentrust-core",
- "opentrust-net",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "opentrust-core"
-version = "0.1.0"
-dependencies = [
- "aes",
- "cmac",
- "defmt 1.2.0",
- "hmac",
- "p256",
- "rand_core 0.10.1",
- "sha2",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "opentrust-dns"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "heapless",
- "opentrust-core",
- "rand_core 0.10.1",
- "zeroize",
-]
-
-[[package]]
-name = "opentrust-dtls"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "opentrust-coap",
- "opentrust-core",
- "rand_core 0.10.1",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "opentrust-embassy"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "embassy-futures",
- "embassy-sync",
- "heapless",
- "opentrust-core",
- "opentrust-instance",
- "opentrust-mac",
- "opentrust-mesh",
- "opentrust-meshcop",
- "opentrust-mle",
- "opentrust-net",
- "opentrust-platform",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "opentrust-flash"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "defmt 1.2.0",
- "embedded-storage-async",
- "heapless",
- "opentrust-core",
- "opentrust-platform",
-]
-
-[[package]]
-name = "opentrust-instance"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "heapless",
- "opentrust-coap",
- "opentrust-core",
- "opentrust-dns",
- "opentrust-lowpan",
- "opentrust-mac",
- "opentrust-mesh",
- "opentrust-meshcop",
- "opentrust-mle",
- "opentrust-net",
- "opentrust-platform",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "opentrust-lowpan"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "opentrust-core",
- "opentrust-mac",
-]
-
-[[package]]
-name = "opentrust-mac"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "embassy-futures",
- "heapless",
- "opentrust-core",
- "opentrust-platform",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "opentrust-matter"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "defmt 1.2.0",
- "embassy-futures",
- "embassy-sync",
- "embedded-io 0.7.1",
- "heapless",
- "opentrust-core",
- "opentrust-dns",
- "opentrust-embassy",
- "opentrust-flash",
- "opentrust-instance",
- "opentrust-meshcop",
- "opentrust-platform",
- "rand_core 0.10.1",
- "rs-matter",
- "static_cell",
- "trouble-host",
-]
-
-[[package]]
-name = "opentrust-mesh"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "heapless",
- "opentrust-coap",
- "opentrust-core",
- "opentrust-lowpan",
- "opentrust-mac",
- "opentrust-mle",
- "opentrust-net",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "opentrust-meshcop"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "heapless",
- "opentrust-coap",
- "opentrust-core",
- "opentrust-dtls",
- "opentrust-mesh",
- "opentrust-mle",
- "opentrust-net",
- "rand_core 0.10.1",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "opentrust-mle"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "heapless",
- "opentrust-coap",
- "opentrust-core",
- "opentrust-mac",
- "opentrust-net",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "opentrust-net"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "opentrust-core",
- "opentrust-lowpan",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "opentrust-nrf"
-version = "0.1.0"
-dependencies = [
- "defmt 1.2.0",
- "embassy-nrf",
- "embassy-time",
- "embedded-storage",
- "embedded-storage-async",
- "nrf-802154",
- "nrf-mpsl",
- "opentrust-core",
- "opentrust-platform",
- "rand_core 0.10.1",
- "static_cell",
-]
-
-[[package]]
-name = "opentrust-platform"
-version = "0.1.0"
-dependencies = [
- "bitflags 2.13.2",
- "defmt 1.2.0",
- "heapless",
- "opentrust-core",
- "rand_core 0.10.1",
-]
 
 [[package]]
 name = "owo-colors"
@@ -3432,6 +3207,231 @@ dependencies = [
  "heapless",
  "num_enum",
  "pinned-init",
+]
+
+[[package]]
+name = "rs-thread-coap"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "rand_core 0.10.1",
+ "rs-thread-core",
+ "rs-thread-net",
+]
+
+[[package]]
+name = "rs-thread-core"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "cmac",
+ "defmt 1.2.0",
+ "hmac",
+ "p256",
+ "rand_core 0.10.1",
+ "sha2",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "rs-thread-dns"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-core",
+ "zeroize",
+]
+
+[[package]]
+name = "rs-thread-dtls"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "rand_core 0.10.1",
+ "rs-thread-coap",
+ "rs-thread-core",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "rs-thread-embassy"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "embassy-futures",
+ "embassy-sync",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-core",
+ "rs-thread-instance",
+ "rs-thread-mac",
+ "rs-thread-mesh",
+ "rs-thread-meshcop",
+ "rs-thread-mle",
+ "rs-thread-net",
+ "rs-thread-platform",
+]
+
+[[package]]
+name = "rs-thread-flash"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "defmt 1.2.0",
+ "embedded-storage-async",
+ "heapless",
+ "rs-thread-core",
+ "rs-thread-platform",
+]
+
+[[package]]
+name = "rs-thread-instance"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-coap",
+ "rs-thread-core",
+ "rs-thread-dns",
+ "rs-thread-lowpan",
+ "rs-thread-mac",
+ "rs-thread-mesh",
+ "rs-thread-meshcop",
+ "rs-thread-mle",
+ "rs-thread-net",
+ "rs-thread-platform",
+]
+
+[[package]]
+name = "rs-thread-lowpan"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "rs-thread-core",
+ "rs-thread-mac",
+]
+
+[[package]]
+name = "rs-thread-mac"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "embassy-futures",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-core",
+ "rs-thread-platform",
+]
+
+[[package]]
+name = "rs-thread-matter"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "defmt 1.2.0",
+ "embassy-futures",
+ "embassy-sync",
+ "embedded-io 0.7.1",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-matter",
+ "rs-thread-core",
+ "rs-thread-dns",
+ "rs-thread-embassy",
+ "rs-thread-flash",
+ "rs-thread-instance",
+ "rs-thread-meshcop",
+ "rs-thread-platform",
+ "static_cell",
+ "trouble-host",
+]
+
+[[package]]
+name = "rs-thread-mesh"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-coap",
+ "rs-thread-core",
+ "rs-thread-lowpan",
+ "rs-thread-mac",
+ "rs-thread-mle",
+ "rs-thread-net",
+]
+
+[[package]]
+name = "rs-thread-meshcop"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-coap",
+ "rs-thread-core",
+ "rs-thread-dtls",
+ "rs-thread-mesh",
+ "rs-thread-mle",
+ "rs-thread-net",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "rs-thread-mle"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-coap",
+ "rs-thread-core",
+ "rs-thread-mac",
+ "rs-thread-net",
+]
+
+[[package]]
+name = "rs-thread-net"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "rand_core 0.10.1",
+ "rs-thread-core",
+ "rs-thread-lowpan",
+]
+
+[[package]]
+name = "rs-thread-nrf"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.2.0",
+ "embassy-nrf",
+ "embassy-time",
+ "embedded-storage",
+ "embedded-storage-async",
+ "nrf-802154",
+ "nrf-mpsl",
+ "rand_core 0.10.1",
+ "rs-thread-core",
+ "rs-thread-platform",
+ "static_cell",
+]
+
+[[package]]
+name = "rs-thread-platform"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.13.2",
+ "defmt 1.2.0",
+ "heapless",
+ "rand_core 0.10.1",
+ "rs-thread-core",
 ]
 
 [[package]]

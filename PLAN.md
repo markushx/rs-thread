@@ -358,7 +358,7 @@ Security-relevant decisions for the review before M4:
   - [x] Interop CSL (rs-thread SSED under the OpenThread parent, see `docs/csl-hardware.md`); the reverse direction needs an OpenThread build with the CSL receiver
   - [ ] Interop still open: SED polling, runs over several hours (62 min with the light done), packet capture (no sniffer)
 - [ ] nRF54L15/H20: radio driver, timers, CRACEN crypto
-- ESP32-C6/H2: see Phase 17
+- [ ] ESP32-C6/H2: see Phase 17
 - [ ] Example apps per board: MTD (SED) sensor open; FTD router / leader (`examples/nrf52840-leader`, `--bin node`) and CLI over UART done on the nRF52840 DK
   - [x] CLI over UART on the nRF52840 DK (`examples/nrf52840-leader --bin cli --features cli-all`, UARTE0 on the J-Link VCOM, prompt `> `, echo and CR/LF as OT's UART CLI, settings in RAM): interop against `ot-cli-ftd` on a second DK on channel 25 with CLI commands only (OT forms / rs-thread joins by `dataset set active`, rs-thread forms / OT joins; `state`, `ping` and `udp` both ways to ML-EID and RLOC, `router table`, `child table`, `neighbor table`, `netdata show`, `ipaddr`, `dataset active` identical in format). Flash 447 KB with no command group, 501 KB with all, RAM 98 / 106 KB (per group: dataset +8 KB, scan +3, ping +4, tables +10, netdata +5, srp +5, dns +2, udp +3, commissioning +16 KB flash and +7 KB RAM)
   - [x] CLI firmware persistent settings: the `cli` and `node` binaries keep the Thread settings (datasets, network info with the frame counters stored ahead, parent / child info, random extended address) in the Thread region of the `rs-thread-flash` log; `factoryreset` and Button 1 at boot erase it (hardware: ten resets in a row against an OpenThread parent, no growth of the attach time)
