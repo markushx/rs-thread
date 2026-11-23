@@ -724,8 +724,9 @@ async fn main() -> Result<()> {
             tokio::signal::ctrl_c().await.expect("ctrl-c failed");
             log::info!("shutting down");
             rsthread.thread_stop();
+            srp.borrow().shutdown();
         })
         .await;
 
-    Ok(())
+    std::process::exit(0);
 }

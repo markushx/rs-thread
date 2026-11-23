@@ -188,6 +188,16 @@ impl SrpProxy {
         Ok(())
     }
 
+    /// Shuts down the mDNS daemon.  Call this before process exit to let the
+    /// daemon send mDNS goodbye packets and stop its background thread.
+    pub fn shutdown(&self) {
+        if let Some(daemon) = self.daemon.as_ref() {
+            if let Err(e) = daemon.shutdown() {
+                log::debug!("SrpProxy: daemon shutdown: {e}");
+            }
+        }
+    }
+
     /// Removes all services registered for `host_name` (SRP host removal or
     /// lease expiry).
     pub fn unregister_host(&mut self, host_name: &str) -> std::io::Result<()> {
