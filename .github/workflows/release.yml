@@ -20,7 +20,7 @@ jobs:
     # publisher on crates.io for every crate before the first tag push.
     # https://doc.rust-lang.org/cargo/reference/publishing.html#trusted-publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
