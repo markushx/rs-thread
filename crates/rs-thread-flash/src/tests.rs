@@ -114,7 +114,7 @@ impl NorFlash for Mock {
     const WRITE_SIZE: usize = 4;
     const ERASE_SIZE: usize = PAGE;
     async fn erase(&mut self, from: u32, to: u32) -> Result<(), MockError> {
-        assert!(from as usize % PAGE == 0 && to as usize % PAGE == 0);
+        assert!((from as usize).is_multiple_of(PAGE) && (to as usize).is_multiple_of(PAGE));
         let mut m = self.0.borrow_mut();
         for p in (from as usize / PAGE)..(to as usize / PAGE) {
             let a = p * PAGE;
@@ -133,7 +133,10 @@ impl NorFlash for Mock {
     }
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), MockError> {
         let o = offset as usize;
-        assert!(o % 4 == 0 && bytes.len() % 4 == 0, "unaligned write");
+        assert!(
+            o.is_multiple_of(4) && bytes.len().is_multiple_of(4),
+            "unaligned write"
+        );
         let mut m = self.0.borrow_mut();
         for (w, chunk) in bytes.chunks(4).enumerate() {
             let a = o + w * 4;

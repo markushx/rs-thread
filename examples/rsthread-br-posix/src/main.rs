@@ -11,10 +11,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use rs_thread_br::{
-    dns_proxy::DnsProxy,
-    routing::RoutingManager,
-    srp_proxy::SrpProxy,
-    tun::TunInterface,
+    dns_proxy::DnsProxy, routing::RoutingManager, srp_proxy::SrpProxy, tun::TunInterface,
 };
 use rs_thread_core::{crypto::soft::SoftCrypto, time::Instant};
 use rs_thread_embassy::{Resources, RsThread};
@@ -65,10 +62,7 @@ impl rand_core::TryRng for OsRng {
         Ok(u64::from_le_bytes(buf))
     }
 
-    fn try_fill_bytes(
-        &mut self,
-        dst: &mut [u8],
-    ) -> Result<(), core::convert::Infallible> {
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), core::convert::Infallible> {
         getrandom::fill(dst).expect("getrandom failed");
         Ok(())
     }
@@ -85,7 +79,9 @@ struct TokioClock {
 
 impl TokioClock {
     fn new() -> Self {
-        Self { start_sys: std::time::Instant::now() }
+        Self {
+            start_sys: std::time::Instant::now(),
+        }
     }
 }
 
@@ -123,8 +119,7 @@ impl Alarm for TokioAlarm {
         if wall <= now_sys {
             return;
         }
-        let tokio_deadline =
-            self.start_tokio + Duration::from_micros(at.as_micros());
+        let tokio_deadline = self.start_tokio + Duration::from_micros(at.as_micros());
         tokio::time::sleep_until(tokio_deadline).await;
     }
 }
@@ -202,7 +197,10 @@ async fn main() -> Result<()> {
     //    reported capabilities can be passed to Config.
     let transport = open_transport(&args.radio_url).await?;
     let mut radio = RadioSpinel::new(transport);
-    let caps = radio.init().await.map_err(|e| anyhow::anyhow!("radio init: {e}"))?;
+    let caps = radio
+        .init()
+        .await
+        .map_err(|e| anyhow::anyhow!("radio init: {e}"))?;
     log::info!("radio initialised: {caps:?}");
 
     // 2. Create the rs-thread Instance with the radio's capabilities.
@@ -213,8 +211,9 @@ async fn main() -> Result<()> {
     //    Resources is heap-allocated and leaked so its lifetime is 'static,
     //    allowing the Copy handle to be freely passed to spawn_local tasks.
     let clock = TokioClock::new();
-    let resources: &'static _ =
-        Box::leak(Box::new(Resources::<NoopRawMutex, _, _, _, _>::new(instance, clock)));
+    let resources: &'static _ = Box::leak(Box::new(Resources::<NoopRawMutex, _, _, _, _>::new(
+        instance, clock,
+    )));
     let rsthread: RsThread<'static, NoopRawMutex, _, _, _, _> = RsThread::new(resources);
 
     // 4. Open the TUN interface.
@@ -233,69 +232,68 @@ async fn main() -> Result<()> {
 
     // 6. Run everything concurrently until Ctrl-C.
     let local = tokio::task::LocalSet::new();
-    local.run_until(async move {
-        // Thread protocol driver — never returns.
-        tokio::task::spawn_local(async move {
-            rsthread.run(radio, TokioAlarm::new()).await
-        });
+    local
+        .run_until(async move {
+            // Thread protocol driver — never returns.
+            tokio::task::spawn_local(async move { rsthread.run(radio, TokioAlarm::new()).await });
 
-        // TUN ← Thread: drain Ip6Datagram events and send through the channel.
-        //
-        // `wait_changed` wakes on every state change; we drain the host-ip6
-        // queue on each wake and push packets into `to_tun_tx`.
-        let tx = to_tun_tx;
-        tokio::task::spawn_local(async move {
-            let mut buf = vec![0u8; rs_thread_br::tun::MAX_PACKET];
-            loop {
-                rsthread.wait_changed().await;
+            // TUN ← Thread: drain Ip6Datagram events and send through the channel.
+            //
+            // `wait_changed` wakes on every state change; we drain the host-ip6
+            // queue on each wake and push packets into `to_tun_tx`.
+            let tx = to_tun_tx;
+            tokio::task::spawn_local(async move {
+                let mut buf = vec![0u8; rs_thread_br::tun::MAX_PACKET];
                 loop {
-                    let n = rsthread.with(|inst, _| inst.take_ip6_datagram(&mut buf));
-                    let Some(n) = n else { break };
-                    if tx.send(buf[..n].to_vec()).await.is_err() {
-                        return; // TUN task exited
-                    }
-                }
-            }
-        });
-
-        // TUN I/O: host ↔ Thread datagram bridge.
-        //
-        // Reads from the TUN device are forwarded to the Thread stack via
-        // `handle_ip6_from_host`.  Writes received from the event task above
-        // are injected into the host routing stack.
-        tokio::task::spawn_local(async move {
-            let mut read_buf = vec![0u8; rs_thread_br::tun::MAX_PACKET];
-            loop {
-                tokio::select! {
-                    // TUN → Thread
-                    result = tun.read_packet(&mut read_buf) => {
-                        match result {
-                            Ok(0) => {}
-                            Ok(n) => {
-                                rsthread.with(|inst, now| {
-                                    inst.handle_ip6_from_host(now, &read_buf[..n]);
-                                });
-                            }
-                            Err(e) => {
-                                log::warn!("TUN read: {e}");
-                                tokio::time::sleep(Duration::from_millis(100)).await;
-                            }
-                        }
-                    }
-                    // Thread → TUN
-                    Some(pkt) = to_tun_rx.recv() => {
-                        if let Err(e) = tun.write_packet(&pkt).await {
-                            log::warn!("TUN write: {e}");
+                    rsthread.wait_changed().await;
+                    loop {
+                        let n = rsthread.with(|inst, _| inst.take_ip6_datagram(&mut buf));
+                        let Some(n) = n else { break };
+                        if tx.send(buf[..n].to_vec()).await.is_err() {
+                            return; // TUN task exited
                         }
                     }
                 }
-            }
-        });
+            });
 
-        tokio::signal::ctrl_c().await.expect("ctrl-c failed");
-        log::info!("shutting down");
-    })
-    .await;
+            // TUN I/O: host ↔ Thread datagram bridge.
+            //
+            // Reads from the TUN device are forwarded to the Thread stack via
+            // `handle_ip6_from_host`.  Writes received from the event task above
+            // are injected into the host routing stack.
+            tokio::task::spawn_local(async move {
+                let mut read_buf = vec![0u8; rs_thread_br::tun::MAX_PACKET];
+                loop {
+                    tokio::select! {
+                        // TUN → Thread
+                        result = tun.read_packet(&mut read_buf) => {
+                            match result {
+                                Ok(0) => {}
+                                Ok(n) => {
+                                    rsthread.with(|inst, now| {
+                                        inst.handle_ip6_from_host(now, &read_buf[..n]);
+                                    });
+                                }
+                                Err(e) => {
+                                    log::warn!("TUN read: {e}");
+                                    tokio::time::sleep(Duration::from_millis(100)).await;
+                                }
+                            }
+                        }
+                        // Thread → TUN
+                        Some(pkt) = to_tun_rx.recv() => {
+                            if let Err(e) = tun.write_packet(&pkt).await {
+                                log::warn!("TUN write: {e}");
+                            }
+                        }
+                    }
+                }
+            });
+
+            tokio::signal::ctrl_c().await.expect("ctrl-c failed");
+            log::info!("shutting down");
+        })
+        .await;
 
     Ok(())
 }

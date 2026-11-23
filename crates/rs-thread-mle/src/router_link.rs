@@ -363,10 +363,10 @@ impl<const C: usize> Mle<C> {
             }
         }
         let own_challenge = Self::new_challenge(env);
-        if command == Command::LinkAcceptAndRequest {
-            if let Some(r) = router.and_then(|id| self.rtr.table.find_by_id_mut(id)) {
-                r.neighbor.challenge = own_challenge;
-            }
+        if command == Command::LinkAcceptAndRequest
+            && let Some(r) = router.and_then(|id| self.rtr.table.find_by_id_mut(id))
+        {
+            r.neighbor.challenge = own_challenge;
         }
         let rloc = self.rloc16;
         let leader = self.leader_data;
@@ -444,15 +444,14 @@ impl<const C: usize> Mle<C> {
             _ => return Err(Error::Security),
         }
         // Remove a stale neighbor entry with another RLOC16.
-        if let Some(NbRef::Router(old)) = nb {
-            if self
+        if let Some(NbRef::Router(old)) = nb
+            && self
                 .rtr
                 .table
                 .find_by_id(old)
                 .is_some_and(|r| r.neighbor.rloc16 != source)
-            {
-                self.remove_router_neighbor(env, now, old);
-            }
+        {
+            self.remove_router_neighbor(env, now, old);
         }
         let version = t.version()?;
         let link_fc = t.link_frame_counter()?;
@@ -569,10 +568,8 @@ impl<const C: usize> Mle<C> {
             rloc16: source,
         });
         self.remove_scheduled_link_request(router_id);
-        if update_routes {
-            if let Some(route) = &route {
-                self.update_routes(env, now, route, router_id);
-            }
+        if update_routes && let Some(route) = &route {
+            self.update_routes(env, now, route, router_id);
         }
         self.table_changed(env, now);
         self.process_key_sequence(
@@ -635,11 +632,11 @@ impl<const C: usize> Mle<C> {
             .entry_for_router(own)
             .filter(|_| self.router_id().is_some())
         {
-            if let Some(n) = self.rtr.table.find_by_id_mut(neighbor_id) {
-                if n.neighbor.link_info.link_quality_out() != e.link_quality_in {
-                    n.neighbor.link_info.set_link_quality_out(e.link_quality_in);
-                    changed = true;
-                }
+            if let Some(n) = self.rtr.table.find_by_id_mut(neighbor_id)
+                && n.neighbor.link_info.link_quality_out() != e.link_quality_in
+            {
+                n.neighbor.link_info.set_link_quality_out(e.link_quality_in);
+                changed = true;
             }
             self.neighbor_reports_no_link(env, now, neighbor_id, e.link_quality_out);
         }
@@ -685,10 +682,10 @@ impl<const C: usize> Mle<C> {
     fn finite_path_cost_ids(&self) -> crate::tlv::RouterIdMask {
         let mut m = crate::tlv::RouterIdMask::new();
         for id in 0..=MAX_ROUTER_ID {
-            if let Ok(r) = Rloc16::from_router_id(id) {
-                if self.path_cost(r) < MAX_ROUTE_COST {
-                    let _ = m.insert(id);
-                }
+            if let Ok(r) = Rloc16::from_router_id(id)
+                && self.path_cost(r) < MAX_ROUTE_COST
+            {
+                let _ = m.insert(id);
             }
         }
         m

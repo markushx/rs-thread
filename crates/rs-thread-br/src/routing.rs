@@ -37,11 +37,10 @@ impl OmrPrefix {
         let rand_bytes: [u8; 5] = std::array::from_fn(|_| {
             // Primitive entropy from the system clock; replaced with a proper
             // CSPRNG in the full implementation.
-            let t = std::time::SystemTime::now()
+            std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or(Duration::ZERO)
-                .subsec_nanos() as u8;
-            t
+                .subsec_nanos() as u8
         });
         // ULA prefix: fd00::/8 with global ID in bytes 1–5.
         let mut addr = [0u8; 16];

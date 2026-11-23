@@ -1103,16 +1103,16 @@ impl<
                 f.security_processed = tx.security_processed;
                 f.prepared = true;
                 f.sent = true;
-                if e == TxError::NoAck {
-                    if let Some(ci) = ci {
-                        let c = &mut self.csl_children[ci];
-                        c.tx_attempts += 1;
-                        if c.tx_attempts >= MAX_CSL_TX_ATTEMPTS {
-                            c.synchronized = false;
-                            c.tx_attempts = 0;
-                            let addr = c.addr;
-                            self.push_event(Event::CslChildOutOfSync(addr));
-                        }
+                if e == TxError::NoAck
+                    && let Some(ci) = ci
+                {
+                    let c = &mut self.csl_children[ci];
+                    c.tx_attempts += 1;
+                    if c.tx_attempts >= MAX_CSL_TX_ATTEMPTS {
+                        c.synchronized = false;
+                        c.tx_attempts = 0;
+                        let addr = c.addr;
+                        self.push_event(Event::CslChildOutOfSync(addr));
                     }
                 }
             }
@@ -1699,14 +1699,14 @@ impl<
         let Ok(f) = Frame::parse(&psdu[..n]) else {
             return;
         };
-        if let Some(s) = f.security_header() {
-            if let (Some(fc), KeyIdentifier::Index(i)) = (s.frame_counter, s.key) {
-                self.security.frame_counter_used(fc, i);
-                self.hw_sec.counter = self
-                    .hw_sec
-                    .counter
-                    .max(self.security.current_frame_counter());
-            }
+        if let Some(s) = f.security_header()
+            && let (Some(fc), KeyIdentifier::Index(i)) = (s.frame_counter, s.key)
+        {
+            self.security.frame_counter_used(fc, i);
+            self.hw_sec.counter = self
+                .hw_sec
+                .counter
+                .max(self.security.current_frame_counter());
         }
         if info.header_updated {
             if let Ok(buf) = FrameBuf::from_slice(&psdu[..n]) {
@@ -1778,10 +1778,10 @@ impl<
         tx.state = TxState::InFlight;
         self.in_flight = Some(InFlight::Frame);
         self.counters.tx_attempts += 1;
-        if let Some(index) = radio_key_index {
-            if !tx.security_processed {
-                let _ = FrameMut::new(&mut tx.frame).and_then(|mut m| m.set_key_index(index));
-            }
+        if let Some(index) = radio_key_index
+            && !tx.security_processed
+        {
+            let _ = FrameMut::new(&mut tx.frame).and_then(|mut m| m.set_key_index(index));
         }
         let csma = tx.max_csma_backoffs > 0 || tx.tx_at_us.is_some();
         let psdu = Self::with_fcs(&tx.frame);

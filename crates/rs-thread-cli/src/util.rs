@@ -203,7 +203,7 @@ fn nibble(c: u8) -> Option<u8> {
 /// number of bytes (OT `ParseAsHexString`).
 pub fn parse_hex(s: &str, out: &mut [u8]) -> Result<usize, E> {
     let b = s.as_bytes();
-    if b.len() % 2 != 0 || b.len() / 2 > out.len() {
+    if !b.len().is_multiple_of(2) || b.len() / 2 > out.len() {
         return Err(E::INVALID_ARGS);
     }
     for (i, p) in b.chunks(2).enumerate() {

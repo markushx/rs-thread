@@ -71,10 +71,11 @@ impl FilterParams {
                 }
             }
         }
-        if let Some(pan) = f.dst_pan_id() {
-            if pan != PanId::BROADCAST && pan != self.pan_id {
-                return Err(FilterError::DstPan);
-            }
+        if let Some(pan) = f.dst_pan_id()
+            && pan != PanId::BROADCAST
+            && pan != self.pan_id
+        {
+            return Err(FilterError::DstPan);
         }
         if f.src_address() == Address::Extended(self.ext) {
             return Err(FilterError::SrcIsSelf);

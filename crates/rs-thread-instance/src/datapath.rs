@@ -848,11 +848,11 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             };
             self.core.ip6.handle(&mut ctx, meta, b, &mut scratch)
         };
-        if let Ok(rx) = rx {
-            if let Some(d) = rx.deliver {
-                let bytes = d.bytes(&buf[..dg.len()], &scratch);
-                self.deliver(now, &d, bytes);
-            }
+        if let Ok(rx) = rx
+            && let Some(d) = rx.deliver
+        {
+            let bytes = d.bytes(&buf[..dg.len()], &scratch);
+            self.deliver(now, &d, bytes);
         }
     }
 

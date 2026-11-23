@@ -751,19 +751,17 @@ impl<const C: usize> Mle<C> {
         ext: &rs_thread_core::types::ExtAddress,
         parent_only: bool,
     ) -> Option<NbRef> {
-        if let Some(p) = &self.parent {
-            if p.router.neighbor.ext_address == *ext
-                && p.router.neighbor.state.is_valid_or_restoring()
-            {
-                return Some(NbRef::Parent);
-            }
+        if let Some(p) = &self.parent
+            && p.router.neighbor.ext_address == *ext
+            && p.router.neighbor.state.is_valid_or_restoring()
+        {
+            return Some(NbRef::Parent);
         }
-        if let Some(c) = &self.attach.candidate {
-            if c.parent.router.neighbor.ext_address == *ext
-                && c.parent.router.neighbor.state == NeighborState::Valid
-            {
-                return Some(NbRef::Candidate);
-            }
+        if let Some(c) = &self.attach.candidate
+            && c.parent.router.neighbor.ext_address == *ext
+            && c.parent.router.neighbor.state == NeighborState::Valid
+        {
+            return Some(NbRef::Candidate);
         }
         if parent_only {
             return None;

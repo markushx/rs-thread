@@ -311,13 +311,12 @@ impl<const C: usize> Mle<C> {
             if margin < PARTITION_MERGE_MIN_MARGIN {
                 return Err(Error::Drop);
             }
-            if let Some(r) = &route {
-                if self.rtr.previous_partition_timeout > 0
-                    && leader.partition_id == self.previous_partition_id
-                    && !serial_greater(r.id_sequence, self.rtr.previous_partition_id_sequence)
-                {
-                    return Err(Error::Drop);
-                }
+            if let Some(r) = &route
+                && self.rtr.previous_partition_timeout > 0
+                && leader.partition_id == self.previous_partition_id
+                && !serial_greater(r.id_sequence, self.rtr.previous_partition_id_sequence)
+            {
+                return Err(Error::Drop);
             }
             if self.role == Role::Child && nb == Some(NbRef::Parent) {
                 // The parent moved to another partition: follow it.
@@ -389,20 +388,18 @@ impl<const C: usize> Mle<C> {
             return Ok(());
         };
         let (r_valid, r_state) = (r.neighbor.is_valid(), r.neighbor.state);
-        if !r_valid {
-            if let Some(NbRef::Child(i)) = nb.filter(|_| nb_valid) {
-                // A former child that now acts as a router: take over the
-                // child's link data.
-                if let Some(c) = self.children.get(i) {
-                    let mut n = c.neighbor.clone();
-                    n.rloc16 = source;
-                    n.mode = DeviceMode::new(true, true, true);
-                    let (ext, rloc16) = (n.ext_address, n.rloc16);
-                    if let Some(r) = self.rtr.table.find_by_id_mut(router_id) {
-                        r.neighbor = n;
-                    }
-                    env.event(crate::env::MleEvent::RouterAdded { ext, rloc16 });
+        if !r_valid && let Some(NbRef::Child(i)) = nb.filter(|_| nb_valid) {
+            // A former child that now acts as a router: take over the
+            // child's link data.
+            if let Some(c) = self.children.get(i) {
+                let mut n = c.neighbor.clone();
+                n.rloc16 = source;
+                n.mode = DeviceMode::new(true, true, true);
+                let (ext, rloc16) = (n.ext_address, n.rloc16);
+                if let Some(r) = self.rtr.table.find_by_id_mut(router_id) {
+                    r.neighbor = n;
                 }
+                env.event(crate::env::MleEvent::RouterAdded { ext, rloc16 });
             }
         }
         let r_valid = self

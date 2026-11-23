@@ -381,10 +381,10 @@ impl RouterIdOutbox {
             // Like OT the failure is only logged.
             let _ = send_address_release(agent, now, rng, sink, mle, env, rloc16);
         }
-        if let Some(req) = self.solicit.take() {
-            if send_address_solicit(agent, now, rng, sink, mle, env, &req).is_err() {
-                mle.address_solicit_reply(env, now, RouterIdReply::Failed);
-            }
+        if let Some(req) = self.solicit.take()
+            && send_address_solicit(agent, now, rng, sink, mle, env, &req).is_err()
+        {
+            mle.address_solicit_reply(env, now, RouterIdReply::Failed);
         }
     }
 }
