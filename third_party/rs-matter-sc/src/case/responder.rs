@@ -40,8 +40,8 @@ use crate::error::ErrorCode;
 use crate::host::ExchangeScExt as _;
 use crate::tlv::{get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVTag, TLVWrite, ToTLV};
 use crate::transport::exchange::Exchange;
-use crate::transport::session::{NocCatIds, ReservedSession, SessionMode};
 use crate::utils::timers::{Duration, Timer};
+use crate::transport::session::{NocCatIds, ReservedSession, SessionMode};
 use crate::utils::init::{init, Init, InitMaybeUninit};
 #[cfg(feature = "case-resumption")]
 use crate::utils::storage::ReadBuf;
@@ -121,12 +121,6 @@ impl<'a, M: ScHost, C: Crypto> CaseResponder<'a, M, C> {
     /// completed, been rejected, or aborted, and the exchange is dropped.
     pub async fn handle(&mut self, mut exchange: Exchange<'_>) -> Result<(), Error> {
         let session = ReservedSession::reserve(exchange.transport(), self.crypto).await?;
-
-        // OpenTrust: acknowledge Sigma1 at once. Sigma2 needs an ECDH and an
-        // ECDSA signature, which takes longer than the initiator's first MRP
-        // retransmission interval on a small MCU; without this ack the peer
-        // retransmits Sigma1 (the piggy-backed ack on Sigma2 comes too late).
-        ack_early(&mut exchange).await?;
 
         // Attempt session resumption first. If the peer's Sigma1 carries
         // both `resumptionID` and `initiatorResumeMIC`, we have a cached
@@ -245,6 +239,12 @@ impl<'a, M: ScHost, C: Crypto> CaseResponder<'a, M, C> {
             self.casep.local_fabric_idx()
         );
 
+        // rs-thread: acknowledge Sigma1 at once. Sigma2 needs an ECDH and an
+        // ECDSA signature, which takes longer than the initiator's first MRP
+        // retransmission interval on a small MCU; without this ack the peer
+        // retransmits Sigma1 (the piggy-backed ack on Sigma2 comes too late).
+        ack_early(exchange).await?;
+
         // `send_with` can call its closure again for an MRP retransmission.
         // ECDSA signing may be randomized, so generate the signature only once
         // to keep every Sigma2 byte-identical and avoid reusing the Sigma2 AEAD
@@ -327,9 +327,10 @@ impl<'a, M: ScHost, C: Crypto> CaseResponder<'a, M, C> {
     ) -> Result<(), Error> {
         expect_opcode(exchange, OpCode::CASESigma3).await?;
 
-        // OpenTrust: acknowledge Sigma3 before the signature checks, for the
-        // same reason as Sigma1 (the final status report is only sent after
-        // two ECDSA verifications).
+        // rs-thread: acknowledge Sigma3 before the ECDSA verifications, for
+        // the same reason as Sigma1 (the final status report is only sent
+        // after two ECDSA verifications, which together take ~1 s on a small
+        // MCU).
         ack_early(exchange).await?;
 
         let status = exchange.with_state(self.matter, |state| {
