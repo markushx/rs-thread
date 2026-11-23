@@ -100,6 +100,9 @@ impl SrpProxy {
             props,
         ) {
             Ok(info) => {
+                // Let mdns-sd pick up the host's real IP addresses automatically
+                // instead of relying on the UNSPECIFIED placeholder we passed.
+                let info = info.enable_addr_auto();
                 daemon
                     .register(info)
                     .map_err(|e| std::io::Error::other(format!("mdns-sd register meshcop: {e}")))?;

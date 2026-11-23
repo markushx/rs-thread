@@ -528,7 +528,21 @@ async fn main() -> Result<()> {
         .context("open TUN interface")?;
     log::info!("TUN interface opened: {}", tun.name());
 
-    // Add OMR prefix route on the TUN so packets destined for Thread addresses
+    // Assign the border router's OMR address (prefix::1) to the TUN interface.
+    // macOS requires the interface to have an IPv6 address before a route can
+    // be added to it; this also makes the border router reachable from Thread
+    // devices at this address.
+    let omr_br_addr = {
+        let mut b = omr.prefix.octets();
+        b[15] = 1;
+        std::net::Ipv6Addr::from(b)
+    };
+    tun.set_ipv6_addr(omr_br_addr, omr.prefix_len)
+        .await
+        .context("assign OMR address to TUN")?;
+    log::info!("TUN address: {}/{}", omr_br_addr, omr.prefix_len);
+
+    // Now add the OMR prefix route so packets destined for Thread addresses
     // enter the tunnel.
     tun.add_route(omr.prefix, omr.prefix_len)
         .await
