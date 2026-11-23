@@ -5,7 +5,7 @@
 //!
 //! This crate implements the traits `rs-matter-stack` needs from a Thread
 //! transport on top of the native async facade of
-//! [`rs_thread_embassy`] (the [`RsThread`](rs_thread_embassy::RsThread)
+//! [`rs_thread_embassy`] (the [`rs_thread_embassy::RsThread`]
 //! handle), in the place where `rs-matter-embassy` puts its adapters for the
 //! esp-rs `openthread` crate:
 //!
@@ -47,7 +47,7 @@
 //! Everything is executor-agnostic and single-threaded: the futures are not
 //! `Send` (the rs-matter `send-sync` feature is not supported, the sockets
 //! use `Cell`s), which matches `rs-matter-embassy` on the same targets.
-//! Locking is the `RawMutex` of the [`Resources`](rs_thread_embassy::Resources).
+//! Locking is the `RawMutex` of the [`rs_thread_embassy::Resources`].
 //! Timeouts inside this crate use rs-matter's timers (`embassy-time`), which
 //! the target provides for rs-matter anyway; the Thread node itself keeps
 //! its own clock.
