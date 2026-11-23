@@ -416,16 +416,16 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 
 ### 16b – rs-thread host stack
 
-- [ ] `rs-thread-instance`: verify the `std` + `alloc` feature build on Linux (`x86_64-unknown-linux-gnu`); ensure `Instance` and `rs_thread_embassy::ThreadRunner` accept a `RadioSpinel<impl Transport>` as the radio (the trait bound is already `Radio`; confirm it compiles cleanly with the new host driver)
-- [ ] `rs-thread-instance`: expose an `Instance::handle_ip6_from_host` entry point that feeds an IPv6 datagram arriving from the backbone into the Thread IP layer (symmetric to the existing `poll_event` `Ip6Datagram` variant that sends Thread datagrams toward the host)
+- [x] `rs-thread-instance`: verify the `std` + `alloc` feature build on Linux (`x86_64-unknown-linux-gnu`); ensure `Instance` and `rs_thread_embassy::ThreadRunner` accept a `RadioSpinel<impl Transport>` as the radio (the trait bound is already `Radio`; confirm it compiles cleanly with the new host driver)
+- [x] `rs-thread-instance`: expose an `Instance::handle_ip6_from_host` entry point that feeds an IPv6 datagram arriving from the backbone into the Thread IP layer (symmetric to the existing `poll_event` `Ip6Datagram` variant that sends Thread datagrams toward the host)
 
 ### 16c – Tun/tap interface and backbone routing (`crates/rs-thread-br`, new crate)
 
-- [ ] `rs-thread-br` (`std`, Linux + macOS): `TunInterface` trait (OS-agnostic) + platform implementations behind `#[cfg(target_os)]`; reads/writes raw IPv6 packets as `AsyncRead`/`AsyncWrite`, adds/removes system routes for the Thread mesh-local prefix and on-mesh prefixes
-  - Linux: `IFF_TUN` via `/dev/net/tun`, route management via `rtnetlink` (feature `tun`, default on Linux)
-  - macOS: `utun` via `ioctl`/`PF_SYSTEM`, route management via `PF_ROUTE` socket (feature `tun`, default on macOS)
-  - Inject path: `Instance::poll_event` `Ip6Datagram` variant → write to tun fd
-  - Receive path: read tun fd → `Instance::handle_ip6_from_host`
+- [x] `rs-thread-br` (`std`, Linux + macOS): `TunInterface` backed by `tun2 2.x` async API; reads/writes raw IPv6 packets via `AsyncRead`/`AsyncWrite`, adds/removes system routes via `ip`/`ifconfig` CLI commands
+  - Linux: `tun2` wraps `/dev/net/tun`; route management via `ip addr add` / `ip -6 route add`
+  - macOS: `tun2` wraps `utun`; route management via `ifconfig inet6 alias` / `route -n add -inet6`
+  - Inject path: `Event::Ip6Datagram` → `take_ip6_datagram` → mpsc channel → `tun.write_packet`
+  - Receive path: `tun.read_packet` → `handle_ip6_from_host`
 - [ ] Windows support (optional, feature `tun-windows`): `TunInterface` backend via the `wintun` crate (WireGuard's WinTUN driver, redistributable `wintun.dll`/`.sys`, must be installed separately); route management via IP Helper API (`iphlpapi.dll`, `windows` crate bindings); raw ICMPv6 socket for RA/RIO requires elevated privileges — same requirement as Linux/macOS; mark as not tested against `ot-br-posix` behavior (which is Linux-only)
 - [ ] Border routing manager (`rs_thread_br::routing`): OMR prefix selection (pick a stable ULA /64 from the router address if no on-mesh prefix is published; persist in settings), periodic unsolicited RA/RIO transmission on the backbone interface using the existing `rs-thread-net` ICMPv6 frame builder, react to `Instance` Network Data events (prefix added/removed → update RA content and re-transmit), listen for backbone RAs and push learned prefixes into Thread Network Data via `Instance::add_external_route`
 
