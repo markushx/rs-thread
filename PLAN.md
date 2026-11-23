@@ -396,9 +396,9 @@ Security-relevant decisions for the review before M4:
 ## Phase 15 – Publish rs-thread
 
 - [x] Add Github actions to build and release with trusted publishing
-- [ ] Push to Github
-- [ ] Release crates to crates.io
-- [ ] Announce / Market rs-thread
+- [x] Push to Github (PR #10 merged)
+- [ ] Release crates to crates.io (blocked: rs-matter git dep, not yet on crates.io)
+- [x] Announce / Market rs-thread (email drafts: announcement for rs-matter / embedded Rust community, OpenThread bug findings, Thread Group spec issues)
 
 ## Phase 16 – Port ot-br-posix
 
@@ -427,16 +427,16 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
   - Inject path: `Event::Ip6Datagram` → `take_ip6_datagram` → mpsc channel → `tun.write_packet`
   - Receive path: `tun.read_packet` → `handle_ip6_from_host`
 - [ ] Windows support (optional, feature `tun-windows`): `TunInterface` backend via the `wintun` crate (WireGuard's WinTUN driver, redistributable `wintun.dll`/`.sys`, must be installed separately); route management via IP Helper API (`iphlpapi.dll`, `windows` crate bindings); raw ICMPv6 socket for RA/RIO requires elevated privileges — same requirement as Linux/macOS; mark as not tested against `ot-br-posix` behavior (which is Linux-only)
-- [ ] Border routing manager (`rs_thread_br::routing`): OMR prefix selection (pick a stable ULA /64 from the router address if no on-mesh prefix is published; persist in settings), periodic unsolicited RA/RIO transmission on the backbone interface using the existing `rs-thread-net` ICMPv6 frame builder, react to `Instance` Network Data events (prefix added/removed → update RA content and re-transmit), listen for backbone RAs and push learned prefixes into Thread Network Data via `Instance::add_external_route`
+- [x] Border routing manager (`rs_thread_br::routing`): OMR prefix selection (`OmrPrefix::random()` picks a stable ULA /64 using time+PID entropy; `set_omr_prefix` for external control), periodic unsolicited RA/RIO transmission on the backbone using a raw `IPPROTO_ICMPV6` socket (socket2), nix for `if_nametoindex` and link-local address lookup, manual ICMPv6 checksum over pseudo-header — 3 fast initial RAs then every 200 s; backbone RA ingestion and Network Data push not yet wired (no `Instance` dep in this crate)
 
 ### 16d – SRP advertising proxy (`rs_thread_br::srp_proxy`)
 
-- [ ] Enable `srp-server` on the host-stack `Instance`; subscribe to `Instance::srp_server_event` (host / service added / removed / updated / expired); bridge each live registration to the backbone via `mdns-sd` (crate `mdns-sd ≥ 0.11`, pure Rust, `std`): register PTR/SRV/TXT/AAAA records as mDNS services on the backbone interface, remove them when the SRP lease expires or the host de-registers
-- [ ] `_meshcop._udp` and `_meshcop-e._udp` mDNS advertisements for the Border Agent and ePSKc listener (state bitmap fields `sb`, `at`, `id`, `vn`, `mn`, `dd`, `tt`, `bb`, `dn`, `omr`; driven from `Instance` Network Data and `border_agent_state`)
+- [x] `SrpProxy::start(port)` starts an `mdns-sd::ServiceDaemon` and advertises `_meshcop._udp` for the border router; `SrpProxy::register(SrpService)` creates a `ServiceInfo` and calls `daemon.register`; `SrpProxy::unregister_host(name)` removes all services for a given SRP host; IPv6 address registration not yet supported by mdns-sd (follow-up)
+- [ ] Wire `SrpProxy` to `Instance::srp_server_event` in the border router binary (host / service added / removed / updated / expired events); `_meshcop-e._udp` and full state bitmap (needs `border_agent_state` from Instance)
 
 ### 16e – DNS proxy (`rs_thread_br::dns_proxy`)
 
-- [ ] UDP DNS proxy listening on the Thread mesh-local anycast DNS-SD address (service ALOC) and loopback port 53; forward queries for names not in the local SRP server to an upstream resolver (read from `/etc/resolv.conf` or a `--upstream-dns` flag); return the reply; use `hickory-resolver ≥ 0.25` for upstream UDP/TCP DNS
+- [x] `DnsProxy::run()` binds a UDP socket, parses DNS queries with `hickory-proto`, resolves A / AAAA / PTR via `hickory-resolver` (reads `/etc/resolv.conf` on start via a simple `nameserver` line parser; override with `with_upstream(ip)`); serialises and returns the response; unrecognised record types return NOTIMP
 
 ### 16f – Binary and integration
 
