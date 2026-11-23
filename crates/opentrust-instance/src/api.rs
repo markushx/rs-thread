@@ -178,6 +178,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             let _ = ds.restore(&mut env, now, DatasetType::Pending);
         }
         self.load_iid_secret();
+        #[cfg(feature = "bbr")]
         self.load_dad_counter();
         self.started = true;
         self.sync_netif();

@@ -39,11 +39,13 @@
 extern crate std;
 
 pub mod address;
-#[cfg(feature = "ftd")]
+#[cfg(all(feature = "ftd", feature = "bbr"))]
 pub mod bbr_server;
+#[cfg(feature = "bbr")]
 pub mod dua;
 pub mod forwarder;
 pub mod indirect;
+#[cfg(feature = "bbr")]
 pub mod mlr;
 pub mod netdata;
 pub mod radio;
@@ -55,11 +57,11 @@ pub mod trel;
 
 #[cfg(all(test, feature = "ftd"))]
 mod address_tests;
-#[cfg(all(test, feature = "ftd"))]
+#[cfg(all(test, all(feature = "ftd", feature = "bbr")))]
 mod bbr_server_tests;
-#[cfg(all(test, feature = "ftd"))]
+#[cfg(all(test, all(feature = "bbr", feature = "ftd")))]
 mod bbr_sim;
-#[cfg(all(test, feature = "ftd"))]
+#[cfg(all(test, all(feature = "bbr", feature = "ftd")))]
 mod dua_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
@@ -67,7 +69,7 @@ mod e2e_tests;
 mod forwarder_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod indirect_tests;
-#[cfg(all(test, feature = "ftd"))]
+#[cfg(all(test, all(feature = "bbr", feature = "ftd")))]
 mod mlr_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod netdata_sim_tests;

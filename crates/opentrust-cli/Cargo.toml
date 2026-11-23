@@ -37,7 +37,7 @@ udp = []
 # `networkdiagnostic`.
 diag = []
 # `bbr`, `dua` (Thread 1.2 Backbone Router role and Domain Unicast Address commands).
-bbr = []
+bbr = ["opentrust-instance/bbr"]
 # The Backbone Router role commands (`bbr enable`, `bbr mgmt ...`, `fake`).
 bbr-server = ["bbr", "ftd", "opentrust-instance/bbr-server"]
 # `linkmetrics` (Thread 1.2 Link Metrics Initiator).

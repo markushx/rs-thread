@@ -45,6 +45,7 @@ use crate::netdata::server_data::{self, USER_SERVER_DATA};
 use crate::netdata::{NetworkData as NetData, NetworkDataView};
 
 use crate::address::{self, AddressAction};
+#[cfg(feature = "bbr")]
 use crate::bbr_sim::{self, BbrNode, FakeBbr, Outcome};
 use crate::forwarder::{
     DropReason, FrameSink, MacDest, MeshForwarder, NetworkData, Routing, Rx, SendResult, TxFrame,
@@ -178,6 +179,7 @@ pub struct TmfNode {
     /// Located devices (`/a/yl` answers).
     pub located: std::vec::Vec<anycast::Located>,
     /// Backbone Router client state (DUA).
+    #[cfg(feature = "bbr")]
     pub bbrn: BbrNode,
 }
 
@@ -287,6 +289,7 @@ pub struct MeshSim {
     pub blocked: std::vec::Vec<(usize, usize)>,
     pub nd: SimNd,
     /// Answers `/n/dr` as the Primary Backbone Router.
+    #[cfg(feature = "bbr")]
     pub fake_bbr: FakeBbr,
     /// Every frame on the air: sender, receiver, payload.
     pub frame_log: std::vec::Vec<(usize, usize, std::vec::Vec<u8>)>,
@@ -307,7 +310,9 @@ struct NodeHandler<'a> {
     leader: &'a mut Leader<512>,
     sd_changed: Changed,
     idx: usize,
+    #[cfg(feature = "bbr")]
     fake_bbr: &'a mut FakeBbr,
+    #[cfg(feature = "bbr")]
     bbrn: &'a mut BbrNode,
 }
 
@@ -345,11 +350,13 @@ impl Handler for NodeHandler<'_> {
                     self.netif,
                     self.mle,
                     &iid,
+                    #[cfg(feature = "bbr")]
                     &self.bbrn.bbr,
                     req,
                     rsp,
                 ) {
                     address::AddressErrorOutcome::Ignored => {}
+                    #[cfg(feature = "bbr")]
                     address::AddressErrorOutcome::DuplicateDomainUnicast => {
                         self.bbrn.duplicate_flag = true
                     }
@@ -370,8 +377,11 @@ impl Handler for NodeHandler<'_> {
                     self.sd_changed.stable |= c.stable;
                 }
             }
+            #[cfg(feature = "bbr")]
             Uri::DuaRegistrationRequest => self.fake_bbr.handle_dua(self.idx, req, rsp),
+            #[cfg(feature = "bbr")]
             Uri::Mlr => self.fake_bbr.handle_mlr(self.idx, req, rsp),
+            #[cfg(feature = "bbr")]
             Uri::DuaRegistrationNotify => {
                 if req.msg.ty() == Type::Con {
                     let _ = rsp.respond(Code::CHANGED, &[]);
@@ -404,6 +414,11 @@ impl MeshSim {
                     Uri::AddressError,
                     Uri::ServerData,
                     Uri::AnycastLocate,
+                ] {
+                    agent.register(u).unwrap();
+                }
+                #[cfg(feature = "bbr")]
+                for u in [
                     Uri::DuaRegistrationRequest,
                     Uri::DuaRegistrationNotify,
                     Uri::Mlr,
@@ -441,6 +456,7 @@ impl MeshSim {
                     server_data_sent: 0,
                     egress: std::vec::Vec::new(),
                     located: std::vec::Vec::new(),
+                    #[cfg(feature = "bbr")]
                     bbrn: BbrNode::new(),
                 }
             })
@@ -450,6 +466,7 @@ impl MeshSim {
             tmf,
             blocked: std::vec::Vec::new(),
             nd: SimNd::default(),
+            #[cfg(feature = "bbr")]
             fake_bbr: FakeBbr::default(),
             frame_log: std::vec::Vec::new(),
             next_mid: 0x7000,
@@ -986,6 +1003,7 @@ impl MeshSim {
             let now = self.sim.now;
             for i in 0..self.tmf.len() {
                 moved |= self.netdata_step(i);
+                #[cfg(feature = "bbr")]
                 {
                     let n = &mut self.sim.nodes[i];
                     moved |= bbr_sim::step(i, now, &mut n.mle, &mut n.env, &mut self.tmf[i]);
@@ -1060,6 +1078,7 @@ impl MeshSim {
                     } else if user == USER_SERVER_DATA {
                         t.notifier.response(now, false);
                     } else {
+                        #[cfg(feature = "bbr")]
                         bbr_sim::queue_outcome(t, user, Outcome::Timeout);
                     }
                 }
@@ -1130,7 +1149,9 @@ impl MeshSim {
             leader: &mut t.leader,
             sd_changed: Changed::default(),
             idx: to,
+            #[cfg(feature = "bbr")]
             fake_bbr: &mut self.fake_bbr,
+            #[cfg(feature = "bbr")]
             bbrn: &mut t.bbrn,
         };
         let r = t
@@ -1156,6 +1177,7 @@ impl MeshSim {
                 {
                     t.located.push(l);
                 } else {
+                    #[cfg(feature = "bbr")]
                     bbr_sim::queue_outcome(
                         t,
                         user,
@@ -1169,6 +1191,7 @@ impl MeshSim {
                 } else if user == USER_SERVER_DATA {
                     t.notifier.response(now, false);
                 } else {
+                    #[cfg(feature = "bbr")]
                     bbr_sim::queue_outcome(t, user, Outcome::Failed);
                 }
             }
@@ -1258,7 +1281,10 @@ impl MeshSim {
                     t.agent.next_deadline(),
                     t.resolver.next_deadline(),
                     t.publisher.next_deadline(),
+                    #[cfg(feature = "bbr")]
                     bbr_sim::next_deadline(t),
+                    #[cfg(not(feature = "bbr"))]
+                    None,
                 ]
             })
             .flatten()

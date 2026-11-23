@@ -15,8 +15,12 @@ readme = "../../README.md"
 [features]
 # Router-only code: leader / router side of the TMF exchanges, routing and
 # forwarding of other nodes' traffic, indirect queues for sleepy children.
-default = ["ftd"]
+default = ["ftd", "bbr"]
 ftd = ["opentrust-mle/ftd"]
+# Thread 1.2 Backbone Router client glue: Domain Unicast Address (DUA) and
+# Multicast Listener Registration (MLR). An end device without a Backbone
+# Router in its network can disable this to save flash and RAM.
+bbr = []
 # Thread Radio Encapsulation Link (Thread 1.3 TREL) and multi-radio selection.
 trel = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-coap/defmt", "opentrust-lowpan/defmt", "opentrust-mac/defmt"]

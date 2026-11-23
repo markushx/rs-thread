@@ -60,6 +60,7 @@ fn instance_size_breakdown() {
     row("slaac", &i.slaac);
     row("glue", &i.glue);
     row("dnssrp", &i.dnssrp);
+    #[cfg(feature = "bbr")]
     row("bbrg", &i.bbrg);
     row("diag_in", &i.diag_in);
     row("cm", &i.cm);

@@ -101,6 +101,7 @@
 //! `srp-server` the crypto backend needs no ECDSA P-256.
 
 mod api;
+#[cfg(feature = "bbr")]
 mod bbr;
 mod cm_api;
 mod cm_comm;
@@ -124,6 +125,7 @@ mod stack;
 mod tmf;
 
 pub use api::{PingReply, UdpSocket};
+#[cfg(feature = "bbr")]
 pub use bbr::MlrRegisterResult;
 #[cfg(feature = "border-agent")]
 pub use commissioning::BaDatagram;
@@ -132,12 +134,12 @@ pub use config::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 #[cfg(feature = "ftd")]
 pub use diag::RouteInfo;
 pub use diag::{ChildInfo, MleCountersInfo, NeighborInfo, tlv as diag_tlv};
+#[cfg(feature = "srp-client")]
+pub use dns_srp::SRP_SERVICES;
 #[cfg(feature = "dns-client")]
 pub use dns_srp::{BrowseInstance, DnsOutcome, MAX_BROWSE_INSTANCES};
 #[cfg(all(feature = "dns-client", feature = "srp-server"))]
 pub use dns_srp::{RECORDS_MSG, records_of};
-#[cfg(feature = "srp-client")]
-pub use dns_srp::SRP_SERVICES;
 pub use opentrust_coap::message::Code as CoapCode;
 pub use opentrust_coap::uri::Uri as TmfUri;
 pub use opentrust_core::types::{ExtAddress, Rloc16};
@@ -361,6 +363,7 @@ pub enum Event {
     DnsResult(QueryId),
     /// An MLR.req from [`Instance::mlr_register`] was answered or failed
     /// ([`Instance::mlr_take_register_result`]).
+    #[cfg(feature = "bbr")]
     MlrRegisterResult,
     /// The Joiner changed state.
     JoinerState(opentrust_meshcop::joiner::JoinerState),
@@ -467,6 +470,7 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) dhcp6: dhcp6::Dhcp6,
     #[cfg(feature = "ftd")]
     pub(crate) updater: opentrust_meshcop::updater::DatasetUpdater,
+    #[cfg(feature = "bbr")]
     pub(crate) bbrg: bbr::BbrGlue,
     pub(crate) diag_in: Deque<diag::Answer, 2>,
     pub(crate) diag_query_id: u16,
@@ -656,6 +660,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 addr_of_mut!((*p).updater),
                 opentrust_meshcop::updater::DatasetUpdater::new,
             );
+            #[cfg(feature = "bbr")]
             put(addr_of_mut!((*p).bbrg), bbr::BbrGlue::new);
             put(addr_of_mut!((*p).diag_in), Deque::new);
             addr_of_mut!((*p).diag_query_id).write((prng_seed >> 16) as u16);
@@ -779,7 +784,10 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy |= self.service_netdata(now);
             busy |= self.service_tmf(now);
             busy |= self.service_dns_srp(now);
-            busy |= self.service_bbr(now);
+            #[cfg(feature = "bbr")]
+            {
+                busy |= self.service_bbr(now);
+            }
             busy |= self.service_commissioning(now);
             busy |= self.service_scan(now);
             #[cfg(feature = "link-metrics-manager")]
@@ -813,6 +821,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.glue.next_deadline(),
             self.dnssrp.next_deadline(),
             self.dhcp6.next_deadline(),
+            #[cfg(feature = "bbr")]
             self.bbrg.next_deadline(),
             self.cm.next_deadline(),
             self.scan_servers_deadline(),
@@ -886,7 +895,16 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             || !self.core.cfg.ds_events.is_empty()
             || self.core.cfg.applied
             || self.dnssrp.has_pending_work()
-            || self.bbrg.has_pending_work()
+            || {
+                #[cfg(feature = "bbr")]
+                {
+                    self.bbrg.has_pending_work()
+                }
+                #[cfg(not(feature = "bbr"))]
+                {
+                    false
+                }
+            }
     }
 
     /// The next application event.

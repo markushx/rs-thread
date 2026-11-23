@@ -103,6 +103,7 @@ struct Deferred {
     sd_changed: Changed,
     #[cfg(feature = "ftd")]
     outcomes: Vec<mgmt::SetOutcome, 2>,
+    #[cfg(feature = "bbr")]
     duplicate_dua: bool,
     reset_counters: bool,
     diag_event: bool,
@@ -131,6 +132,7 @@ struct NodeHandler<'a, S, C: CryptoBackend, R> {
     #[cfg(feature = "ftd")]
     ls: &'a mut opentrust_meshcop::leader::LeaderState,
     resolver: &'a mut AddressResolver<{ crate::config::RESOLVER_ENTRIES }>,
+    #[cfg(feature = "bbr")]
     bbrg: &'a mut crate::bbr::BbrGlue,
     diag_in: &'a mut heapless::Deque<crate::diag::Answer, 2>,
     #[cfg(any(feature = "scan-servers", feature = "commissioner"))]
@@ -177,11 +179,13 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                     &mut self.core.ip6.netif,
                     self.mle,
                     &iid,
+                    #[cfg(feature = "bbr")]
                     &self.bbrg.bbr,
                     req,
                     rsp,
                 ) {
                     AddressErrorOutcome::Ignored | AddressErrorOutcome::AddressRemoved => {}
+                    #[cfg(feature = "bbr")]
                     AddressErrorOutcome::DuplicateDomainUnicast => self.out.duplicate_dua = true,
                     AddressErrorOutcome::ChildAddressRemoved(a) => {
                         let _ = self.out.actions.push(a);
@@ -241,6 +245,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Handler for NodeHa
                 }
                 let _ = rsp.respond(Code::CHANGED, &[]);
             }
+            #[cfg(feature = "bbr")]
             Uri::DuaRegistrationNotify => {
                 if req.msg.ty() == opentrust_coap::message::Type::Con {
                     let _ = rsp.respond(Code::CHANGED, &[]);
@@ -413,6 +418,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             #[cfg(feature = "ftd")]
             ls: &mut self.cm.leader,
             resolver: &mut self.resolver,
+            #[cfg(feature = "bbr")]
             bbrg: &mut self.bbrg,
             diag_in: &mut self.diag_in,
             #[cfg(any(feature = "scan-servers", feature = "commissioner"))]
@@ -448,23 +454,34 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                             let _ = self.diag_in.push_back((peer.addr, v));
                             self.core.push_event(crate::Event::DiagAnswer);
                         }
-                    } else if self.bbrg.queue_outcome(
-                        user,
-                        crate::bbr::Outcome::Response(msg.code(), {
-                            let mut v = Vec::new();
-                            let _ = v.extend_from_slice(msg.payload());
-                            v
-                        }),
-                    ) {
-                    } else if let Some(t) = mgmt::set_user_type(user) {
-                        let _ = mgmt::set_response(&msg);
-                        self.core.datasets.mgmt_set_finished(now, t);
-                    } else if user == anycast::USER_ANYCAST_LOCATE
-                        && let Ok(l) =
-                            anycast::parse_response(&msg, self.core.cfg.cur.mesh_local_prefix)
-                    {
-                        self.core
-                            .push_event(crate::Event::AnycastLocated(Ok((l.ml_eid, l.rloc16.0))));
+                    } else {
+                        #[cfg(feature = "bbr")]
+                        let bbr_handled = self.bbrg.queue_outcome(
+                            user,
+                            crate::bbr::Outcome::Response(msg.code(), {
+                                let mut v = Vec::new();
+                                let _ = v.extend_from_slice(msg.payload());
+                                v
+                            }),
+                        );
+                        #[cfg(not(feature = "bbr"))]
+                        let bbr_handled = false;
+                        if !bbr_handled {
+                            if let Some(t) = mgmt::set_user_type(user) {
+                                let _ = mgmt::set_response(&msg);
+                                self.core.datasets.mgmt_set_finished(now, t);
+                            } else if user == anycast::USER_ANYCAST_LOCATE
+                                && let Ok(l) = anycast::parse_response(
+                                    &msg,
+                                    self.core.cfg.cur.mesh_local_prefix,
+                                )
+                            {
+                                self.core.push_event(crate::Event::AnycastLocated(Ok((
+                                    l.ml_eid,
+                                    l.rloc16.0,
+                                ))));
+                            }
+                        }
                     }
                 }
             }
@@ -496,6 +513,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 let _ = session;
             }
         }
+        #[cfg(feature = "bbr")]
         if out.duplicate_dua {
             self.bbrg.duplicate_dua = true;
         }
@@ -547,16 +565,23 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.core.push_event(crate::Event::AnycastLocated(Err(e)));
         } else if user == USER_SERVER_DATA {
             self.notifier.response(now, false);
-        } else if self.bbrg.queue_outcome(
-            user,
-            if timeout {
-                crate::bbr::Outcome::Timeout
-            } else {
-                crate::bbr::Outcome::Failed
-            },
-        ) {
-        } else if let Some(t) = mgmt::set_user_type(user) {
-            self.core.datasets.mgmt_set_finished(now, t);
+        } else {
+            #[cfg(feature = "bbr")]
+            let bbr_handled = self.bbrg.queue_outcome(
+                user,
+                if timeout {
+                    crate::bbr::Outcome::Timeout
+                } else {
+                    crate::bbr::Outcome::Failed
+                },
+            );
+            #[cfg(not(feature = "bbr"))]
+            let bbr_handled = false;
+            if !bbr_handled {
+                if let Some(t) = mgmt::set_user_type(user) {
+                    self.core.datasets.mgmt_set_finished(now, t);
+                }
+            }
         }
     }
 

@@ -13,11 +13,15 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "bbr-server", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client"]
+default = ["ftd", "bbr", "bbr-server", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
+# Thread 1.2 Backbone Router client glue: Domain Unicast Address (DUA) and
+# Multicast Listener Registration (MLR). An end device without a Backbone
+# Router in its network can disable this to save flash and RAM.
+bbr = ["opentrust-mesh/bbr"]
 # The Thread 1.2 Backbone Router role of this device (BBR service, answering
 # DUA and MLR registrations).
-bbr-server = ["ftd"]
+bbr-server = ["ftd", "bbr"]
 commissioner = ["ftd", "opentrust-meshcop/commissioner"]
 border-agent = ["commissioner", "opentrust-meshcop/border-agent"]
 tcat = ["opentrust-meshcop/tcat"]
