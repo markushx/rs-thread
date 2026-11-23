@@ -35,6 +35,7 @@ use rs_thread_ncp::{
     transport::{SocketTransport, UartTransport},
 };
 use rs_thread_platform::{Alarm, Clock, Radio, RamSettings};
+use std::os::unix::io::AsFd;
 use tokio::sync::mpsc;
 
 // ── CLI (matches otbr-agent) ──────────────────────────────────────────────────
@@ -56,8 +57,14 @@ struct Args {
     radio_urls: Vec<String>,
 
     /// Thread network interface (TUN device) name.
-    #[arg(short = 'I', long = "thread-ifname", value_name = "IFNAME",
-          default_value = "wpan0")]
+    /// On macOS the kernel assigns `utunN` names; pass `-I utun9` or similar.
+    /// On Linux the default `wpan0` matches otbr-agent.
+    #[cfg_attr(target_os = "macos",
+        arg(short = 'I', long = "thread-ifname", value_name = "IFNAME",
+            default_value = "utun9"))]
+    #[cfg_attr(not(target_os = "macos"),
+        arg(short = 'I', long = "thread-ifname", value_name = "IFNAME",
+            default_value = "wpan0"))]
     thread_ifname: String,
 
     /// Backbone network interface name.  May be specified multiple times;
@@ -264,43 +271,108 @@ impl core::fmt::Debug for RadioTransport {
     }
 }
 
+/// Configures a UART fd for raw binary Spinel: raw mode, 8N1, `baud_rate`.
+fn configure_serial(file: &tokio::fs::File, baud_rate: u32) -> std::io::Result<()> {
+    use nix::sys::termios::{
+        BaudRate, ControlFlags, FlushArg, SetArg,
+        cfmakeraw, cfsetspeed, tcflush, tcgetattr, tcsetattr,
+    };
+
+    let baud = match baud_rate {
+        9600    => BaudRate::B9600,
+        19200   => BaudRate::B19200,
+        38400   => BaudRate::B38400,
+        57600   => BaudRate::B57600,
+        115200  => BaudRate::B115200,
+        230400  => BaudRate::B230400,
+        _ => return Err(std::io::Error::other(format!(
+            "unsupported baud rate {baud_rate}"
+        ))),
+    };
+
+    let mut tios = tcgetattr(file.as_fd())
+        .map_err(|e| std::io::Error::other(format!("tcgetattr: {e}")))?;
+
+    cfmakeraw(&mut tios);
+    tios.control_flags &=
+        !(ControlFlags::CSTOPB | ControlFlags::PARENB | ControlFlags::CRTSCTS);
+    tios.control_flags |= ControlFlags::CS8 | ControlFlags::CREAD | ControlFlags::CLOCAL;
+    tios.control_chars[nix::sys::termios::SpecialCharacterIndices::VMIN as usize] = 1;
+    tios.control_chars[nix::sys::termios::SpecialCharacterIndices::VTIME as usize] = 0;
+
+    cfsetspeed(&mut tios, baud)
+        .map_err(|e| std::io::Error::other(format!("cfsetspeed: {e}")))?;
+    tcsetattr(file.as_fd(), SetArg::TCSANOW, &tios)
+        .map_err(|e| std::io::Error::other(format!("tcsetattr: {e}")))?;
+    tcflush(file.as_fd(), FlushArg::TCIOFLUSH)
+        .map_err(|e| std::io::Error::other(format!("tcflush: {e}")))?;
+
+    Ok(())
+}
+
 /// Normalises a Spinel radio URL and opens the transport.
 ///
-/// Accepted schemes (case-insensitive scheme prefix):
-///   - `spinel+hdlc+uart:///dev/ttyUSB0`          (OT RCP firmware, same as below)
-///   - `spinel+hdlc+uart:///dev/ttyUSB0?uart-baudrate=115200`
-///   - `spinel+uart:///dev/ttyUSB0`               (rs-thread RCP, raw UART)
-///   - `spinel+hdlc+socket://127.0.0.1:9000`      (OT RCP over TCP)
-///   - `spinel+socket://127.0.0.1:9000`           (rs-thread RCP over TCP)
+/// Accepted schemes:
+///   - `spinel+hdlc+uart:///dev/ttyUSB0?uart-baudrate=115200`  (OT RCP)
+///   - `spinel+hdlc+uart:///dev/ttyUSB0`
+///   - `spinel+uart:///dev/ttyUSB0`                            (rs-thread RCP)
+///   - `spinel+hdlc+socket://127.0.0.1:9000`
+///   - `spinel+socket://127.0.0.1:9000`
 ///
-/// HDLC-lite framing is handled inside RadioSpinel, so `+hdlc+` and the
-/// plain variants are equivalent at this level.
+/// HDLC-lite framing is handled inside RadioSpinel — `+hdlc+` and the plain
+/// variants are equivalent at this level.  On macOS `tty.*` paths are
+/// automatically opened as `cu.*` to avoid blocking on DCD.
 async fn open_transport(url: &str) -> Result<RadioTransport> {
-    // Normalise: strip `+hdlc` from the scheme (ot-cli always writes
-    // lower-case) and strip query parameters (e.g. `?uart-baudrate=115200`).
-    // We open the file descriptor directly and rely on the host's baud rate
-    // setting; a future improvement is to call tcsetattr when the query exists.
     let normalised = url
         .replace("spinel+hdlc+uart://", "spinel+uart://")
         .replace("spinel+hdlc+socket://", "spinel+socket://");
-    let url: &str = normalised.split('?').next().unwrap_or(&normalised);
 
-    if let Some(path) = url.strip_prefix("spinel+uart://") {
+    // Split off query string; extract uart-baudrate if present.
+    let (path_part, query) = match normalised.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (normalised.as_str(), None),
+    };
+    let baud_rate: u32 = query
+        .and_then(|q| {
+            q.split('&').find_map(|kv| {
+                let (k, v) = kv.split_once('=')?;
+                if k == "uart-baudrate" { v.parse().ok() } else { None }
+            })
+        })
+        .unwrap_or(115200);
+
+    if let Some(raw_path) = path_part.strip_prefix("spinel+uart://") {
+        // On macOS, open the callout (cu.*) device to avoid blocking on DCD.
+        #[cfg(target_os = "macos")]
+        let device_path = if let Some(stem) = raw_path.strip_prefix("/dev/tty.") {
+            format!("/dev/cu.{stem}")
+        } else {
+            raw_path.to_owned()
+        };
+        #[cfg(not(target_os = "macos"))]
+        let device_path = raw_path.to_owned();
+
+        log::info!("opening UART: {device_path} @ {baud_rate} baud");
         let file = tokio::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open(path)
+            .open(&device_path)
             .await
-            .with_context(|| format!("open {path}"))?;
+            .with_context(|| format!("open {device_path}"))?;
+        configure_serial(&file, baud_rate)
+            .with_context(|| format!("configure {device_path}"))?;
+        log::debug!("serial port configured (raw, 8N1, {} baud)", baud_rate);
+
         Ok(RadioTransport::Uart(UartTransport::new(file)))
-    } else if let Some(addr) = url.strip_prefix("spinel+socket://") {
+    } else if let Some(addr) = path_part.strip_prefix("spinel+socket://") {
+        log::info!("connecting TCP socket: {addr}");
         let stream = SocketTransport::connect(addr)
             .await
             .with_context(|| format!("connect {addr}"))?;
         Ok(RadioTransport::Socket(stream))
     } else {
         anyhow::bail!(
-            "unknown radio URL scheme: {url}\n\
+            "unknown radio URL: {url}\n\
              Expected spinel+hdlc+uart://, spinel+uart://, \
              spinel+hdlc+socket://, or spinel+socket://"
         )
