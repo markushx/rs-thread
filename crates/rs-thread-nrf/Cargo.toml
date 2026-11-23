@@ -41,8 +41,8 @@ defmt = { workspace = true, optional = true }
 embassy-nrf = { version = "0.11", features = ["nrf52840", "unstable-pac"] }
 embedded-storage = "0.3"
 embedded-storage-async = "0.4"
-# Not on crates.io in the needed version yet: 0.1.0 lacks timed receive, CSL
-nrf-802154 = { version = "0.1", default-features = false, features = ["nrf52840"], optional = true }
+# crates.io 0.1.0 lacks timed receive, CSL and secured enhanced ACKs; pin to sysgrok git.
+nrf-802154 = { git = "https://github.com/sysgrok/nrf-802154", rev = "012c01c563093169c36871b8eb3a1b3268eeb714", default-features = false, features = ["nrf52840"], optional = true }
 nrf-mpsl = { version = "0.4", default-features = false, features = ["nrf52840"], optional = true }
 static_cell = { version = "2", optional = true }
 
