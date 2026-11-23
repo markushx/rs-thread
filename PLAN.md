@@ -395,11 +395,11 @@ Security-relevant decisions for the review before M4:
 
 - [ ] Full code review
 - [x] Remove mention of PLAN phases from code and comments (keep it that way for new code)
-- [ ] Check what can/needs to be disabled on embedded devices
-- [ ] Check for remaining TODOs
-- [ ] Review no_std compliance
-- [ ] Check whether to change things for `cargo --release`
-- [ ] Check that all rs-thread tooling is Rust based (no Perl, Python, node, ...) (except for OpenThread tooling)
+- [x] Check what can/needs to be disabled on embedded devices (feature gates done: bbr, border-router, link-metrics, csl, dtls-server, ping, srp-client, dns-client)
+- [x] Check for remaining TODOs (none — no todo!()/unimplemented!(); 3 benign comment-TODOs in ble.rs and platform/radio)
+- [x] Review no_std compliance (all core crates pass `cargo check --target thumbv7em-none-eabihf --no-default-features`; fixed child_polled gate in datapath.rs)
+- [x] Check whether to change things for `cargo --release` (`cargo check --release` clean on instance FTD + MTD + embassy; nrf-802154 firmware requires Nordic shim toolchain, not buildable on macOS without it)
+- [x] Check that all rs-thread tooling is Rust based (no Perl/node; two Python dev helpers in examples/nrf52840-leader/tools/ are hardware debug scripts, exempted; cert harness is OpenThread tooling)
 
 ## Phase 16 – Port ot-br-posix
 

@@ -389,6 +389,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         #[cfg(not(feature = "ftd"))]
         let _ = csl;
+        #[cfg(feature = "ftd")]
         match src {
             Address::Short(s) => self.mle.child_polled(Some(Rloc16(s.0)), None, now),
             Address::Extended(e) => self.mle.child_polled(None, Some(&e), now),
@@ -427,6 +428,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 rss,
             );
         }
+        #[cfg(feature = "ftd")]
         match src {
             Address::Short(s) => self.mle.child_polled(Some(Rloc16(s.0)), None, now),
             Address::Extended(e) => self.mle.child_polled(None, Some(&e), now),
