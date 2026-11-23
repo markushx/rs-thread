@@ -45,11 +45,11 @@
 
 use core::net::Ipv6Addr;
 
+use rand_core::Rng;
 use rs_thread_core::message::Origin;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::{Rloc16, ipv6};
 use rs_thread_core::{Error, Result};
-use rand_core::Rng;
 
 use crate::addr;
 use crate::checksum;

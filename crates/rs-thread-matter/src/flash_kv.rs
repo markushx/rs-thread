@@ -12,10 +12,10 @@
 //! A power cut loses what was stored after the last completed flush; the
 //! flash itself stays consistent (see `rs-thread-flash`).
 
-use rs_thread_core::Error as CoreError;
-use rs_thread_flash::Shared;
 use rs_matter::dm::persist::KvBlobStore;
 use rs_matter::error::{Error, ErrorCode};
+use rs_thread_core::Error as CoreError;
+use rs_thread_flash::Shared;
 
 use crate::error::map_err;
 

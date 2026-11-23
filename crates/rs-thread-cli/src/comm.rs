@@ -2,13 +2,13 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::bytes::Writer;
 use rs_thread_core::time::Duration;
 use rs_thread_instance::InstanceCrypto;
 use rs_thread_meshcop::commissioner::{CommissionerEvent, CommissionerState, JoinerKind};
 use rs_thread_meshcop::tlv::{WriterExt, ty as tlv};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{

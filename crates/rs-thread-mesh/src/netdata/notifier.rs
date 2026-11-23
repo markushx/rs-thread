@@ -15,9 +15,9 @@
 //! the caller turns `true` into `Mle::become_router` with
 //! `RouterRequestReason::BorderRouterRequest`.
 
+use rand_core::Rng;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::Rloc16;
-use rand_core::Rng;
 
 use super::local::contains_entries_from;
 use super::tlv::BrFlags;

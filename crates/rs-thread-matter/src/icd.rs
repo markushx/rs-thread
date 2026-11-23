@@ -21,13 +21,13 @@
 //! [`Instance::set_poll_period`]: rs_thread_instance::Instance::set_poll_period
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use rand_core::{CryptoRng, Rng};
+use rs_matter::dm::clusters::icd_mgmt::{Icd, IcdNetParams};
+use rs_matter::error::Error;
 use rs_thread_core::time::Duration;
 use rs_thread_embassy::RsThread;
 use rs_thread_instance::{DeviceMode, InstanceCrypto};
 use rs_thread_platform::{Clock, SettingsStore};
-use rand_core::{CryptoRng, Rng};
-use rs_matter::dm::clusters::icd_mgmt::{Icd, IcdNetParams};
-use rs_matter::error::Error;
 
 use crate::error::map_err;
 

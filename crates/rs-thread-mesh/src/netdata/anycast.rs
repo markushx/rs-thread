@@ -3,6 +3,7 @@
 
 use core::net::Ipv6Addr;
 
+use rand_core::Rng;
 use rs_thread_coap::endpoint::Request;
 use rs_thread_coap::message::{Code, Message, Type};
 use rs_thread_coap::tmf::{Agent, Responder, UdpSink};
@@ -12,7 +13,6 @@ use rs_thread_core::message::Priority;
 use rs_thread_core::time::Instant;
 use rs_thread_core::types::{Iid, Prefix64, Rloc16};
 use rs_thread_core::{Error, Result};
-use rand_core::Rng;
 
 use crate::tlv::{ThreadTlv, ThreadTlvs};
 

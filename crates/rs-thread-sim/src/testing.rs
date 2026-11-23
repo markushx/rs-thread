@@ -31,7 +31,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time_queue_utils::Queue;
 use rs_thread_core::crypto::soft::SoftCrypto;
 use rs_thread_core::time::{Duration, Instant};
-use rs_thread_embassy::{RsThread, Resources};
+use rs_thread_embassy::{Resources, RsThread};
 use rs_thread_instance::{Config, Instance};
 use rs_thread_mac::frame::{Address, Frame, FrameBuilder};
 use rs_thread_mac::mac::{ext_to_u64, fcs};

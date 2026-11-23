@@ -3,10 +3,10 @@
 use core::fmt::Write;
 use core::net::SocketAddrV6;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_instance::{InstanceCrypto, UdpSocket};
 use rs_thread_net::udp::UdpSendOpts;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, Ip6, R, ln, out, parse_hex, parse_ip6, parse_u16};

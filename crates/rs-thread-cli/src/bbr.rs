@@ -1,8 +1,8 @@
 //! `bbr` and `dua` (OT `cli_bbr.cpp`, `dua iid` of `cli.cpp`).
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_instance::InstanceCrypto;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, R, ln, parse_hex_exact};

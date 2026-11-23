@@ -30,6 +30,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
+use rand_core::Rng;
 use rs_thread_coap::endpoint::{Endpoint, Event, Peer, Rx, RxInfo, SendOpts, Transport};
 use rs_thread_coap::message::{Code, Type};
 use rs_thread_coap::tmf::{Agent, UDP_PORT as TMF_PORT, UdpSink};
@@ -39,7 +40,6 @@ use rs_thread_core::message::Priority;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::{Kek, Prefix64, Rloc16, ipv6};
 use rs_thread_core::{Error, Result, tlv};
-use rand_core::Rng;
 
 use crate::dataset::Dataset;
 use crate::discovery::{DEFAULT_JOINER_UDP_PORT, joining_allowed};

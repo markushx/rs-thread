@@ -3,6 +3,7 @@
 
 use core::fmt;
 
+use rand_core::CryptoRng;
 use rs_thread_core::crypto::backend::{CryptoBackend, HmacSha256, Sha256};
 use rs_thread_core::crypto::ecjpake::{
     EcJpake, P256, ROUND_ONE_MAX_LEN, ROUND_TWO_MAX_LEN, Role as JpakeRole,
@@ -13,7 +14,6 @@ use rs_thread_core::crypto::kdf::{
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::Kek;
 use rs_thread_core::{Error, Result};
-use rand_core::CryptoRng;
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 

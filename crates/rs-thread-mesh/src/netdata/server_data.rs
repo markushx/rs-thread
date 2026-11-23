@@ -6,6 +6,7 @@
 //! [`Notifier`](super::notifier::Notifier) for when).
 
 use super::lookup::ALOC16_LEADER;
+use rand_core::Rng;
 #[cfg(feature = "ftd")]
 use rs_thread_coap::endpoint::Request;
 #[cfg(feature = "ftd")]
@@ -25,7 +26,6 @@ use rs_thread_mle::Mle;
 #[cfg(feature = "ftd")]
 use rs_thread_mle::Role;
 use rs_thread_mle::env::MleEnv;
-use rand_core::Rng;
 
 #[cfg(feature = "ftd")]
 use super::leader::{Changed, Leader, MatchMode};

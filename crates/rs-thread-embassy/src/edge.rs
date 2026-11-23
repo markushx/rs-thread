@@ -8,9 +8,9 @@ use edge_nal::{
     UdpSplitMulticast,
 };
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_instance::InstanceCrypto;
 use rs_thread_platform::{Clock, SettingsStore};
-use rand_core::{CryptoRng, Rng};
 
 use crate::state::RsThread;
 use crate::udp::UdpSocket;

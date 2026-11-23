@@ -18,6 +18,7 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::Error;
 use rs_thread_core::time::Duration;
 use rs_thread_instance::{
@@ -25,9 +26,8 @@ use rs_thread_instance::{
 };
 use rs_thread_meshcop::dataset::Dataset;
 use rs_thread_platform::{Alarm, Clock, Radio, SettingsStore};
-use rand_core::{CryptoRng, Rng};
 
-use crate::state::{RsThread, Resources};
+use crate::state::{Resources, RsThread};
 
 /// Error type of the compat surface (esp-rs: the OpenThread `otError`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

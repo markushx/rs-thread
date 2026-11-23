@@ -2,13 +2,13 @@
 //! `otJoiner*`), Commissioner (`otCommissioner*`) and Border Agent
 //! (`otBorderAgent*`).
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Instant;
 use rs_thread_core::{Error, Result};
 use rs_thread_meshcop::joiner::{JoinerConfig, JoinerState};
 use rs_thread_meshcop::steering::JoinerDiscerner;
 use rs_thread_mle::Role;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::cm_glue::link_io;
 use crate::{Instance, InstanceCrypto};

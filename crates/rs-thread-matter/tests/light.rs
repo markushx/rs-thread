@@ -17,8 +17,6 @@ use common::kv::MemKv;
 use common::srp::Registered;
 use common::*;
 use embassy_futures::select::{Either, Either3, select, select3};
-use rs_thread_matter::driver::ThreadRunner;
-use rs_thread_matter::net::MatterNetStack;
 use rand_core::Rng as _;
 use rs_matter::cert::r#gen::VALID_FOREVER;
 use rs_matter::cert::{MAX_CERT_TLV_AND_ASN1_LEN, MAX_CERT_TLV_LEN};
@@ -49,6 +47,8 @@ use rs_matter::utils::init::InitMaybeUninit;
 use rs_matter::utils::storage::String as MString;
 use rs_matter::utils::timers::{Duration as TDuration, Timer};
 use rs_matter::{Matter, clusters, devices};
+use rs_thread_matter::driver::ThreadRunner;
+use rs_thread_matter::net::MatterNetStack;
 
 const MATTER_PORT: u16 = 5540;
 const PASSCODE: u32 = 20202021;

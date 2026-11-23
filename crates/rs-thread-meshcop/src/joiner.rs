@@ -43,6 +43,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
+use rand_core::CryptoRng;
 use rs_thread_coap::endpoint::{Endpoint, Peer, ResourceId, Rx, RxInfo, SendOpts, Transport};
 use rs_thread_coap::message::{Code, Type};
 use rs_thread_coap::tmf::UDP_PORT as TMF_PORT;
@@ -55,7 +56,6 @@ use rs_thread_core::types::{ExtAddress, Kek, ipv6};
 use rs_thread_core::{Error, Result};
 use rs_thread_dtls::{Config, Session, State as DtlsState};
 use rs_thread_mle::env::DiscoveryResponseInfo;
-use rand_core::CryptoRng;
 
 use crate::dataset::Dataset;
 use crate::discovery::{DiscoverScanner, ScanResult, ScanStep, build_request_tlv};

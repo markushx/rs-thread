@@ -17,9 +17,9 @@
 
 use core::fmt;
 
+use rand_core::CryptoRng;
 use rs_thread_core::time::Duration;
 use rs_thread_core::{Error, Result};
-use rand_core::CryptoRng;
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 

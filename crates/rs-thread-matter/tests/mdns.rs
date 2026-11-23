@@ -10,11 +10,6 @@ use common::srp::{Instance as SrpInstance, Registered};
 use common::*;
 use embassy_futures::join::join;
 use embassy_futures::select::{Either, select};
-use rs_thread_core::time::Duration;
-use rs_thread_instance::{BrFlags, NetPrefix, OnMeshPrefixConfig, Role};
-use rs_thread_matter::mdns::SrpMdns;
-use rs_thread_matter::net::MatterNetStack;
-use rs_thread_matter::netif::{NETIF_NAME, ThreadNetif};
 use rs_matter::Matter;
 use rs_matter::crypto::default_crypto;
 use rs_matter::dm::clusters::gen_diag::{InterfaceTypeEnum, NetifDiag};
@@ -24,6 +19,11 @@ use rs_matter::dm::{AttrChangeNotifier, AttrId, ClusterId, EndptId};
 use rs_matter::stack::mdns::Mdns;
 use rs_matter::transport::network::MatterRemoteService;
 use rs_matter::utils::init::InitMaybeUninit;
+use rs_thread_core::time::Duration;
+use rs_thread_instance::{BrFlags, NetPrefix, OnMeshPrefixConfig, Role};
+use rs_thread_matter::mdns::SrpMdns;
+use rs_thread_matter::net::MatterNetStack;
+use rs_thread_matter::netif::{NETIF_NAME, ThreadNetif};
 
 const MATTER_PORT: u16 = 5540;
 

@@ -6,6 +6,7 @@ use core::net::{Ipv6Addr, SocketAddrV6};
 
 #[cfg(feature = "ping")]
 use heapless::Deque;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::settings::SettingsKey;
 use rs_thread_core::time::Instant;
 use rs_thread_core::types::{
@@ -29,7 +30,6 @@ use rs_thread_net::ip6::{Delivery, SendInfo};
 use rs_thread_net::netif::UnicastAddress;
 use rs_thread_net::udp::{RecvInfo, SocketHandle, UdpSendOpts};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::InstanceCrypto;
 

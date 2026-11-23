@@ -1,6 +1,7 @@
 //! Driving the commissioning roles: timers, the Joiner UDP port, key ID
 //! mode 0 (KEK) frames and the relay messages of the TMF agent.
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_coap::endpoint::Peer;
 use rs_thread_core::time::Instant;
 use rs_thread_core::types::{ExtAddress, LinkSecurity, ipv6};
@@ -10,7 +11,6 @@ use rs_thread_meshcop::joiner::{JOINER_UDP_PORT, JoinerState};
 use rs_thread_net::header::{Ipv6Header, PROTO_UDP, UdpHeader};
 use rs_thread_net::udp::UdpMeta;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::cm_io::JoinerAction;
 use crate::{Instance, InstanceCrypto};

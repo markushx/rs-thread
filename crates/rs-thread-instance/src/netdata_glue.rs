@@ -3,6 +3,7 @@
 //! `Notifier` and the per-module `HandleNotifierEvents`.
 
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Instant;
 use rs_thread_core::types::{Rloc16, ipv6};
 use rs_thread_mesh::address;
@@ -20,7 +21,6 @@ use rs_thread_mle::neighbor::StateFilter;
 use rs_thread_net::resolver::ResolverEvent;
 use rs_thread_net::slaac::IidParams;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::InstanceCrypto;
 

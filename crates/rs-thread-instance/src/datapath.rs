@@ -3,6 +3,7 @@
 //! MAC frames.
 
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::Result;
 use rs_thread_core::crypto::{CryptoBackend, SecurityLevel};
 use rs_thread_core::time::Instant;
@@ -25,7 +26,6 @@ use rs_thread_net::ip6::{Ctx, Delivery, RxMeta, RxOutcome, Scratch, SendInfo};
 use rs_thread_net::resolver::ResolverEvent;
 use rs_thread_net::udp::{ReceiverId, UdpMeta, UdpRx, UdpRxInfo};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::InstanceCrypto;
 

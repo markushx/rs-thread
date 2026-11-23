@@ -7,10 +7,10 @@ use core::future::{Future, pending};
 use core::pin::pin;
 
 use embassy_futures::select::{Either, Either3, select, select3};
+use rand_core::Rng;
 use rs_thread_core::time::Instant;
 use rs_thread_platform::radio::{MAX_PSDU_LEN, RSSI_INVALID, RadioError};
 use rs_thread_platform::{Alarm, Clock, Radio};
-use rand_core::Rng;
 
 use super::consts::*;
 use super::machine::Mac;

@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use rs_thread_sim::vtsim::{rs_thread_cli_vt, rs_thread_cli_vt_mtd, ot_cli_ftd};
+use rs_thread_sim::vtsim::{ot_cli_ftd, rs_thread_cli_vt, rs_thread_cli_vt_mtd};
 
 /// Packet verification with `tshark`: `RSTHREAD_CERT_PKTVERIFY=1`.
 fn pktverify() -> bool {

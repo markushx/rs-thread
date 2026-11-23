@@ -11,8 +11,6 @@
 //! `None` and `active_network_faults_list` is always empty.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use rs_thread_instance::{InstanceCrypto, LeaderData, Role};
-use rs_thread_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 #[cfg(feature = "ftd")]
 use rs_matter::dm::clusters::thread_diag::RouteTable;
@@ -21,6 +19,8 @@ use rs_matter::dm::clusters::thread_diag::{
     RoutingRoleEnum, SecurityPolicy, ThreadDiag,
 };
 use rs_matter::error::Error;
+use rs_thread_instance::{InstanceCrypto, LeaderData, Role};
+use rs_thread_platform::{Clock, SettingsStore};
 
 use crate::netctl::{ThreadNetCtl, is_attached};
 

@@ -22,6 +22,7 @@
 
 use core::net::Ipv6Addr;
 
+use rand_core::Rng;
 use rs_thread_coap::endpoint::Request;
 use rs_thread_coap::message::{Code, Message};
 use rs_thread_coap::tmf::{Agent, Responder, UdpSink};
@@ -32,7 +33,6 @@ use rs_thread_core::time::Instant;
 use rs_thread_core::types::{Prefix64, Rloc16};
 use rs_thread_core::{Error, Result};
 use rs_thread_mle::Role;
-use rand_core::Rng;
 
 use crate::dataset::DatasetType;
 use crate::manager::Datasets;

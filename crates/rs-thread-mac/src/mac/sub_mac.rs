@@ -14,8 +14,8 @@
 //!   └─timer──┘
 //! ```
 
-use rs_thread_core::time::Duration;
 use rand_core::Rng;
+use rs_thread_core::time::Duration;
 
 use super::consts::{MAX_BE, MIN_BE, UNIT_BACKOFF_PERIOD};
 use super::types::{FrameBuf, TxHandle};

@@ -7,6 +7,7 @@
 //! travel on a UDP socket: the Commissioner's records to a Joiner are
 //! carried in Relay Transmit TMF messages.
 
+use rand_core::CryptoRng;
 use rs_thread_coap::endpoint::{Peer, SendOpts, Transport};
 use rs_thread_core::Result;
 use rs_thread_core::crypto::backend::CryptoBackend;
@@ -14,7 +15,6 @@ use rs_thread_core::crypto::ecjpake::P256;
 use rs_thread_core::time::Instant;
 use rs_thread_dtls::Session;
 use rs_thread_dtls::coaps::MAX_DATAGRAM_LEN;
-use rand_core::CryptoRng;
 
 pub use rs_thread_dtls::MAX_CONTENT_LEN;
 

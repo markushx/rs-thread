@@ -24,11 +24,11 @@
 //! Feature `tcat` (default off).
 
 use heapless::{Deque, Vec};
+use rand_core::CryptoRng;
 use rs_thread_core::bytes::Writer;
 use rs_thread_core::crypto::backend::{CryptoBackend, HmacSha256 as _};
 use rs_thread_core::tlv::{BASE_MAX_LENGTH, EXTENDED_LENGTH, Tlv};
 use rs_thread_core::{Error, Result};
-use rand_core::CryptoRng;
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 

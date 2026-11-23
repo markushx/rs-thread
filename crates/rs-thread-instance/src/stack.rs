@@ -6,6 +6,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::{Deque, Vec};
+use rand_core::Rng;
 use rs_thread_coap::tmf::UdpSink;
 use rs_thread_core::bufpool::{BufPool, Chain};
 use rs_thread_core::crypto::CryptoBackend;
@@ -33,7 +34,6 @@ use rs_thread_mle::tlv::{LeaderData, Timestamp};
 use rs_thread_net::ip6::{Ip6, SendInfo};
 use rs_thread_net::netif::AddressOrigin;
 use rs_thread_platform::SettingsStore;
-use rand_core::Rng;
 
 pub use crate::config::{CHILDREN, NETDATA_LEN, UDP_SOCKETS};
 use crate::config::{

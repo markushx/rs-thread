@@ -53,6 +53,7 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::{Deque, Vec};
+use rand_core::CryptoRng;
 use rs_thread_coap::endpoint::{
     Endpoint, Event, Peer, RequestCtx, ResourceId, Rx, RxInfo, SendOpts, Transport,
 };
@@ -66,7 +67,6 @@ use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::{Prefix64, Pskc, Rloc16};
 use rs_thread_core::{Error, Result};
 use rs_thread_dtls::{CloseReason, Config, Session, State as DtlsState};
-use rand_core::CryptoRng;
 
 use crate::commissioner::{Commissioner, CommissionerIo, LEADER_ALOC16, commissioner_aloc16};
 use crate::dataset::DatasetType;

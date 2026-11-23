@@ -128,6 +128,8 @@ mod run;
 mod state;
 mod udp;
 
+#[cfg(feature = "dns-client")]
+pub use requests::DnsClientError;
 pub use rs_thread_instance::DiscoverResult;
 #[cfg(feature = "ping")]
 pub use rs_thread_instance::PingReply;
@@ -137,9 +139,7 @@ pub use rs_thread_instance::ServiceId;
 pub use rs_thread_instance::{DnsError, QueryConfig, ResolvedAddresses, ResolvedService};
 pub use rs_thread_instance::{Event, Instance};
 pub use rs_thread_meshcop::joiner::JoinerConfig;
-#[cfg(feature = "dns-client")]
-pub use requests::DnsClientError;
-pub use state::{EVENT_QUEUE_LEN, RsThread, Resources, WAITERS};
+pub use state::{EVENT_QUEUE_LEN, Resources, RsThread, WAITERS};
 pub use udp::UdpSocket;
 
 #[cfg(feature = "edge-nal")]

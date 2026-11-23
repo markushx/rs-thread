@@ -27,10 +27,6 @@ use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::{String, Vec};
-use rs_thread_dns::rdata::{TxtEntry, TxtIter};
-use rs_thread_embassy::{DnsClientError, RsThread, ResolvedService, ServiceId};
-use rs_thread_instance::{InstanceCrypto, SRP_SERVICES, ServiceConfig, SrpError};
-use rs_thread_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::Matter;
 use rs_matter::crypto::Crypto;
@@ -41,6 +37,10 @@ use rs_matter::transport::network::mdns::{DottedName, MdnsBrowseQuery, MdnsRemot
 use rs_matter::transport::network::{MatterLocalService, MatterRemoteService};
 use rs_matter::utils::futures::{Coalesce, select, select3};
 use rs_matter::utils::timers::{Duration, Timer};
+use rs_thread_dns::rdata::{TxtEntry, TxtIter};
+use rs_thread_embassy::{DnsClientError, ResolvedService, RsThread, ServiceId};
+use rs_thread_instance::{InstanceCrypto, SRP_SERVICES, ServiceConfig, SrpError};
+use rs_thread_platform::{Clock, SettingsStore};
 
 use crate::error::map_err;
 use crate::fmt::{log_debug, log_warn};

@@ -42,11 +42,11 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::{String, Vec};
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::crypto::ecdsa::{EcdsaP256, PUBLIC_KEY_LEN, SecretKey};
 use rs_thread_core::crypto::{CryptoBackend, Sha256};
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::{Error, Result};
-use rand_core::{CryptoRng, Rng};
 use zeroize::Zeroize;
 
 use super::discovery::{

@@ -5,13 +5,13 @@ use core::fmt::Write;
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::String;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Duration;
 use rs_thread_instance::{
     DnsError, DnsOutcome, InstanceCrypto, PartialConfig, QueryConfig, QueryId, ResolvedService,
     ServiceMode,
 };
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{

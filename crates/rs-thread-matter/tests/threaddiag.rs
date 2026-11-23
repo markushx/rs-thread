@@ -4,12 +4,12 @@ mod common;
 use core::cell::Cell;
 
 use common::*;
+use rs_matter::dm::clusters::thread_diag::{RoutingRoleEnum, ThreadDiag};
+use rs_matter::dm::clusters::wifi_diag::WirelessDiag;
 use rs_thread_instance::Role;
 use rs_thread_matter::icd::IcdFollower;
 use rs_thread_matter::netctl::ThreadNetCtl;
 use rs_thread_matter::threaddiag::routing_role;
-use rs_matter::dm::clusters::thread_diag::{RoutingRoleEnum, ThreadDiag};
-use rs_matter::dm::clusters::wifi_diag::WirelessDiag;
 
 #[test]
 fn role_mapping() {

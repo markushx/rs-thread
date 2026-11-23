@@ -7,6 +7,7 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::ExtAddress;
 use rs_thread_mesh::netdata::tlv::{BrFlags, NetPrefix};
@@ -14,7 +15,6 @@ use rs_thread_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
 use rs_thread_net::netif::{AddressOrigin, UnicastAddress};
 use rs_thread_net::udp::{SocketHandle, UdpMeta, UdpSendOpts};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::{Instance, InstanceCrypto, MAX_UDP_PAYLOAD};
 

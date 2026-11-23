@@ -178,6 +178,7 @@ pub use srp_server::{
 pub use rs_thread_mac::mac::{RadioAction, TxOutcome};
 
 use heapless::Deque;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_coap::tmf::Agent;
 use rs_thread_core::time::Instant;
 use rs_thread_core::types::Iid;
@@ -201,7 +202,6 @@ use rs_thread_net::resolver::AddressResolver;
 use rs_thread_net::slaac::Slaac;
 use rs_thread_net::udp::{ReceiverId, UdpSockets};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 #[cfg(feature = "border-router")]
 use crate::config::PUBLISHER_ENTRIES;

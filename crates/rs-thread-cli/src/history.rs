@@ -2,12 +2,12 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Instant;
 use rs_thread_instance::InstanceCrypto;
 use rs_thread_instance::history::{MessageEntry, age_ms};
 use rs_thread_mle::Role;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, Ip6, R, ln, out, table_header, table_separator};

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU16, Ordering};
 
-use rs_thread_sim::vtsim::{VtSim, rs_thread_cli_vt, rs_thread_cli_vt_mtd, ot_cli_ftd};
+use rs_thread_sim::vtsim::{VtSim, ot_cli_ftd, rs_thread_cli_vt, rs_thread_cli_vt_mtd};
 
 /// Which node binary runs a node ID.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

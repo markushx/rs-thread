@@ -4,6 +4,7 @@
 //! `MlrManager`).
 
 use heapless::{Deque, Vec};
+use rand_core::{CryptoRng, Rng};
 use rs_thread_coap::message::Code;
 use rs_thread_core::settings::SettingsKey;
 use rs_thread_core::time::Instant;
@@ -22,7 +23,6 @@ use rs_thread_mesh::netdata::backbone::{BackboneRouterLeader, BbrState, DomainPr
 use rs_thread_mle::Role;
 use rs_thread_net::slaac::IidParams;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::InstanceCrypto;
 

@@ -75,5 +75,5 @@ pub mod netif;
 pub mod persist;
 pub mod threaddiag;
 
-pub use rs_thread_embassy::{RsThread, Resources};
 pub use rs_matter;
+pub use rs_thread_embassy::{Resources, RsThread};

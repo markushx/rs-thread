@@ -7,6 +7,7 @@ mod common;
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use common::*;
+use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use rs_thread_core::time::Instant;
 use rs_thread_dns::wire::{Header, Parser, Writer, class, opcode, rcode, rtype};
 use rs_thread_instance::{
@@ -14,7 +15,6 @@ use rs_thread_instance::{
     TxtEntry, UdpSendOpts, UdpSocket,
 };
 use rs_thread_sim::{Kind, Network};
-use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use sha2::{Digest, Sha256};
 
 const SERVICE: &str = "_matter._tcp.default.service.arpa";

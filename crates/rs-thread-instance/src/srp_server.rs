@@ -6,6 +6,7 @@
 
 use core::net::{Ipv6Addr, SocketAddrV6};
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::settings::SettingsKey;
 use rs_thread_core::time::Instant;
 use rs_thread_core::{Error, Result};
@@ -18,7 +19,6 @@ use rs_thread_mesh::netdata::tlv::THREAD_ENTERPRISE_NUMBER;
 use rs_thread_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
 use rs_thread_net::udp::{SocketHandle, UdpSendOpts};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 const DNS_PORT: u16 = 53;
 

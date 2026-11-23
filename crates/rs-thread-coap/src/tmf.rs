@@ -32,13 +32,13 @@
 
 use core::net::Ipv6Addr;
 
+use rand_core::Rng;
 use rs_thread_core::message::Priority;
 use rs_thread_core::time::Instant;
 use rs_thread_core::{Error, Result};
 use rs_thread_net::ip6::{SendInfo, TMF_UDP_PORT};
 use rs_thread_net::netif::Netif;
 use rs_thread_net::udp::{ReceiverId, UdpMeta, UdpSockets};
-use rand_core::Rng;
 
 use crate::endpoint::{
     Endpoint, Event, Peer, Request, RequestCtx, ResourceId, Rx, RxInfo, SendOpts, Transport,

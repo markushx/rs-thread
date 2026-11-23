@@ -5,9 +5,9 @@ use core::fmt::Write;
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_instance::{InstanceCrypto, ItemState, ServiceConfig};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, Ip6, R, ln, out, parse_hex, parse_ip6, parse_u16, parse_u32};

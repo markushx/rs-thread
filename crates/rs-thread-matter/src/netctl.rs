@@ -11,9 +11,6 @@ use core::cell::Cell;
 
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use rs_thread_embassy::RsThread;
-use rs_thread_instance::{Dataset, InstanceCrypto, Role};
-use rs_thread_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::dm::clusters::net_comm::{
     NetCtl, NetCtlError, NetCtlStatus, NetworkCommissioningStatusEnum, NetworkScanInfo,
@@ -23,6 +20,9 @@ use rs_matter::dm::clusters::wifi_diag::WirelessDiag;
 use rs_matter::dm::networks::NetChangeNotif;
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::utils::timers::{Duration, Timer};
+use rs_thread_embassy::RsThread;
+use rs_thread_instance::{Dataset, InstanceCrypto, Role};
+use rs_thread_platform::{Clock, SettingsStore};
 
 use crate::error::map_err;
 

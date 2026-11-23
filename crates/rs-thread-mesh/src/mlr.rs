@@ -27,6 +27,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
+use rand_core::Rng;
 use rs_thread_coap::message::Code;
 use rs_thread_coap::tmf::{Agent, UdpSink};
 use rs_thread_coap::uri::Uri;
@@ -37,7 +38,6 @@ use rs_thread_core::types::{Prefix64, Rloc16};
 use rs_thread_core::{Error, Result};
 use rs_thread_mle::neighbor::{MlrState, MulticastListener};
 use rs_thread_net::netif::Netif;
-use rand_core::Rng;
 
 use crate::netdata::backbone::{
     BackboneRouterLeader, BbrState, MIN_MLR_TIMEOUT, PARENT_AGGREGATE_DELAY,

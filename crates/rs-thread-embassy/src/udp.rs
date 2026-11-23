@@ -6,10 +6,10 @@ use core::net::{Ipv6Addr, SocketAddrV6};
 use core::task::{Context, Poll};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::Error;
 use rs_thread_instance::{InstanceCrypto, UdpSendOpts, UdpSocket as RawUdpSocket};
 use rs_thread_platform::{Clock, SettingsStore};
-use rand_core::{CryptoRng, Rng};
 
 use crate::state::{RsThread, State};
 

@@ -3,10 +3,10 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_instance::{Event, InstanceCrypto};
 use rs_thread_mle::link_metrics::{EnhAckFlags, Metrics, MetricsValues, SeriesFlags};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, Ip6, R, ln, out, parse_ip6, parse_u8};

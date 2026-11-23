@@ -4,13 +4,13 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::types::{ExtPanId, NetworkKey, NetworkName, Prefix64, Pskc};
 use rs_thread_instance::InstanceCrypto;
 use rs_thread_meshcop::dataset::{Dataset, DatasetType};
 use rs_thread_meshcop::tlv::SecurityPolicy;
 use rs_thread_mle::tlv::Timestamp;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{

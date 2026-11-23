@@ -14,7 +14,7 @@
 
 use std::io::BufRead;
 
-use rs_thread_sim::vtsim::{VtSim, rs_thread_cli_vt, ot_cli_ftd};
+use rs_thread_sim::vtsim::{VtSim, ot_cli_ftd, rs_thread_cli_vt};
 
 fn main() {
     let ot = ot_cli_ftd().expect("ot-cli-ftd");

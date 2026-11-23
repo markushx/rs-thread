@@ -1,12 +1,12 @@
 //! Glue of the on-mesh Commissioner and the Border Agent: their TMF
 //! transport, relay messages and responses.
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_coap::message::Code;
 use rs_thread_coap::uri::Uri;
 use rs_thread_core::Error;
 use rs_thread_core::time::Instant;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::{Instance, InstanceCrypto};
 

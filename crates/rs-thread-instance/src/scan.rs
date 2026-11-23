@@ -7,6 +7,7 @@
 //! one active / energy scan at a time, and a discovery scan cannot start
 //! while the Joiner is running.
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::{Duration, Instant};
 #[cfg(feature = "scan-servers")]
 use rs_thread_core::types::Rloc16;
@@ -14,7 +15,6 @@ use rs_thread_core::{Error, Result};
 use rs_thread_meshcop::discovery::{DiscoverScanner, ScanStep, build_request_tlv};
 use rs_thread_meshcop::joiner::JoinerState;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::{Event, Instance, InstanceCrypto};
 

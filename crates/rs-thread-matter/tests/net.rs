@@ -8,10 +8,10 @@ use core::net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
 use common::*;
 use embassy_futures::join::join;
-use rs_thread_matter::net::MatterNetStack;
 use rs_matter::error::ErrorCode;
 use rs_matter::stack::net::{NetSocket, NetStack};
 use rs_matter::transport::network::{Address, NetworkMulticast, NetworkReceive, NetworkSend};
+use rs_thread_matter::net::MatterNetStack;
 
 const MATTER_PORT: u16 = 5540;
 const MDNS_GROUP: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0xfb);

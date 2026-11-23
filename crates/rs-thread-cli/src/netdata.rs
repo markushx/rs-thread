@@ -2,11 +2,11 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_instance::InstanceCrypto;
 use rs_thread_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig, ServiceConfig};
 use rs_thread_mesh::netdata::tlv::{BrFlags, NetPrefix};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{

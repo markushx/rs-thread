@@ -2,10 +2,10 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Duration;
 use rs_thread_instance::{Event, InstanceCrypto};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, R, hex, ln, out, parse_u8, parse_u16, table_header};

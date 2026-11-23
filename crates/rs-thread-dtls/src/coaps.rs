@@ -12,13 +12,13 @@
 //! OpenThread send exactly one per datagram); further application-data
 //! records in the same datagram are dropped.
 
+use rand_core::CryptoRng;
 use rs_thread_coap::endpoint::{Peer, SecureTransport, SendOpts, Transport};
 use rs_thread_core::crypto::backend::CryptoBackend;
 use rs_thread_core::crypto::ecjpake::P256;
 use rs_thread_core::time::Instant;
 use rs_thread_core::types::Kek;
 use rs_thread_core::{Error, Result};
-use rand_core::CryptoRng;
 
 use crate::record::{AEAD_OVERHEAD, HEADER_LEN};
 use crate::{Config, MAX_CONTENT_LEN, Session, State};

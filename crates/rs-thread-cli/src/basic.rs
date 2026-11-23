@@ -3,13 +3,13 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::types::{ExtPanId, NetworkKey, NetworkName};
 use rs_thread_instance::InstanceCrypto;
 use rs_thread_meshcop::dataset::Dataset;
 use rs_thread_mle::Role;
 use rs_thread_mle::tlv::DeviceMode;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::util::{Args, E, R, hex, ln, parse_hex_exact, parse_u8, parse_u16};
 use crate::{Ctx, VERSION};

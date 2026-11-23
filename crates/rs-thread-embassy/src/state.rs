@@ -11,13 +11,13 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::{MultiWakerRegistration, WakerRegistration};
 use heapless::Deque;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Instant;
 use rs_thread_instance::{
     DiscoverResult, Event, Instance, InstanceCrypto, Rloc16, Role, UDP_SOCKETS,
     UdpSocket as RawUdpSocket,
 };
 use rs_thread_platform::{Clock, SettingsStore};
-use rand_core::{CryptoRng, Rng};
 
 /// Capacity of the application event queue ([`RsThread::next_event`]).
 pub const EVENT_QUEUE_LEN: usize = 16;

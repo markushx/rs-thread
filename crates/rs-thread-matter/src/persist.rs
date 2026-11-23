@@ -42,14 +42,14 @@
 //! rewritten as a whole.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use rs_thread_core::settings::SettingsKey;
-use rs_thread_embassy::RsThread;
-use rs_thread_instance::InstanceCrypto;
-use rs_thread_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::dm::persist::{KvBlobStoreAccess, VENDOR_KEYS_START};
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::utils::timers::{Duration, Timer};
+use rs_thread_core::settings::SettingsKey;
+use rs_thread_embassy::RsThread;
+use rs_thread_instance::InstanceCrypto;
+use rs_thread_platform::{Clock, SettingsStore};
 
 use crate::error::map_err;
 use crate::fmt::log_warn;

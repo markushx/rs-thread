@@ -4,10 +4,10 @@
 use core::fmt::Write;
 use core::net::Ipv6Addr;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_instance::{InstanceCrypto, diag_tlv as t};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, Ip6, R, hex, ln, out, parse_ip6, parse_u8};

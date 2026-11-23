@@ -5,10 +5,10 @@ use core::net::{Ipv6Addr, SocketAddrV6};
 use std::string::String;
 use std::vec::Vec;
 
+use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use rs_thread_core::crypto::SoftCrypto;
 use rs_thread_core::crypto::ecdsa::{PUBLIC_KEY_LEN, SecretKey};
 use rs_thread_core::time::Instant;
-use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use sha2::{Digest, Sha256};
 
 use super::*;

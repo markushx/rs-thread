@@ -22,10 +22,10 @@
 
 use core::net::Ipv6Addr;
 
+use rand_core::Rng;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::Rloc16;
 use rs_thread_core::{Error, Result};
-use rand_core::Rng;
 
 use super::local::{ExternalRouteConfig, LocalData, OnMeshPrefixConfig, ServiceConfig};
 use super::tlv::{NetPrefix, THREAD_ENTERPRISE_NUMBER};

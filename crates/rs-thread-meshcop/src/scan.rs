@@ -32,6 +32,7 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
+use rand_core::Rng;
 use rs_thread_coap::endpoint::Request;
 use rs_thread_coap::message::{Code, Type};
 use rs_thread_coap::tmf::{Agent, Responder, UdpSink};
@@ -41,7 +42,6 @@ use rs_thread_core::bytes::Writer;
 use rs_thread_core::message::Priority;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::{Prefix64, Rloc16};
-use rand_core::Rng;
 
 use crate::tlv::{CHANNEL_MAX, CHANNEL_MIN, PAGE0_CHANNELS, Tlvs, WriterExt};
 

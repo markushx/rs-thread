@@ -19,10 +19,10 @@
 use core::net::Ipv6Addr;
 
 use heapless::Vec;
+use rand_core::Rng;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::Iid;
 use rs_thread_core::{Error, Result};
-use rand_core::Rng;
 
 use crate::dua::build_dua_status;
 use crate::mlr::{MAX_MLR_ADDRESSES, build_mlr_response};

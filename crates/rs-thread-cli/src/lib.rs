@@ -63,10 +63,10 @@ mod util;
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Instant;
 use rs_thread_instance::{Event, Instance, InstanceCrypto};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use util::{Args, E, R, error_name, ln};
 

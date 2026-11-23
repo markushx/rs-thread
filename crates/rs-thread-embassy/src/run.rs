@@ -4,12 +4,12 @@ use core::future::pending;
 
 use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::Instant;
 use rs_thread_instance::{InstanceCrypto, RadioAction, TxOutcome};
 use rs_thread_platform::radio::MAX_PSDU_LEN;
 use rs_thread_platform::radio::{RSSI_INVALID, RadioError};
 use rs_thread_platform::{Alarm, Clock, Radio, SettingsStore};
-use rand_core::{CryptoRng, Rng};
 
 use crate::state::RsThread;
 

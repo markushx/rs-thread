@@ -5,12 +5,12 @@ mod common;
 use core::cell::{Cell, RefCell};
 
 use common::*;
-use rs_thread_instance::Role;
-use rs_thread_matter::netctl::ThreadNetCtl;
 use rs_matter::dm::clusters::net_comm::{
     NetCtl, NetCtlError, NetCtlStatus, NetworkCommissioningStatusEnum, NetworkScanInfo,
     NetworkType, WirelessCreds,
 };
+use rs_thread_instance::Role;
+use rs_thread_matter::netctl::ThreadNetCtl;
 
 #[test]
 fn scan_finds_the_leader_and_connect_joins_it() {

@@ -11,13 +11,13 @@
 use core::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV6};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use rs_thread_embassy::{RsThread, UdpSocket};
-use rs_thread_instance::InstanceCrypto;
-use rs_thread_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::stack::net::{NetSocket, NetStack};
 use rs_matter::transport::network::{Address, NetworkMulticast, NetworkReceive, NetworkSend};
+use rs_thread_embassy::{RsThread, UdpSocket};
+use rs_thread_instance::InstanceCrypto;
+use rs_thread_platform::{Clock, SettingsStore};
 
 use crate::error::map_err;
 

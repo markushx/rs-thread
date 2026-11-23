@@ -2,13 +2,13 @@
 
 use core::fmt::Write;
 
+use rand_core::{CryptoRng, Rng};
 use rs_thread_instance::InstanceCrypto;
 #[cfg(feature = "ftd")]
 use rs_thread_instance::RouteInfo;
 #[cfg(feature = "ftd")]
 use rs_thread_mle::Role;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::Ctx;
 use crate::util::{Args, E, R, hex, ln, out, parse_u16, table_header};

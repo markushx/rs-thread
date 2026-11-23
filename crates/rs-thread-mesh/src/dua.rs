@@ -34,6 +34,7 @@ use core::net::Ipv6Addr;
 
 #[cfg(feature = "ftd")]
 use heapless::Vec;
+use rand_core::Rng;
 use rs_thread_coap::message::Code;
 use rs_thread_coap::tmf::{Agent, UdpSink};
 use rs_thread_coap::uri::Uri;
@@ -45,7 +46,6 @@ use rs_thread_core::types::{ExtAddress, Iid, Prefix64, Rloc16};
 use rs_thread_core::{Error, Result};
 use rs_thread_net::netif::{AddressOrigin, Netif, UnicastAddress};
 use rs_thread_net::slaac::{self, IidParams};
-use rand_core::Rng;
 
 use crate::netdata::NetworkDataView;
 #[cfg(feature = "ftd")]

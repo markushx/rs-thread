@@ -2,6 +2,7 @@
 //! requests and the timers of the agent.
 
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_coap::endpoint::{Event as CoapEvent, Request};
 use rs_thread_coap::message::Code;
 use rs_thread_coap::tmf::{Handler, Responder, TmfEnv, TmfRx};
@@ -26,7 +27,6 @@ use rs_thread_mle::Mle;
 use rs_thread_net::resolver::{AddressResolver, ResolverEvent};
 use rs_thread_net::udp::UdpMeta;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::InstanceCrypto;
 

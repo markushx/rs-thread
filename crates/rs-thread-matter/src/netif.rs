@@ -5,13 +5,13 @@ use core::net::Ipv6Addr;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::Vec;
-use rs_thread_embassy::RsThread;
-use rs_thread_instance::{InstanceCrypto, Role};
-use rs_thread_platform::{Clock, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::dm::clusters::gen_diag::{InterfaceTypeEnum, NetifDiag, NetifInfo};
 use rs_matter::dm::networks::NetChangeNotif;
 use rs_matter::error::Error;
+use rs_thread_embassy::RsThread;
+use rs_thread_instance::{InstanceCrypto, Role};
+use rs_thread_platform::{Clock, SettingsStore};
 
 /// The interface name reported to Matter.
 pub const NETIF_NAME: &str = "thread0";

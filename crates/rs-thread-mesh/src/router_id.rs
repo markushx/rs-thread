@@ -26,6 +26,7 @@
 //! answer (the CoAP exchange times out) stays a REED.
 
 use heapless::Vec;
+use rand_core::Rng;
 use rs_thread_coap::endpoint::Request;
 use rs_thread_coap::message::{Code, Message, Type};
 use rs_thread_coap::tmf::{Agent, Responder, UdpSink};
@@ -38,7 +39,6 @@ use rs_thread_core::{Error, Result};
 use rs_thread_mle::env::{MleEnv, RouterIdRequest};
 use rs_thread_mle::router::{RouterIdGrant, RouterIdReply, SolicitRejection};
 use rs_thread_mle::{Mle, Role};
-use rand_core::Rng;
 
 use crate::tlv::{ThreadTlv, ThreadTlvs, status};
 

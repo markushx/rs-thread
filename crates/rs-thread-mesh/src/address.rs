@@ -26,6 +26,7 @@
 
 use core::net::Ipv6Addr;
 
+use rand_core::Rng;
 use rs_thread_coap::endpoint::Request;
 use rs_thread_coap::message::{Code, Type};
 use rs_thread_coap::tmf::{Agent, Responder, UdpSink};
@@ -38,7 +39,6 @@ use rs_thread_core::{Error, Result};
 use rs_thread_mle::{MleEnv, MleEvent};
 use rs_thread_net::netif::Netif;
 use rs_thread_net::resolver::{AddressResolver, NotifyOutcome, ResolverEvent};
-use rand_core::Rng;
 
 use crate::tlv::{ThreadTlv, ThreadTlvs};
 

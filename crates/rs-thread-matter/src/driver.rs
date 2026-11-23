@@ -37,15 +37,15 @@ use core::convert::Infallible;
 
 use embassy_futures::select::{Either4, select4};
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use rs_thread_embassy::RsThread;
-use rs_thread_instance::InstanceCrypto;
-use rs_thread_platform::{Alarm, Clock, Radio, SettingsStore};
 use rand_core::{CryptoRng, Rng};
 use rs_matter::dm::clusters::icd_mgmt::Icd;
 use rs_matter::dm::persist::KvBlobStoreAccess;
 use rs_matter::error::Error;
 use rs_matter::stack::ble::GattPeripheral;
 use rs_matter::stack::wireless::{ThreadCoexDriver, ThreadCoexTask, ThreadDriver, ThreadTask};
+use rs_thread_embassy::RsThread;
+use rs_thread_instance::InstanceCrypto;
+use rs_thread_platform::{Alarm, Clock, Radio, SettingsStore};
 
 use crate::icd::IcdFollower;
 use crate::mdns::SrpMdns;

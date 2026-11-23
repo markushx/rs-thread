@@ -43,11 +43,11 @@
 
 use core::net::Ipv6Addr;
 
+use rand_core::Rng;
 use rs_thread_core::bufpool::{BufPool, Chain, POOL_BUF_SIZE};
 use rs_thread_core::message::Priority;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::{Error, Result};
-use rand_core::Rng;
 
 use crate::message::{
     Code, MAX_TOKEN_LEN, MAX_URI_PATH_LEN, Message, MessageBuilder, Type, VERSION,

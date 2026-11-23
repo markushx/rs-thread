@@ -2,6 +2,7 @@
 //! interface contract.
 
 use heapless::{Deque, Vec};
+use rand_core::Rng;
 use rs_thread_core::bytes::Writer;
 use rs_thread_core::crypto::SecurityLevel;
 use rs_thread_core::time::{Duration, Instant};
@@ -15,7 +16,6 @@ use rs_thread_platform::radio::{
     Capabilities, Config, MacCapabilities, PsduRxInfo, PsduTxInfo, RSSI_INVALID, RadioCaps,
     RadioErrorKind, SoftMacNeeds, SrcMatchConfig,
 };
-use rand_core::Rng;
 
 use super::consts::*;
 use super::csl::CslChild;

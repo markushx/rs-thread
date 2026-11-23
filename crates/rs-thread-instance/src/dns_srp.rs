@@ -25,6 +25,7 @@ use core::net::Ipv6Addr;
 use heapless::String;
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
 use rs_thread_core::Error;
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
@@ -52,7 +53,6 @@ use rs_thread_net::header::{MAX_DATAGRAM_LEN, PROTO_UDP};
 #[cfg(any(feature = "srp-client", feature = "dns-client"))]
 use rs_thread_net::udp::UdpSendOpts;
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 /// Instances reported by one browse result.
 #[cfg(feature = "dns-client")]

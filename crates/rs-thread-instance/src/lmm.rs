@@ -4,12 +4,12 @@
 //! configuration periodically, and keeps the latest values per neighbor.
 
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::{ExtAddress, ipv6};
 use rs_thread_core::{Error, Result};
 use rs_thread_mle::link_metrics::{EnhAckFlags, Metrics, Status};
 use rs_thread_platform::SettingsStore;
-use rand_core::{CryptoRng, Rng};
 
 use crate::{Instance, InstanceCrypto};
 

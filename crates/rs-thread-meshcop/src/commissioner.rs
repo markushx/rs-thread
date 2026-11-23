@@ -37,6 +37,7 @@
 //! TLV, which travels under the network key (Thread 1.4.1 section 8.4.4).
 
 use heapless::{Deque, String};
+use rand_core::{CryptoRng, Rng};
 use rs_thread_coap::endpoint::{Endpoint, Peer, ResourceId, Rx, RxInfo, SendOpts};
 use rs_thread_coap::message::{Code, Type};
 use rs_thread_coap::tmf::{Agent, UdpSink};
@@ -49,7 +50,6 @@ use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::{ExtAddress, Iid, Kek, Prefix64, Rloc16};
 use rs_thread_core::{Error, Result};
 use rs_thread_dtls::{Config, Session, State as DtlsState};
-use rand_core::{CryptoRng, Rng};
 
 use crate::pskd::JoinerPskd;
 use crate::secure::{self, DtlsTx, MAX_CONTENT_LEN};

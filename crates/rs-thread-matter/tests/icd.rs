@@ -5,10 +5,10 @@ use core::cell::Cell;
 
 use common::*;
 use embassy_futures::select::{Either, select};
-use rs_thread_core::time::Duration;
-use rs_thread_matter::icd::IcdFollower;
 use rs_matter::dm::clusters::icd_mgmt::{Icd, IcdModeConfig, IcdNetParams, IcdPowerMode};
 use rs_matter::utils::timers::{Duration as TDuration, Timer};
+use rs_thread_core::time::Duration;
+use rs_thread_matter::icd::IcdFollower;
 
 const CFG: IcdModeConfig = IcdModeConfig {
     idle_mode_duration_s: 60,

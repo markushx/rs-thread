@@ -20,6 +20,7 @@ use core::net::Ipv6Addr;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(feature = "dns-client")]
 use heapless::Vec;
+use rand_core::{CryptoRng, Rng};
 use rs_thread_core::Error;
 use rs_thread_core::time::{Duration, Instant};
 #[cfg(feature = "dns-client")]
@@ -36,7 +37,6 @@ use rs_thread_instance::{DiscoverResult, InstanceCrypto};
 use rs_thread_instance::{ItemState, ServiceId};
 use rs_thread_meshcop::joiner::JoinerConfig;
 use rs_thread_platform::{Clock, SettingsStore};
-use rand_core::{CryptoRng, Rng};
 
 use crate::state::{RsThread, State};
 

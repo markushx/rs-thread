@@ -9,12 +9,6 @@ use core::future::pending;
 use common::kv::MemKv;
 use common::*;
 use embassy_futures::select::{Either, select};
-use rs_thread_core::settings::SettingsKey;
-use rs_thread_core::time::{Duration, Instant};
-use rs_thread_instance::Role;
-use rs_thread_matter::driver::{ThreadCoexRunner, ThreadRunner};
-use rs_thread_matter::persist::{THREAD_SETTINGS_KEY, deserialize, serialize};
-use rs_thread_platform::{Clock, RamSettings, SettingsStore};
 use rs_matter::dm::clusters::gen_diag::NetifDiag;
 use rs_matter::dm::clusters::net_comm::{NetCtl, WirelessCreds};
 use rs_matter::dm::clusters::thread_diag::ThreadDiag;
@@ -26,6 +20,12 @@ use rs_matter::stack::net::NetStack;
 use rs_matter::stack::wireless::{ThreadCoexDriver, ThreadCoexTask, ThreadDriver, ThreadTask};
 use rs_matter::transport::network::btp::{AdvData, Btp};
 use rs_matter::utils::timers::{Duration as TDuration, Timer};
+use rs_thread_core::settings::SettingsKey;
+use rs_thread_core::time::{Duration, Instant};
+use rs_thread_instance::Role;
+use rs_thread_matter::driver::{ThreadCoexRunner, ThreadRunner};
+use rs_thread_matter::persist::{THREAD_SETTINGS_KEY, deserialize, serialize};
+use rs_thread_platform::{Clock, RamSettings, SettingsStore};
 
 /// Connects to the network of `ds`, records when it was joined, then idles.
 struct ConnectTask<'x> {

@@ -28,8 +28,8 @@
 use core::net::{Ipv6Addr, SocketAddrV6};
 
 use heapless::{String, Vec};
-use rs_thread_core::time::{Duration, Instant};
 use rand_core::Rng;
+use rs_thread_core::time::{Duration, Instant};
 
 use crate::wire::{Header, Name, Parser, Part, Writer, class, opcode, rcode, rtype};
 

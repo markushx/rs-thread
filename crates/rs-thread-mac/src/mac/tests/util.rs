@@ -5,6 +5,7 @@ extern crate std;
 use core::convert::Infallible;
 use std::vec::Vec;
 
+use rand_core::TryRng;
 use rs_thread_core::crypto::SecurityLevel;
 use rs_thread_core::time::{Duration, Instant};
 use rs_thread_core::types::{ExtAddress, PanId, ShortAddress};
@@ -12,7 +13,6 @@ use rs_thread_core::{Error, Result};
 use rs_thread_platform::radio::{
     Capabilities, MacCapabilities, PsduRxInfo, RadioCaps, sim::rx_info,
 };
-use rand_core::TryRng;
 
 use crate::frame::{
     Address, Frame, FrameBuilder, FrameMut, FrameType, FrameVersion, KeyIdentifier, MacCommand,
