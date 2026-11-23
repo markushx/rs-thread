@@ -15,6 +15,9 @@ readme = "../../README.md"
 [features]
 defmt = ["dep:defmt", "rs-thread-core/defmt", "rs-thread-platform/defmt", "rs-thread-mac/defmt", "rs-thread-spinel/defmt", "heapless/defmt"]
 log = ["dep:log", "rs-thread-core/log", "rs-thread-platform/log", "rs-thread-mac/log"]
+# Host-side Spinel driver (RadioSpinel + transport adapters). Requires std + tokio.
+radio-spinel = ["std", "dep:tokio"]
+std = []
 
 [dependencies]
 rs-thread-core = { workspace = true }
@@ -25,6 +28,7 @@ heapless = { workspace = true }
 embassy-futures = { workspace = true }
 defmt = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 

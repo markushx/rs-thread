@@ -17,4 +17,12 @@ extern crate std;
 
 pub mod rcp;
 
+#[cfg(feature = "radio-spinel")]
+extern crate std;
+
+#[cfg(feature = "radio-spinel")]
+pub mod radio_spinel;
+#[cfg(feature = "radio-spinel")]
+pub mod transport;
+
 pub use rs_thread_spinel as spinel;

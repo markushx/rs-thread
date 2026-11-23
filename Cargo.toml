@@ -1,9 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "tools/openthread-sys"]
+members = ["crates/*", "tools/openthread-sys", "examples/rsthread-br-posix"]
 # `openthread-sys` builds OpenThread (C++) via its build script; it is the
 # interop/differential-test oracle and is only built on request
 # (`cargo build -p openthread-sys`).
+# `examples/rsthread-br-posix` is a std-only host binary; not part of the
+# embedded workspace default build.
+# `examples/nrf52840-*` are standalone embedded workspaces; they are NOT
+# listed here and must be built with their own Cargo.toml.
 default-members = ["crates/*"]
 
 [workspace.package]
@@ -70,6 +74,7 @@ rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108
 embassy-time-driver = { version = "0.2", default-features = false }
 embassy-time-queue-utils = { version = "0.3", default-features = false }
 critical-section = "1.1"
+tokio = { version = "1", features = ["fs", "net", "io-util", "rt-multi-thread", "macros", "process", "time"] }
 
 # rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.RSTHREAD.md).
 [patch."https://github.com/project-chip/rs-matter"]

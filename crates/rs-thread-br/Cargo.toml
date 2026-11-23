@@ -1,0 +1,29 @@
+[package]
+name = "rs-thread-br"
+description = "Thread Border Router components: TUN interface, OMR prefix / routing, SRP advertising proxy, DNS proxy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = []
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-spinel = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+# mDNS for SRP advertising proxy.
+mdns-sd = "0.11"
+# DNS resolver for the DNS proxy.
+hickory-resolver = { version = "0.25", default-features = false, features = ["tokio"] }
+
+[lints.rust]
+unsafe_code = "deny"
