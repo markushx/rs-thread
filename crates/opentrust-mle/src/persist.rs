@@ -232,6 +232,7 @@ impl<const C: usize> Mle<C> {
             leader_cost: 0,
             sed_buffer_size: 0,
             sed_datagram_count: 0,
+            #[cfg(feature = "csl")]
             csl_accuracy: crate::tlv::CslClockAccuracy::WORST,
         });
         self.previous_parent_rloc = info.rloc16.parent();

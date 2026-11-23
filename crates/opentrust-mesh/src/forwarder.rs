@@ -677,6 +677,7 @@ impl<
         };
         // A CSL receiver puts a CSL IE (and the header termination IE that
         // follows it) into every frame it sends: that much less payload.
+        #[cfg(feature = "csl")]
         let max = if r.mle.is_csl_enabled() {
             max.saturating_sub(CSL_IE_OVERHEAD)
         } else {

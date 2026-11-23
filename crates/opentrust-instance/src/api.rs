@@ -28,9 +28,9 @@ use rand_core::{CryptoRng, Rng};
 
 use crate::InstanceCrypto;
 
-use crate::{Event, Instance};
 #[cfg(feature = "border-router")]
 use crate::DnsSrpService;
+use crate::{Event, Instance};
 
 /// A UDP socket of the application (OT `otUdpSocket`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -418,22 +418,26 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     // ------------------------------------------------------------ MLE settings
 
     /// The CSL period in units of 10 symbols (160 us), 0 if CSL is off.
+    #[cfg(feature = "csl")]
     pub fn csl_period(&self) -> u16 {
         self.mle.csl_period()
     }
 
     /// The CSL channel (0: the PAN channel).
+    #[cfg(feature = "csl")]
     pub fn csl_channel(&self) -> u8 {
         self.mle.csl_channel()
     }
 
     /// The CSL synchronized timeout in seconds.
+    #[cfg(feature = "csl")]
     pub fn csl_timeout(&self) -> u32 {
         self.mle.csl_timeout()
     }
 
     /// Set the CSL period in units of 10 symbols (OT `otLinkSetCslPeriod`,
     /// 0 turns CSL off). A child tells its parent.
+    #[cfg(feature = "csl")]
     pub fn set_csl_period(&mut self, period: u16, now: Instant) {
         self.core.now = now;
         self.mle.set_csl_period(&mut self.core, now, period);
@@ -441,6 +445,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// Set the CSL channel (0: the PAN channel).
+    #[cfg(feature = "csl")]
     pub fn set_csl_channel(&mut self, channel: u8, now: Instant) {
         self.core.now = now;
         self.mle.set_csl_channel(&mut self.core, now, channel);
@@ -448,6 +453,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// Set the CSL synchronized timeout in seconds.
+    #[cfg(feature = "csl")]
     pub fn set_csl_timeout(&mut self, secs: u32, now: Instant) {
         self.core.now = now;
         self.mle.set_csl_timeout(&mut self.core, now, secs);
@@ -456,6 +462,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// The CSL clock accuracy of the radio (PPM) and its uncertainty (10 us).
+    #[cfg(feature = "csl")]
     pub fn csl_clock_accuracy(&self) -> (u8, u8) {
         let c = self.core.mac.caps();
         (c.csl_accuracy_ppm, c.csl_uncertainty)
@@ -837,6 +844,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Report (OT `otLinkMetricsQuery`): a single probe of `metrics` for
     /// `series_id` 0, else the report of that Forward Tracking Series. The
     /// answer is [`Event::LinkMetricsReport`](crate::Event::LinkMetricsReport).
+    #[cfg(feature = "link-metrics")]
     pub fn link_metrics_query(
         &mut self,
         dst: &core::net::Ipv6Addr,
@@ -855,6 +863,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Register (`metrics` given) or clear a Forward Tracking Series on the
     /// neighbor `dst` (OT `otLinkMetricsConfigForwardTrackingSeries`); the
     /// answer is [`Event::LinkMetricsManagement`](crate::Event::LinkMetricsManagement).
+    #[cfg(feature = "link-metrics")]
     pub fn link_metrics_forward_series(
         &mut self,
         dst: &core::net::Ipv6Addr,
@@ -873,6 +882,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// Configure Enhanced-ACK based probing on the neighbor `dst` (OT
     /// `otLinkMetricsConfigEnhAckProbing`).
+    #[cfg(feature = "link-metrics")]
     pub fn link_metrics_enh_ack(
         &mut self,
         dst: &core::net::Ipv6Addr,
@@ -890,6 +900,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// Send a Link Probe of `len` bytes for series `series_id` (OT
     /// `otLinkMetricsSendLinkProbe`).
+    #[cfg(feature = "link-metrics")]
     pub fn link_metrics_probe(
         &mut self,
         dst: &core::net::Ipv6Addr,

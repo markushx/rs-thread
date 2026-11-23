@@ -367,6 +367,7 @@ impl<const C: usize> Mle<C> {
         }
         self.apply_rx_mode(env);
         self.set_parent_link_margin(t.link_margin())?;
+        #[cfg(feature = "csl")]
         if let Ok(acc) = t.csl_clock_accuracy() {
             self.set_parent_csl_accuracy(env, now, acc);
         }
@@ -399,6 +400,7 @@ impl<const C: usize> Mle<C> {
         if !(from_parent || from_router) || !self.neighbor_is_valid(nb) {
             return Err(Error::Drop);
         }
+        #[cfg(feature = "link-metrics")]
         if rx.tlvs.contains(ty::LINK_METRICS_REPORT) {
             self.handle_link_metrics_report(env, rx);
         }

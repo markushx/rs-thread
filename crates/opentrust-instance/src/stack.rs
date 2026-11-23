@@ -490,7 +490,16 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             // that the parent can learn the CSL phase from their CSL IE
             // (OT `MeshForwarder::UpdateIp6Route`: SetLinkSecurityEnabled
             // for MLE with CSL enabled).
-            link_security: opts.link_security || self.mac.csl_period() != 0,
+            link_security: opts.link_security || {
+                #[cfg(feature = "csl")]
+                {
+                    self.mac.csl_period() != 0
+                }
+                #[cfg(not(feature = "csl"))]
+                {
+                    false
+                }
+            },
         };
         self.mle_out.push(
             info,
@@ -551,6 +560,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         }
     }
 
+    #[cfg(feature = "csl")]
     fn set_csl(&mut self, period: u16, channel: u8, parent: Option<(ExtAddress, Rloc16)>) {
         let (short, ext) = parent.map_or((Rloc16::INVALID.into(), ExtAddress([0; 8])), |(e, r)| {
             (r.into(), e)
@@ -560,6 +570,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         let _ = self.mac.set_csl(period, channel, short, ext, self.now);
     }
 
+    #[cfg(feature = "csl")]
     fn set_csl_parent_accuracy(&mut self, a: opentrust_mle::tlv::CslClockAccuracy) {
         self.mac
             .set_csl_parent_accuracy(opentrust_mac::mac::CslAccuracy {
@@ -568,6 +579,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             });
     }
 
+    #[cfg(feature = "csl")]
     fn csl_clock_accuracy(&self) -> Option<opentrust_mle::tlv::CslClockAccuracy> {
         let caps = self.mac.caps();
         caps.clock
@@ -578,6 +590,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
             })
     }
 
+    #[cfg(feature = "csl")]
     fn csl_child_update(&mut self, _ext: &ExtAddress, rloc16: Rloc16, channel: u8) {
         let a = Address::Short(rloc16.into());
         if self.mac.csl_add_child(a).is_ok() {
@@ -585,10 +598,12 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         }
     }
 
+    #[cfg(feature = "csl")]
     fn csl_child_desync(&mut self, _ext: &ExtAddress, rloc16: Rloc16) {
         self.mac.csl_child_desync(Address::Short(rloc16.into()));
     }
 
+    #[cfg(feature = "link-metrics")]
     fn link_metrics_report(
         &mut self,
         from: &Ipv6Addr,
@@ -602,6 +617,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         });
     }
 
+    #[cfg(feature = "link-metrics")]
     fn link_metrics_management_response(
         &mut self,
         from: &Ipv6Addr,
@@ -618,6 +634,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         });
     }
 
+    #[cfg(feature = "link-metrics")]
     fn enh_ack_probing_report(
         &mut self,
         rloc16: Rloc16,
@@ -633,6 +650,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         });
     }
 
+    #[cfg(feature = "link-metrics")]
     fn track_enh_ack_probing(
         &mut self,
         flags: opentrust_mac::mac::LinkMetricsFlags,
@@ -642,6 +660,7 @@ impl<S: SettingsStore, C: CryptoBackend, R: Rng> MleEnv for Core<S, C, R> {
         let _ = self.mac.track_enh_ack_probing(rloc16.into(), *ext, flags);
     }
 
+    #[cfg(feature = "link-metrics")]
     fn configure_enh_ack_probing(
         &mut self,
         flags: opentrust_mac::mac::LinkMetricsFlags,

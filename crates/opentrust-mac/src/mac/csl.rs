@@ -14,6 +14,11 @@
 //! sample times are kept as `u32` like OpenThread (wrapping subtraction), the
 //! transmit windows as `u64`.
 
+// Most items in this file are only used when the `csl` feature is active.
+// Without it the CslChild type must still be compiled (it is the slot type for
+// the const-generic csl_children field), but everything else is dead code.
+#![cfg_attr(not(feature = "csl"), allow(dead_code, unused_imports))]
+
 use opentrust_core::time::Instant;
 use opentrust_core::types::{ExtAddress, ShortAddress};
 

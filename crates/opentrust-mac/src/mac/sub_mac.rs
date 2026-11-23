@@ -75,8 +75,10 @@ pub(crate) struct TxOp {
     /// Software CSL IE: the frame as handed over, before the CSL IE and the
     /// security were applied; every attempt starts from it so that the
     /// phase is current and the frame gets a new frame counter.
+    #[cfg(feature = "csl")]
     pub csl_plain: Option<FrameBuf>,
     /// A CSL transmission to a synchronized child (parent side).
+    #[cfg(feature = "csl")]
     pub csl_tx: bool,
     /// SFD time to transmit at (radio clock, microseconds): timed CSL frame.
     pub tx_at_us: Option<u64>,

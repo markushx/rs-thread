@@ -7,8 +7,10 @@ use opentrust_core::Result;
 use opentrust_core::crypto::{CryptoBackend, SecurityLevel};
 use opentrust_core::time::Instant;
 use opentrust_core::types::{LinkSecurity, Rloc16, ShortAddress};
+#[cfg(feature = "csl")]
+use opentrust_mac::frame::CslIe;
 use opentrust_mac::frame::{
-    Address, CslIe, FrameBuilder, FrameType, FrameVersion, KeyIdMode, KeyIdentifier, SecurityHeader,
+    Address, FrameBuilder, FrameType, FrameVersion, KeyIdMode, KeyIdentifier, SecurityHeader,
 };
 use opentrust_mac::mac::{Event as MacEvent, FrameBuf, RxFrame, TxHandle};
 pub(crate) use opentrust_mesh::forwarder::Routing;
@@ -50,12 +52,24 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
         let mut buf = [0u8; 127];
         // A CSL synchronized sleepy child puts a CSL IE (the MAC fills in
         // the phase) in every frame it sends (Thread section 3.2.6.3).
+        #[cfg(feature = "csl")]
         let csl_period = self.mac.csl_period();
+        #[cfg(not(feature = "csl"))]
+        let csl_period: u16 = 0;
         let csl = csl_period != 0 && f.dst != MacDest::Broadcast;
         let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::Data)
             .version(
-                if csl || f.csl || self.mac.enh_ack_probing_tracked(mac_address(f.dst)) {
+                if csl || f.csl || {
+                    #[cfg(feature = "link-metrics")]
+                    {
+                        self.mac.enh_ack_probing_tracked(mac_address(f.dst))
+                    }
+                    #[cfg(not(feature = "link-metrics"))]
+                    {
+                        false
+                    }
+                } {
                     FrameVersion::V2015
                 } else {
                     FrameVersion::V2006
@@ -73,6 +87,7 @@ impl<C: CryptoBackend> FrameSink for MacSink<'_, C> {
             .src(f.src)
             .frame_pending(f.frame_pending)
             .payload(f.payload);
+        #[cfg(feature = "csl")]
         if csl {
             b = b.header_ie(CslIe {
                 phase: 0,
@@ -236,7 +251,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             busy = true;
             match ev {
                 MacEvent::Received(rx) => self.handle_frame(now, rx),
-                #[cfg(feature = "ftd")]
+                #[cfg(all(feature = "ftd", feature = "csl"))]
                 MacEvent::DataPollReceived {
                     src,
                     csl,
@@ -245,10 +260,19 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                     rssi,
                     ..
                 } => self.handle_poll(now, src, csl, secured.then_some((lqi, rssi))),
-                #[cfg(feature = "ftd")]
+                #[cfg(all(feature = "ftd", not(feature = "csl")))]
+                MacEvent::DataPollReceived {
+                    src,
+                    secured,
+                    lqi,
+                    rssi,
+                    ..
+                } => self.handle_poll(now, src, secured.then_some((lqi, rssi))),
+                #[cfg(all(feature = "ftd", feature = "csl"))]
                 MacEvent::CslChildOutOfSync(Address::Short(s)) => {
                     self.mle.child_csl_desynchronized(Rloc16(s.0));
                 }
+                #[cfg(feature = "link-metrics")]
                 MacEvent::EnhAckLinkMetrics { neighbor, values } => {
                     let ext = self.neighbor_ext(neighbor);
                     #[cfg(feature = "link-metrics-manager")]
@@ -305,6 +329,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
                 }
                 MacEvent::DataPollTimeout => {}
                 MacEvent::TxDone { .. } => {}
+                #[allow(unreachable_patterns)]
                 _ => {}
             }
         }
@@ -333,6 +358,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// A data poll from a sleepy child: release its next frame.
     #[cfg(feature = "ftd")]
+    #[cfg(feature = "csl")]
     fn handle_poll(
         &mut self,
         now: Instant,
@@ -342,6 +368,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     ) {
         // Link metrics of the polling child (OT `Neighbor::AggregateLinkMetrics`).
         // A radio without LQI reports 0 (`OT_RADIO_LQI_NONE`).
+        #[cfg(feature = "link-metrics")]
         if let Some((lqi, Some(rss))) = link
             && let Some(ext) = self.neighbor_ext_opt(src)
         {
@@ -385,7 +412,46 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         self.sync_src_match();
     }
 
+    #[cfg(not(feature = "csl"))]
+    #[cfg_attr(not(feature = "link-metrics"), allow(unused_variables))]
+    fn handle_poll(&mut self, now: Instant, src: Address, link: Option<(Option<u8>, Option<i8>)>) {
+        // Link metrics of the polling child (OT `Neighbor::AggregateLinkMetrics`).
+        #[cfg(feature = "link-metrics")]
+        if let Some((lqi, Some(rss))) = link
+            && let Some(ext) = self.neighbor_ext_opt(src)
+        {
+            self.mle.aggregate_link_metrics(
+                &ext,
+                opentrust_mle::link_metrics::FrameKind::MacDataRequest,
+                lqi.unwrap_or(0),
+                rss,
+            );
+        }
+        match src {
+            Address::Short(s) => self.mle.child_polled(Some(Rloc16(s.0)), None, now),
+            Address::Extended(e) => self.mle.child_polled(None, Some(&e), now),
+            Address::None => {}
+        }
+        let mut notes = FwdNotes::default();
+        let _ = with_routing!(self, |r| {
+            let mut sink = Sink {
+                mac: MacSink {
+                    mac: &mut self.core.mac,
+                    tx: &mut self.core.mactx,
+                },
+                notes: &mut notes,
+            };
+            self.fwd.handle_data_poll(&src, &r, &mut sink)
+        });
+        #[cfg(feature = "ftd")]
+        while let Some(c) = self.fwd.take_child_message_sent() {
+            self.mle.child_message_sent(c);
+        }
+        self.sync_src_match();
+    }
+
     /// Extended address of a neighbor known by short or extended address.
+    #[cfg(any(feature = "csl", feature = "link-metrics"))]
     fn neighbor_ext_opt(&self, a: Address) -> Option<opentrust_core::types::ExtAddress> {
         match a {
             Address::Extended(e) => Some(e),
@@ -399,13 +465,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
     }
 
+    #[cfg(feature = "link-metrics")]
     fn neighbor_ext(&self, a: Address) -> opentrust_core::types::ExtAddress {
         self.neighbor_ext_opt(a)
             .unwrap_or(opentrust_core::types::ExtAddress([0; 8]))
     }
 
     /// Hand the frames queued for CSL synchronized children to the MAC.
-    #[cfg(feature = "ftd")]
+    #[cfg(all(feature = "ftd", feature = "csl"))]
     fn csl_flush_children(&mut self) {
         let mut notes = FwdNotes::default();
         with_routing!(self, |r| {
@@ -471,6 +538,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             channel: Some(rx.channel),
         };
         // Link metrics of the sender (OT `Neighbor::AggregateLinkMetrics`).
+        #[cfg(feature = "link-metrics")]
         if link_security
             && let Some(rss) = rx.rssi
             && let Some(ext) = self.neighbor_ext_opt(src)
@@ -484,7 +552,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         // A frame with a CSL IE synchronizes the sending child (OT
         // `Mac::ProcessCsl`).
-        #[cfg(feature = "ftd")]
+        #[cfg(all(feature = "ftd", feature = "csl"))]
         let csl_child = match src {
             Address::Short(s) => Some(Rloc16(s.0)),
             // A child that has no short address in the frame (a Child Update
@@ -492,7 +560,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             Address::Extended(e) => self.mle.child_rloc_by_ext(&e),
             Address::None => None,
         };
-        #[cfg(feature = "ftd")]
+        #[cfg(all(feature = "ftd", feature = "csl"))]
         if link_security
             && let Some(ie) = f.csl_ie()
             && let Some(child) = csl_child

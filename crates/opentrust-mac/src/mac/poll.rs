@@ -115,6 +115,7 @@ impl PollSender {
     }
 
     /// The CSL period in use (zero when CSL is off).
+    #[cfg(feature = "csl")]
     pub fn set_csl_period(&mut self, p: Duration, now: Instant) {
         if self.csl_period != p {
             self.csl_period = p;

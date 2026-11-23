@@ -165,6 +165,7 @@ mod driver;
 mod fcs;
 mod filter;
 mod indirect;
+#[cfg(feature = "link-metrics")]
 mod link_metrics;
 mod machine;
 mod poll;
@@ -180,6 +181,7 @@ pub use driver::{MacDriver, RunResult};
 pub use fcs::{crc16, fcs};
 pub use filter::{FilterError, FilterParams};
 pub use indirect::ext_to_u64;
+#[cfg(feature = "link-metrics")]
 pub use link_metrics::*;
 pub use machine::{Mac, MacConfig, Operation};
 pub use types::*;

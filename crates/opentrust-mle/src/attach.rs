@@ -48,6 +48,7 @@ use opentrust_core::{Error, Result};
 use opentrust_mac::security::LinkFrameCounters;
 
 use crate::consts::{PARENT_REQ_SCANMASK_R_TIMEOUT, PARENT_REQ_SCANMASK_RE_TIMEOUT};
+#[cfg(feature = "csl")]
 use crate::csl::csl_parent_metric;
 use crate::endpoint::MleRx;
 use crate::env::{MleEnv, MleEvent, Role, StoredDataset};
@@ -605,10 +606,19 @@ impl<const C: usize> Mle<C> {
             cmp(i32::from(conn.link_quality_2), i32::from(cand.lq2)),
             cmp(i32::from(conn.link_quality_1), i32::from(cand.lq1)),
             // CSL metric: smaller is better (only for a sleepy child).
-            csl.map_or(core::cmp::Ordering::Equal, |(timeout, acc)| {
-                csl_parent_metric(timeout, &cand.parent.csl_accuracy)
-                    .cmp(&csl_parent_metric(timeout, &acc))
-            }),
+            {
+                #[cfg(feature = "csl")]
+                let csl_ord = csl.map_or(core::cmp::Ordering::Equal, |(timeout, acc)| {
+                    csl_parent_metric(timeout, &cand.parent.csl_accuracy)
+                        .cmp(&csl_parent_metric(timeout, &acc))
+                });
+                #[cfg(not(feature = "csl"))]
+                let csl_ord = {
+                    let _ = csl;
+                    core::cmp::Ordering::Equal
+                };
+                csl_ord
+            },
             cmp(i32::from(two_way_margin), i32::from(cand.link_margin)),
         ];
         for s in steps {
@@ -655,9 +665,13 @@ impl<const C: usize> Mle<C> {
         let two_way_margin = compute_link_margin(env.noise_floor(), rss).min(margin_out);
         let conn = t.connectivity()?;
         // Parents that do not report their CSL accuracy count as the worst.
+        #[cfg(feature = "csl")]
         let csl_accuracy = t.csl_clock_accuracy().unwrap_or(CslClockAccuracy::WORST);
+        #[cfg(feature = "csl")]
         let csl_metric_input =
             (!self.is_rx_on_when_idle()).then(|| (self.effective_csl_timeout(), csl_accuracy));
+        #[cfg(not(feature = "csl"))]
+        let csl_metric_input: Option<(u32, CslClockAccuracy)> = None;
         #[cfg(feature = "ftd")]
         if self.is_full_thread_device() && self.role != Role::Detached {
             let same = leader_data.partition_id == self.leader_data.partition_id;
@@ -752,6 +766,7 @@ impl<const C: usize> Mle<C> {
                 sed_datagram_count: conn
                     .sed_datagram_count
                     .unwrap_or(DEFAULT_SED_DATAGRAM_COUNT),
+                #[cfg(feature = "csl")]
                 csl_accuracy,
             },
             rx_challenge,

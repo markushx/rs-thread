@@ -32,6 +32,7 @@ use opentrust_core::settings::ChildInfo;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{ExtAddress, Iid, Prefix64, Rloc16};
 use opentrust_core::{Error, Result};
+#[cfg(feature = "link-metrics")]
 use opentrust_mac::mac::LinkMetricsFlags;
 use opentrust_mac::security::LinkFrameCounters;
 
@@ -271,6 +272,7 @@ pub struct Neighbor {
     pub csl: CslNeighborInfo,
     /// Metrics configured for Enhanced-ACK based probing at this neighbor
     /// (we are the initiator, it is the subject).
+    #[cfg(feature = "link-metrics")]
     pub enh_ack_probing: LinkMetricsFlags,
 }
 
@@ -291,6 +293,7 @@ impl Neighbor {
             link_info: LinkQualityInfo::new(),
             link_failures: 0,
             csl: CslNeighborInfo::default(),
+            #[cfg(feature = "link-metrics")]
             enh_ack_probing: LinkMetricsFlags::NONE,
         }
     }
@@ -660,6 +663,7 @@ pub struct Parent {
     pub sed_datagram_count: u8,
     /// CSL clock accuracy and uncertainty of the parent (CSL Clock Accuracy
     /// TLV; [`CslClockAccuracy::WORST`] until it reports).
+    #[cfg(feature = "csl")]
     pub csl_accuracy: crate::tlv::CslClockAccuracy,
 }
 

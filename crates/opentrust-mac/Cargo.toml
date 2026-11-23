@@ -13,6 +13,12 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
+# Thread 1.2 Link Metrics: Enhanced-ACK probing tables and subject/initiator
+# roles in the MAC. On by default.
+link-metrics = []
+# Coordinated Sampled Listening: receiver timing (SSED) and child tracking
+# (parent/FTD). On by default.
+csl = []
 defmt = [
     "dep:defmt",
     "opentrust-core/defmt",

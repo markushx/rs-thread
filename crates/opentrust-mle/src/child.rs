@@ -107,12 +107,42 @@ impl<const C: usize> Mle<C> {
             )));
         }
         self.apply_rx_mode(env);
+        #[cfg(feature = "csl")]
         self.sync_csl(env, now, true);
         self.recalculate_poll_period(env);
         self.schedule_message_tx_timer(now);
         self.restart_supervision(now);
         #[cfg(feature = "ftd")]
         self.handle_child_start(env, now);
+    }
+
+    /// Process the result of a data poll transmission (non-CSL path: when
+    /// the `csl` feature is off, use the router failure limit directly).
+    #[cfg(not(feature = "csl"))]
+    pub fn parent_poll_result<E: crate::env::MleEnv>(
+        &mut self,
+        env: &mut E,
+        now: opentrust_core::time::Instant,
+        acked: Option<bool>,
+    ) {
+        use crate::env::Role;
+        if self.role != Role::Child {
+            return;
+        }
+        let Some(p) = self.parent.as_mut() else {
+            return;
+        };
+        let n = &mut p.router.neighbor;
+        match acked {
+            Some(true) => n.link_failures = 0,
+            Some(false) => {
+                n.link_failures = n.link_failures.saturating_add(1);
+                if n.link_failures >= crate::consts::FAILED_ROUTER_TRANSMISSIONS {
+                    self.become_detached(env, now);
+                }
+            }
+            None => {}
+        }
     }
 
     /// Receiver on / off and attach-mode polling according to the device
@@ -133,12 +163,19 @@ impl<const C: usize> Mle<C> {
     /// IE then resynchronizes the parent in time) and only one retransmission
     /// period of lead time is kept.
     pub fn default_poll_period(&self) -> Duration {
+        #[cfg(feature = "csl")]
         let mut p = Duration::from_secs(u64::from(self.cfg.timeout_secs));
+        #[cfg(not(feature = "csl"))]
+        let p = Duration::from_secs(u64::from(self.cfg.timeout_secs));
+        #[cfg(feature = "csl")]
         let mut ahead = POLL_AHEAD;
+        #[cfg(feature = "csl")]
         if self.is_csl_enabled() {
             p = p.min(Duration::from_secs(u64::from(self.effective_csl_timeout())));
             ahead = Duration::from_secs(1);
         }
+        #[cfg(not(feature = "csl"))]
+        let ahead = POLL_AHEAD;
         if p > ahead {
             p.saturating_sub(ahead)
         } else {
@@ -174,8 +211,11 @@ impl<const C: usize> Mle<C> {
         let interval =
             if self.child.waiting_child_update_response || self.child.waiting_data_response {
                 // In CSL operation the answer waits for a sample window.
-                self.csl_response_wait()
-                    .map_or(UNICAST_RETX_DELAY, |p| p + UNICAST_RETX_DELAY)
+                #[cfg(feature = "csl")]
+                let csl_wait = self.csl_response_wait();
+                #[cfg(not(feature = "csl"))]
+                let csl_wait: Option<opentrust_core::time::Duration> = None;
+                csl_wait.map_or(UNICAST_RETX_DELAY, |p| p + UNICAST_RETX_DELAY)
             } else if self.role == Role::Child && self.is_rx_on_when_idle() {
                 Duration::from_secs(u64::from(self.cfg.timeout_secs)).saturating_sub(POLL_AHEAD)
             } else {
@@ -277,9 +317,12 @@ impl<const C: usize> Mle<C> {
         };
         let sup = (dev.is_sleepy() && self.cfg.supervision_interval != 0)
             .then_some(self.cfg.supervision_interval);
+        #[cfg(feature = "csl")]
         let csl = self
             .is_csl_enabled()
             .then(|| (self.csl_channel_tlv(), self.effective_csl_timeout()));
+        #[cfg(not(feature = "csl"))]
+        let csl: Option<(crate::tlv::ChannelValue, u32)> = None;
         let addrs = Self::address_entries(env, detached, self.multicast_registration());
         let rloc = self.rloc16;
         let leader = self.leader_data;
@@ -325,7 +368,10 @@ impl<const C: usize> Mle<C> {
             } else {
                 // A CSL child is reached in its sample windows; no fast
                 // attach polling.
+                #[cfg(feature = "csl")]
                 env.set_poll_attach_mode(!self.is_csl_enabled());
+                #[cfg(not(feature = "csl"))]
+                env.set_poll_attach_mode(true);
             }
         }
         Ok(())

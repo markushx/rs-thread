@@ -38,11 +38,14 @@ pub mod attach;
 pub mod child;
 mod child_rx;
 pub mod consts;
+#[cfg(feature = "csl")]
 pub mod csl;
 pub mod discovery;
 pub mod endpoint;
 pub mod env;
+#[cfg(feature = "link-metrics")]
 pub mod link_metrics;
+#[cfg(feature = "link-metrics")]
 mod link_metrics_roles;
 pub mod link_quality;
 pub mod message;
@@ -69,13 +72,13 @@ mod advert_tests;
 mod attach_tests;
 #[cfg(test)]
 mod child_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "csl"))]
 mod csl_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod discovery_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod e2e_tests;
-#[cfg(all(test, feature = "ftd"))]
+#[cfg(all(test, feature = "ftd", feature = "link-metrics"))]
 mod link_metrics_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod mesh_tests;

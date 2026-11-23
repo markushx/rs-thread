@@ -25,6 +25,10 @@ bbr = []
 # DNS/SRP service publishing. Required by border routers and by the SRP
 # server. End devices that never publish Network Data can disable this.
 border-router = []
+# Thread 1.2 Link Metrics.
+link-metrics = ["opentrust-mle/link-metrics", "opentrust-mac/link-metrics"]
+# Thread 1.2 Coordinated Sampled Listening.
+csl = ["opentrust-mle/csl", "opentrust-mac/csl"]
 # Thread Radio Encapsulation Link (Thread 1.3 TREL) and multi-radio selection.
 trel = []
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mle/defmt", "opentrust-net/defmt", "opentrust-coap/defmt", "opentrust-lowpan/defmt", "opentrust-mac/defmt"]

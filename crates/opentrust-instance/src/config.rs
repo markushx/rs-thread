@@ -90,8 +90,9 @@ pub const MAC_NEIGHBORS: usize = if cfg!(feature = "ftd") {
 } else {
     4
 };
-/// CSL children of the MAC (parent side).
-pub const MAC_CSL_CHILDREN: usize = if cfg!(feature = "ftd") {
+/// CSL children of the MAC (parent side): zero when CSL is disabled so the
+/// parent-side CSL tracking table is compiled away entirely.
+pub const MAC_CSL_CHILDREN: usize = if cfg!(all(feature = "ftd", feature = "csl")) {
     opentrust_mac::mac::CSL_CHILD_LEN
 } else {
     0

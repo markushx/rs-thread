@@ -17,6 +17,11 @@ readme = "../../README.md"
 # end-device-only builds can use `default-features = false`.
 default = ["ftd"]
 ftd = []
+# Thread 1.2 Link Metrics Initiator and Subject roles (MLE protocol,
+# Forward Tracking Series, Enhanced-ACK probing). On by default.
+link-metrics = ["opentrust-mac/link-metrics"]
+# CSL receiver (SSED) and parent-side CSL scheduling. On by default.
+csl = ["opentrust-mac/csl"]
 # Expose the simulator and the fake environment to other crates' tests.
 test-support = ["ftd", "dep:opentrust-platform"]
 defmt = ["dep:defmt", "opentrust-core/defmt", "opentrust-mac/defmt", "opentrust-net/defmt", "opentrust-coap/defmt"]

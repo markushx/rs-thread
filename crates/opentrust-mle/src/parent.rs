@@ -340,10 +340,13 @@ impl<const C: usize> Mle<C> {
         // CSL synchronization of a child that stopped sending CSL IEs
         // expires: back to data polls (OT `HandleTimeTick`).
         for c in self.children.iter_mut(StateFilter::AnyExceptInvalid) {
+            #[cfg(feature = "csl")]
             if c.csl_expiry().is_some_and(|t| now >= t) {
                 c.csl_synchronized = false;
                 env.csl_child_desync(&c.neighbor.ext_address, c.neighbor.rloc16);
             }
+            #[cfg(not(feature = "csl"))]
+            let _ = c;
         }
         // Child supervision, once a second.
         if self.parent_side.tick.is_some_and(|t| now >= t) {
@@ -442,12 +445,14 @@ impl<const C: usize> Mle<C> {
             });
         }
         if !c.neighbor.is_rx_on_when_idle() {
+            #[cfg(feature = "csl")]
             if c.csl_synchronized {
                 env.csl_child_desync(&c.neighbor.ext_address, c.neighbor.rloc16);
             }
             env.indirect_remove_child(&c.neighbor.ext_address, c.neighbor.rloc16);
         }
         let _ = env.delete_child_info(&c.neighbor.ext_address);
+        #[cfg(feature = "link-metrics")]
         self.link_metrics.remove_neighbor(&c.neighbor.ext_address);
     }
 
@@ -594,11 +599,16 @@ impl<const C: usize> Mle<C> {
             c.neighbor.challenge = mine;
             (c.neighbor.link_info.link_margin(nf), c.is_csl_capable())
         };
+        #[cfg(not(feature = "csl"))]
+        let _ = csl_capable;
+        #[cfg(feature = "csl")]
         let csl_accuracy = if csl_capable {
             env.csl_clock_accuracy()
         } else {
             None
         };
+        #[cfg(not(feature = "csl"))]
+        let csl_accuracy: Option<crate::tlv::CslClockAccuracy> = None;
         let rloc = self.rloc16;
         let leader = self.leader_data;
         let link_fc = env.keys().frame_counter();
@@ -1128,9 +1138,11 @@ impl<const C: usize> Mle<C> {
             c.neighbor.is_rx_on_when_idle(),
         );
         let restoring = c.neighbor.state.is_restoring();
+        #[cfg(feature = "csl")]
         let csl_update = c.csl_synchronized.then_some(c.csl_channel);
         if old_mode != mode {
             changed = true;
+            #[cfg(feature = "csl")]
             if new_rx_on && c.csl_synchronized {
                 c.csl_synchronized = false;
                 env.csl_child_desync(&ext, rloc);
@@ -1142,6 +1154,7 @@ impl<const C: usize> Mle<C> {
                 env.indirect_add_child(&ext, rloc);
             }
         }
+        #[cfg(feature = "csl")]
         if let Some(ch) = csl_update.filter(|_| !new_rx_on) {
             env.csl_child_update(&ext, rloc, ch);
         }
@@ -1176,7 +1189,10 @@ impl<const C: usize> Mle<C> {
             n
         });
         let noise = env.noise_floor();
+        #[cfg(feature = "csl")]
         let csl_accuracy = env.csl_clock_accuracy();
+        #[cfg(not(feature = "csl"))]
+        let _csl_accuracy: Option<crate::tlv::CslClockAccuracy> = None;
         let (mode, margin, timeout, sup, addrs) = match idx.and_then(|i| self.children.get(i)) {
             Some(c) => {
                 let mut entries = Vec::<AddressEntry, 10>::new();
@@ -1224,6 +1240,7 @@ impl<const C: usize> Mle<C> {
                     ty::STATUS => w.status(crate::tlv::STATUS_ERROR)?,
                     ty::RESPONSE => w.response(&ch[..clen])?,
                     ty::NETWORK_DATA => w.network_data(&nd[..nd_len])?,
+                    #[cfg(feature = "csl")]
                     ty::CSL_CLOCK_ACCURACY if !mode.rx_on_when_idle() => {
                         if let Some(a) = csl_accuracy {
                             w.csl_clock_accuracy(a)?;
@@ -1432,8 +1449,11 @@ impl<const C: usize> Mle<C> {
         let active_len = env.active_dataset(now, &mut active).unwrap_or(0);
         let pending_len = env.pending_dataset(now, &mut pending).unwrap_or(0);
         let route = self.parent_side.info.route64.clone();
+        #[cfg(feature = "link-metrics")]
         let mut lm = [0u8; 32];
-        let mut lm_len = 0;
+        #[cfg(feature = "link-metrics")]
+        let mut lm_len = 0usize;
+        #[cfg(feature = "link-metrics")]
         if list.contains(&ty::LINK_METRICS_REPORT) {
             let query = t.link_metrics_query()?;
             let ext = rx.meta.sender_ext_address();
@@ -1457,6 +1477,7 @@ impl<const C: usize> Mle<C> {
                 match r {
                     ty::NETWORK_DATA => w.network_data(&nd[..nd_len])?,
                     ty::ROUTE64 if !route.is_empty() => w.raw(ty::ROUTE64, &route)?,
+                    #[cfg(feature = "link-metrics")]
                     ty::LINK_METRICS_REPORT => w.link_metrics_report(&lm[..lm_len])?,
                     ty::ACTIVE_DATASET if active_len > 0 => {
                         if let Some(t) = &active_ts {

@@ -13,7 +13,7 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "bbr", "bbr-server", "border-router", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client"]
+default = ["ftd", "bbr", "bbr-server", "border-router", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client", "link-metrics", "csl"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
 # Thread 1.2 Backbone Router client glue: Domain Unicast Address (DUA) and
 # Multicast Listener Registration (MLR). An end device without a Backbone
@@ -29,8 +29,14 @@ tcat = ["opentrust-meshcop/tcat"]
 # Query requests (`/c/ab`, `/c/es`, `/c/pq`; OT `AnnounceBeginServer`,
 # `EnergyScanServer`, `PanIdQueryServer`).
 scan-servers = []
+# Thread 1.2 Link Metrics: initiator (querying) and subject (reporting) roles,
+# Enhanced-ACK based probing.
+link-metrics = ["opentrust-mle/link-metrics", "opentrust-mac/link-metrics", "opentrust-mesh/link-metrics"]
+# Thread 1.2 Coordinated Sampled Listening: receiver side (child) and
+# parent-side child tracking.
+csl = ["opentrust-mle/csl", "opentrust-mac/csl", "opentrust-mesh/csl"]
 # The Link Metrics Manager (OT `Utils::LinkMetricsManager`).
-link-metrics-manager = []
+link-metrics-manager = ["link-metrics"]
 # The History Tracker (OT `Utils::HistoryTracker`): recent network information
 # and IPv6 messages sent and received. Costs RAM; off in firmware.
 history-tracker = []

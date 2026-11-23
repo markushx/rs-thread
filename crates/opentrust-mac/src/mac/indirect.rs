@@ -100,6 +100,7 @@ pub(crate) struct IndirectFrame {
     /// Security done by the MAC or not needed (else left to the radio).
     pub security_processed: bool,
     /// Sent at least once in a CSL window (a retransmission is flagged).
+    #[cfg(feature = "csl")]
     pub sent: bool,
 }
 
@@ -122,6 +123,7 @@ impl<const N: usize> IndirectQueue<N> {
                 attempts: 0,
                 prepared: false,
                 security_processed: false,
+                #[cfg(feature = "csl")]
                 sent: false,
             })
             .map_err(|_| Error::NoBufs)

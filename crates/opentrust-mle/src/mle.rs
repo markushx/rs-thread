@@ -73,11 +73,14 @@ pub struct MleConfig {
     pub supervision_check_timeout: u16,
     /// CSL period of a sleepy child in units of 10 symbols (160 microseconds;
     /// 0 = no CSL, the default).
+    #[cfg(feature = "csl")]
     pub csl_period: u16,
     /// CSL channel of a sleepy child (0 = the PAN channel).
+    #[cfg(feature = "csl")]
     pub csl_channel: u8,
     /// CSL synchronized timeout in seconds (OT default 100; 0 = use the child
     /// timeout).
+    #[cfg(feature = "csl")]
     pub csl_timeout_secs: u32,
     /// Router role configuration (eligibility, thresholds, leader weight).
     pub router: RouterConfig,
@@ -95,8 +98,11 @@ impl MleConfig {
             timeout_secs: crate::consts::END_DEVICE_TIMEOUT_SECS,
             supervision_interval: 129,
             supervision_check_timeout: 190,
+            #[cfg(feature = "csl")]
             csl_period: 0,
+            #[cfg(feature = "csl")]
             csl_channel: 0,
+            #[cfg(feature = "csl")]
             csl_timeout_secs: crate::csl::DEFAULT_CSL_TIMEOUT_SECS,
             router: RouterConfig::new(),
         }
@@ -185,8 +191,10 @@ pub struct Mle<const C: usize> {
     pub(crate) attach: AttachCtx,
     pub(crate) announce: crate::discovery::AnnounceCtx,
     pub(crate) announce_sender: crate::announce_sender::AnnounceSender,
+    #[cfg(feature = "link-metrics")]
     pub(crate) link_metrics: crate::link_metrics::SeriesTable<{ crate::link_metrics::MAX_SERIES }>,
     pub(crate) child: ChildCtx,
+    #[cfg(feature = "csl")]
     pub(crate) csl_applied: Option<crate::csl::CslApplied>,
     pub(crate) children: ChildTable<C>,
     pub(crate) previous_partition_id: u32,
@@ -220,8 +228,10 @@ impl<const C: usize> Mle<C> {
             attach: AttachCtx::new(),
             announce: crate::discovery::AnnounceCtx::new(),
             announce_sender: crate::announce_sender::AnnounceSender::new(),
+            #[cfg(feature = "link-metrics")]
             link_metrics: crate::link_metrics::SeriesTable::new(),
             child: ChildCtx::new(),
+            #[cfg(feature = "csl")]
             csl_applied: None,
             children: ChildTable::new(),
             previous_partition_id: 0,
@@ -464,6 +474,7 @@ impl<const C: usize> Mle<C> {
         }
         if self.role == Role::Child {
             self.apply_rx_mode(env);
+            #[cfg(feature = "csl")]
             self.sync_csl(env, now, false);
             self.recalculate_poll_period(env);
             let _ = self.send_child_update_request(env, now);
@@ -487,6 +498,7 @@ impl<const C: usize> Mle<C> {
             };
             *n = n.wrapping_add(1);
             self.store_pending |= role.is_attached();
+            #[cfg(feature = "csl")]
             if role != Role::Child && self.csl_applied.is_some() {
                 self.csl_applied = None;
                 env.set_csl(0, 0, None);
@@ -508,6 +520,7 @@ impl<const C: usize> Mle<C> {
     /// tied to the current attachment. Does not start an attach.
     pub(crate) fn reset_to_detached<E: MleEnv>(&mut self, env: &mut E) {
         self.set_role(env, Role::Detached);
+        #[cfg(feature = "link-metrics")]
         self.link_metrics.clear();
         self.attach.reset();
         self.child.reset();
@@ -699,12 +712,15 @@ impl<const C: usize> Mle<C> {
             Command::DataResponse => self.handle_data_response(env, now, rx, nb)?,
             Command::Advertisement => self.handle_advertisement(env, now, rx, nb)?,
             Command::Announce => self.handle_announce(env, now, rx)?,
+            #[cfg(feature = "link-metrics")]
             Command::LinkMetricsManagementRequest => {
                 self.handle_link_metrics_management_request(env, rx, nb)?
             }
+            #[cfg(feature = "link-metrics")]
             Command::LinkMetricsManagementResponse => {
                 self.handle_link_metrics_management_response(env, rx, nb)?
             }
+            #[cfg(feature = "link-metrics")]
             Command::LinkProbe => self.handle_link_probe(rx, nb)?,
             #[cfg(feature = "ftd")]
             Command::LinkRequest => self.handle_link_request(env, now, rx, nb)?,

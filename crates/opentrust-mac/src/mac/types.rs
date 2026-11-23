@@ -4,13 +4,17 @@
 use opentrust_core::Result;
 use opentrust_core::time::{Duration, Instant};
 use opentrust_core::types::{ExtAddress, PanId};
+#[cfg(feature = "csl")]
+use opentrust_platform::radio::CslConfig;
 use opentrust_platform::radio::{
-    Config, CslConfig, MacKeys, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig,
-    sim::MAX_PSDU_LEN,
+    Config, MacKeys, PsduRxInfo, PsduTxInfo, RadioErrorKind, SrcMatchConfig, sim::MAX_PSDU_LEN,
 };
 
+#[cfg(feature = "link-metrics")]
 use super::link_metrics::EnhAckProbingValues;
-use crate::frame::{Address, CslIe, FCS_LEN, Frame, ThreadBeaconPayload};
+#[cfg(feature = "csl")]
+use crate::frame::CslIe;
+use crate::frame::{Address, FCS_LEN, Frame, ThreadBeaconPayload};
 use crate::frame_security::RxSecurityInfo;
 
 /// Maximum MAC frame length without FCS (`aMaxPHYPacketSize` - 2).
@@ -136,6 +140,7 @@ pub enum Event {
         /// The CSL IE of the poll (a secured 2015 frame) and the radio
         /// timestamp of the frame, for a child that has not been tracked
         /// as a CSL child yet ([`Mac::csl_child_sample`](super::Mac::csl_child_sample)).
+        #[cfg(feature = "csl")]
         csl: Option<(CslIe, Option<u64>)>,
         /// The poll was link-secured (and verified).
         secured: bool,
@@ -159,10 +164,12 @@ pub enum Event {
     EnergyScanDone,
     /// CSL transmissions to this child failed too often without an ACK: it
     /// is no longer CSL synchronized (queued frames wait for its data poll).
+    #[cfg(feature = "csl")]
     CslChildOutOfSync(Address),
     /// An enhanced ACK from a neighbor tracked with
     /// [`Mac::track_enh_ack_probing`](super::Mac::track_enh_ack_probing)
     /// carried link metrics of the frame it acknowledged.
+    #[cfg(feature = "link-metrics")]
     EnhAckLinkMetrics {
         /// The neighbor (the acked frame's destination).
         neighbor: Address,
@@ -257,9 +264,11 @@ pub enum RadioAction {
     /// [`Radio::set_csl`](opentrust_platform::Radio::set_csl) (radios with
     /// `Capabilities::RECEIVE_TIMING`): the CSL schedule for their enhanced
     /// ACKs; sent again before every sample window.
+    #[cfg(feature = "csl")]
     SetCsl(CslConfig),
     /// [`Radio::set_receive_at`](opentrust_platform::Radio::set_receive_at):
     /// one CSL sample window (radios with `Capabilities::RECEIVE_TIMING`).
+    #[cfg(feature = "csl")]
     ReceiveAt {
         /// Channel.
         channel: u8,

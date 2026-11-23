@@ -8,28 +8,41 @@ use opentrust_core::time::{Duration, Instant};
 use opentrust_core::timer::TimerQueue;
 use opentrust_core::types::{Channel, ExtAddress, PanId, ShortAddress};
 use opentrust_core::{Error, Result};
+#[cfg(feature = "csl")]
+use opentrust_platform::radio::CslConfig;
+use opentrust_platform::radio::MacKeys;
 use opentrust_platform::radio::{
     Capabilities, Config, MacCapabilities, PsduRxInfo, PsduTxInfo, RSSI_INVALID, RadioCaps,
     RadioErrorKind, SoftMacNeeds, SrcMatchConfig,
 };
-use opentrust_platform::radio::{CslConfig, MacKeys};
 use rand_core::Rng;
 
 use super::consts::*;
-use super::csl::*;
+use super::csl::CslChild;
+#[cfg(feature = "csl")]
+use super::csl::{
+    CCA_SAMPLE_INTERVAL, CSL_BUS_FRAME_SIZE, CSL_RECEIVE_TIME_AHEAD, CSL_REQUEST_AHEAD,
+    CSL_TRANSMIT_TIME_AHEAD, CslAccuracy, CslReceiver, FRAME_PREPARATION_GUARD,
+    MAX_CSL_TX_ATTEMPTS, MIN_CSL_IE_PERIOD, MIN_CSL_PERIOD, SHR_DURATION, TURNAROUND_TIME,
+    US_PER_TEN_SYMBOLS, csl_phase, next_tx_window, window_edges,
+};
 use super::fcs::fcs;
 use super::filter::{FilterError, FilterParams};
 use super::indirect::{IndirectQueue, NeighborMap, SrcMatch, ext_to_u64};
+#[cfg(feature = "link-metrics")]
 use super::link_metrics::*;
 use super::poll::PollSender;
 use super::sub_mac::{
     TxKind, TxOp, TxState, air_time, csma_backoff_exponent, max_csma_duration, random_backoff,
 };
 use super::types::*;
+#[cfg(feature = "link-metrics")]
+use crate::frame::THREAD_IE_ENH_ACK_PROBING;
+#[cfg(feature = "csl")]
+use crate::frame::VendorIe;
 use crate::frame::{
     Address, Beacon, CslIe, FCS_LEN, Frame, FrameBuilder, FrameMut, FrameType, FrameVersion,
-    KeyIdMode, KeyIdentifier, MacCommand, SecurityHeader, THREAD_IE_ENH_ACK_PROBING,
-    ThreadBeaconPayload, VendorIe,
+    KeyIdMode, KeyIdentifier, MacCommand, SecurityHeader, ThreadBeaconPayload,
 };
 use crate::frame_security::{FrameSecurity, RxSecurityInfo};
 
@@ -98,6 +111,7 @@ pub enum Operation {
     /// Sending a frame to a polling child.
     TransmitDataIndirect,
     /// Sending a frame to a CSL synchronized child at its sample window.
+    #[cfg(feature = "csl")]
     TransmitDataCsl,
     /// Sending a data poll.
     TransmitPoll,
@@ -112,6 +126,7 @@ const P_ACTIVE_SCAN: u8 = 1 << 1;
 const P_ENERGY_SCAN: u8 = 1 << 2;
 const P_BEACON: u8 = 1 << 3;
 const P_POLL: u8 = 1 << 4;
+#[cfg(feature = "csl")]
 const P_CSL_TX: u8 = 1 << 5;
 
 /// What the MAC believes the radio is doing.
@@ -137,8 +152,10 @@ enum TimerId {
     /// Scan dwell time / data poll receive window.
     Operation,
     /// CSL receiver: next sample window / window end.
+    #[cfg(feature = "csl")]
     CslRx,
     /// CSL transmitter: time to hand the next child frame to the radio.
+    #[cfg(feature = "csl")]
     CslTx,
 }
 
@@ -255,13 +272,21 @@ pub struct Mac<
     events: Deque<Event, EVQ>,
     counters: MacCounters,
     hw_sec: HwSecurity,
+    #[cfg(feature = "csl")]
     csl: CslReceiver,
+    // Always compiled: its const-generic size CSLQ = 0 without the csl feature.
+    #[cfg_attr(not(feature = "csl"), allow(dead_code))]
     csl_children: Vec<CslChild, CSLQ>,
+    #[cfg(feature = "csl")]
     csl_tx_child: Option<Address>,
+    #[cfg(feature = "csl")]
     csl_dirty: bool,
+    #[cfg(feature = "link-metrics")]
     probe_subject: ProbeTable<ENH_ACK_PROBING_LEN>,
+    #[cfg(feature = "link-metrics")]
     probe_initiator: ProbeTable<ENH_ACK_PROBING_LEN>,
     /// SFD time for the frame the next `start_frame` creates (CSL tx).
+    #[cfg(feature = "csl")]
     next_tx_timed: Option<u64>,
 }
 
@@ -383,12 +408,18 @@ impl<
             timers: TimerQueue::new(),
             events: Deque::new(),
             counters: MacCounters::default(),
+            #[cfg(feature = "csl")]
             csl: CslReceiver::new(),
             csl_children: Vec::new(),
+            #[cfg(feature = "csl")]
             csl_tx_child: None,
+            #[cfg(feature = "csl")]
             csl_dirty: false,
+            #[cfg(feature = "link-metrics")]
             probe_subject: ProbeTable::default(),
+            #[cfg(feature = "link-metrics")]
             probe_initiator: ProbeTable::default(),
+            #[cfg(feature = "csl")]
             next_tx_timed: None,
             hw_sec: HwSecurity {
                 enabled: caps
@@ -576,10 +607,12 @@ impl<
 
     /// The radio clock in microseconds, if the radio has one
     /// ([`RadioCaps::clock`]); CSL needs it.
+    #[cfg(feature = "csl")]
     fn radio_now_us(&self) -> Option<u64> {
         self.caps.clock.map(|c| c.now_us())
     }
 
+    #[cfg(feature = "csl")]
     fn csl_rx_channel(&self) -> u8 {
         if self.csl.channel == 0 {
             self.channel
@@ -600,6 +633,7 @@ impl<
     /// turns the receiver on and off itself. The radio needs a clock
     /// ([`RadioCaps::clock`]): [`Error::NotImplemented`] without.
     /// [`Error::InvalidArgs`] for a period shorter than the minimum.
+    #[cfg(feature = "csl")]
     pub fn set_csl(
         &mut self,
         period: u16,
@@ -643,17 +677,20 @@ impl<
     }
 
     /// CSL period in units of 10 symbols (0 = off).
+    #[cfg(feature = "csl")]
     pub fn csl_period(&self) -> u16 {
         self.csl.period
     }
 
     /// The CSL channel (0 = the PAN channel).
+    #[cfg(feature = "csl")]
     pub fn csl_channel(&self) -> u8 {
         self.csl.channel
     }
 
     /// The parent's CSL accuracy (MLE CSL Accuracy TLV); until it is known
     /// the worst case is assumed ([`CslAccuracy::WORST`]).
+    #[cfg(feature = "csl")]
     pub fn set_csl_parent_accuracy(&mut self, accuracy: CslAccuracy) {
         opentrust_core::trace!(
             "mac: CSL parent accuracy {} ppm, uncertainty {} x 10 us",
@@ -664,6 +701,7 @@ impl<
     }
 
     /// The next sample time (low 32 bits of the radio clock, microseconds).
+    #[cfg(feature = "csl")]
     pub fn csl_sample_time(&self) -> u32 {
         self.csl.sample_radio
     }
@@ -671,6 +709,7 @@ impl<
     /// The time the receiver listens before / after the sample time at
     /// radio time `radio_now_us` (see [`window_edges`]); `None` if CSL is
     /// off.
+    #[cfg(feature = "csl")]
     pub fn csl_window_edges(&self, radio_now_us: u64) -> Option<(u32, u32)> {
         self.csl.enabled().then(|| {
             let elapsed = self
@@ -690,6 +729,7 @@ impl<
 
     /// The CSL timer (OpenThread `SubMac::HandleCslTimer`): arm the next
     /// sample window.
+    #[cfg(feature = "csl")]
     fn csl_timer(&mut self) {
         if !self.csl.enabled() {
             return;
@@ -740,6 +780,7 @@ impl<
     /// `Capabilities::TRANSMIT_SEC`. The SFD time is estimated as now plus
     /// the CCA and the SHR (OpenThread leaves the exact moment to the radio).
     /// Returns `false` if the frame failed and the attempt was completed.
+    #[cfg(feature = "csl")]
     fn refresh_soft_csl(&mut self, now: Instant) -> bool {
         let Some(mut frame) = self.tx.as_ref().and_then(|t| t.csl_plain.clone()) else {
             return true;
@@ -772,6 +813,7 @@ impl<
     /// sample windows instead of waiting for a data poll. Needs a radio
     /// clock ([`Error::NotImplemented`]); [`Error::NoBufs`] if the table is
     /// full.
+    #[cfg(feature = "csl")]
     pub fn csl_add_child(&mut self, child: Address) -> Result<()> {
         if child.is_none() || child.is_broadcast() {
             return Err(Error::InvalidArgs);
@@ -792,6 +834,7 @@ impl<
     }
 
     /// Stop CSL tracking of `child`.
+    #[cfg(feature = "csl")]
     pub fn csl_remove_child(&mut self, child: Address) -> bool {
         let Some(i) = self
             .csl_children
@@ -806,6 +849,7 @@ impl<
     }
 
     /// The CSL state of `child`.
+    #[cfg(feature = "csl")]
     pub fn csl_child(&self, child: Address) -> Option<&CslChild> {
         self.csl_children
             .iter()
@@ -813,12 +857,14 @@ impl<
     }
 
     /// All tracked CSL children.
+    #[cfg(feature = "csl")]
     pub fn csl_children(&self) -> &[CslChild] {
         &self.csl_children
     }
 
     /// Set the CSL channel of `child` (MLE CSL Channel TLV; 0 = the PAN
     /// channel). [`Error::NotFound`] if it is not tracked.
+    #[cfg(feature = "csl")]
     pub fn csl_set_child_channel(&mut self, child: Address, channel: u8) -> Result<()> {
         let i = self
             .csl_children
@@ -831,6 +877,7 @@ impl<
 
     /// Mark `child` as not synchronized (CSL synchronized timeout expired,
     /// child detached): frames wait for its data polls.
+    #[cfg(feature = "csl")]
     pub fn csl_child_desync(&mut self, child: Address) {
         if let Some(i) = self
             .csl_children
@@ -845,6 +892,7 @@ impl<
 
     /// Microseconds before a CSL window the MAC takes the frame
     /// (`CslTxScheduler::mCslFrameRequestAheadUs`).
+    #[cfg(feature = "csl")]
     pub fn csl_request_ahead_us(&self) -> u32 {
         let mut bus = self.caps.bus_latency_us;
         if self.caps.bus_speed != 0 {
@@ -862,6 +910,7 @@ impl<
     /// PAN channel). `ts` is the frame's radio timestamp (`None`: the radio
     /// clock now). Only the IE is applied for a child that is tracked
     /// already; fails like [`csl_add_child`](Self::csl_add_child).
+    #[cfg(feature = "csl")]
     pub fn csl_child_sample(
         &mut self,
         src: Address,
@@ -884,6 +933,7 @@ impl<
 
     /// The CSL IE of a received frame or ACK from a tracked child
     /// (OpenThread `Mac::ProcessCsl`).
+    #[cfg(feature = "csl")]
     fn csl_update_child(&mut self, f: &Frame<'_>, src: Address, ts: Option<u64>, now: Instant) {
         if self.csl_children.is_empty() || f.version() != FrameVersion::V2015 {
             return;
@@ -898,6 +948,7 @@ impl<
     }
 
     /// Take the CSL IE `ie` of a frame from `src`, if it is a tracked child.
+    #[cfg(feature = "csl")]
     fn csl_apply_ie(&mut self, src: Address, ie: CslIe, ts: Option<u64>, now: Instant) {
         let Some(i) = self
             .csl_children
@@ -931,6 +982,7 @@ impl<
     /// Pick the child whose next window is first and arm the timer that
     /// hands its frame to the radio `csl_request_ahead_us` before it
     /// (`CslTxScheduler::RescheduleCslTx`).
+    #[cfg(feature = "csl")]
     fn csl_reschedule(&mut self, now: Instant) {
         self.csl_dirty = false;
         if self.operation == Operation::TransmitDataCsl || self.pending & P_CSL_TX != 0 {
@@ -966,6 +1018,7 @@ impl<
 
     /// Start the CSL transmission to the chosen child
     /// (`CslTxScheduler::HandleFrameRequest`).
+    #[cfg(feature = "csl")]
     fn start_csl_tx(&mut self, now: Instant) {
         let child = self
             .csl_tx_child
@@ -1026,6 +1079,7 @@ impl<
     /// success completes the frame; a failure leaves it queued (with the
     /// frame counter and sequence number it was sent with), and after
     /// [`MAX_CSL_TX_ATTEMPTS`] failures without ACK the child is out of sync.
+    #[cfg(feature = "csl")]
     fn csl_tx_done(&mut self, i: usize, handle: TxHandle, tx: TxOp, res: TxResult) {
         let ci = self
             .csl_children
@@ -1079,6 +1133,7 @@ impl<
     ///
     /// Only the MAC's own (software) enhanced ACKs carry the IE; a radio
     /// that acknowledges in hardware does not know the configuration.
+    #[cfg(feature = "link-metrics")]
     pub fn configure_enh_ack_probing(
         &mut self,
         short: ShortAddress,
@@ -1089,6 +1144,7 @@ impl<
     }
 
     /// Subject side: forget all initiators (`otLinkMetricsResetEnhAckProbing`).
+    #[cfg(feature = "link-metrics")]
     pub fn reset_enh_ack_probing(&mut self) {
         self.probe_subject.clear();
     }
@@ -1096,6 +1152,7 @@ impl<
     /// Initiator side: the subject (`short`, `ext`) was configured (through
     /// MLE) to report `flags` in its enhanced ACKs: decode its probing IEs
     /// and report them as [`Event::EnhAckLinkMetrics`]. Empty `flags` stop it.
+    #[cfg(feature = "link-metrics")]
     pub fn track_enh_ack_probing(
         &mut self,
         short: ShortAddress,
@@ -1107,17 +1164,20 @@ impl<
 
     /// Initiator side: is Enhanced-ACK probing configured at `peer`? Frames
     /// to it are then sent as Frame Version 2015 (they get enhanced ACKs).
+    #[cfg(feature = "link-metrics")]
     pub fn enh_ack_probing_tracked(&self, peer: Address) -> bool {
         self.probe_initiator.find(peer).is_some()
     }
 
     /// Initiator side: stop tracking all subjects.
+    #[cfg(feature = "link-metrics")]
     pub fn reset_tracked_enh_ack_probing(&mut self) {
         self.probe_initiator.clear();
     }
 
     /// The probing IE data for the enhanced ACK of `rx`, if its sender is a
     /// configured initiator and the metrics are known; bytes used.
+    #[cfg(feature = "link-metrics")]
     fn enh_ack_probe_data(
         &self,
         rx: &Frame<'_>,
@@ -1136,6 +1196,7 @@ impl<
 
     /// An ACK from `peer` for our frame: decode its probing IE
     /// (OpenThread `Mac::ProcessEnhAckProbing`).
+    #[cfg(feature = "link-metrics")]
     fn process_enh_ack_probing(&mut self, ack: &Frame<'_>, peer: Address) {
         let Some(e) = self.probe_initiator.find(peer) else {
             return;
@@ -1200,7 +1261,10 @@ impl<
         let buf = Self::validate_frame(frame)?;
         self.indirect.push(handle, dst, buf)?;
         self.update_src_match();
-        self.csl_dirty = true;
+        #[cfg(feature = "csl")]
+        {
+            self.csl_dirty = true;
+        }
         Ok(())
     }
 
@@ -1217,7 +1281,10 @@ impl<
             n += 1;
         }
         self.update_src_match();
-        self.csl_dirty = true;
+        #[cfg(feature = "csl")]
+        {
+            self.csl_dirty = true;
+        }
         n
     }
 
@@ -1232,7 +1299,10 @@ impl<
             result: Err(TxError::Abort),
         });
         self.update_src_match();
-        self.csl_dirty = true;
+        #[cfg(feature = "csl")]
+        {
+            self.csl_dirty = true;
+        }
         true
     }
 
@@ -1475,10 +1545,12 @@ impl<
             return None;
         }
         self.process_timers(now);
+        #[cfg(feature = "csl")]
         if self.csl_dirty {
             self.csl_reschedule(now);
         }
         self.schedule_operations(now);
+        #[cfg(feature = "csl")]
         if self.csl_dirty {
             self.csl_reschedule(now); // an operation may have ended
         }
@@ -1513,6 +1585,7 @@ impl<
         if let Some(a) = self.poll_hw_security() {
             return Some(a);
         }
+        #[cfg(feature = "csl")]
         if self.csl.radio_dirty {
             self.csl.radio_dirty = false;
             return Some(RadioAction::SetCsl(CslConfig {
@@ -1550,6 +1623,7 @@ impl<
             });
         }
         let desired = self.desired_mode();
+        #[cfg(feature = "csl")]
         if let Some((channel, start_us, duration_us)) = self.csl.window {
             let stale = self
                 .radio_now_us()
@@ -1670,6 +1744,7 @@ impl<
             Operation::WaitingForData => RadioMode::Receive(self.channel),
             Operation::EnergyScan => self.radio_mode,
             _ if idle_rx => RadioMode::Receive(self.channel),
+            #[cfg(feature = "csl")]
             _ if self.csl.sampling && !self.caps.hw_csl() => {
                 RadioMode::Receive(self.csl_rx_channel())
             }
@@ -1686,6 +1761,7 @@ impl<
     }
 
     fn begin_transmit(&mut self, now: Instant) -> Option<RadioAction> {
+        #[cfg(feature = "csl")]
         if !self.refresh_soft_csl(now) {
             return None;
         }
@@ -1724,7 +1800,10 @@ impl<
                     || tx.security_processed
                     || tx.retries > 0
                     || tx.retransmission,
+                #[cfg(feature = "csl")]
                 csl_present: tx.csl_ie && self.csl.enabled(),
+                #[cfg(not(feature = "csl"))]
+                csl_present: false,
                 retransmission: tx.retries > 0 || tx.retransmission,
                 tx_at_us: if hw_timing { tx.tx_at_us } else { None },
                 // With software CSMA the backoff is done: a single CCA.
@@ -1808,6 +1887,10 @@ impl<
     }
 
     /// Validate an ACK (unsecuring an enhanced ACK); its Frame Pending bit.
+    #[cfg_attr(
+        not(any(feature = "csl", feature = "link-metrics")),
+        allow(unused_variables)
+    )]
     fn check_ack(
         &mut self,
         buf: &mut FrameBuf,
@@ -1829,14 +1912,18 @@ impl<
                 return None;
             }
         }
+        #[cfg(feature = "csl")]
         if self.tx.as_ref().is_some_and(|tx| tx.csl_ie) {
             // Our frame carried a CSL IE and was acknowledged: the parent is
             // synchronized to us as of now (OpenThread
             // `UpdateCslLastSyncTimestamp`).
             self.csl.last_sync = self.radio_now_us().map(|n| n as u32);
         }
+        #[cfg(any(feature = "csl", feature = "link-metrics"))]
         if let Ok(f) = Frame::parse(buf) {
+            #[cfg(feature = "csl")]
             self.csl_update_child(&f, peer, info.timestamp_us, now);
+            #[cfg(feature = "link-metrics")]
             self.process_enh_ack_probing(&f, peer);
         }
         Some(fp)
@@ -1868,7 +1955,9 @@ impl<
             match id {
                 TimerId::SubMac => self.sub_mac_timer(now),
                 TimerId::Operation => self.operation_timer(now),
+                #[cfg(feature = "csl")]
                 TimerId::CslRx => self.csl_timer(),
+                #[cfg(feature = "csl")]
                 TimerId::CslTx => self.pending |= P_CSL_TX,
             }
         }
@@ -1911,6 +2000,10 @@ impl<
                 return;
             }
             let p = self.pending;
+            #[cfg(feature = "csl")]
+            let csl_pending = p & P_CSL_TX != 0;
+            #[cfg(not(feature = "csl"))]
+            let csl_pending = false;
             let next = if p & P_WAIT_DATA != 0 {
                 Operation::WaitingForData
             } else if p & P_ACTIVE_SCAN != 0 {
@@ -1919,8 +2012,17 @@ impl<
                 Operation::EnergyScan
             } else if p & P_BEACON != 0 {
                 Operation::TransmitBeacon
-            } else if p & P_CSL_TX != 0 {
-                Operation::TransmitDataCsl
+            } else if csl_pending {
+                // Safety: P_CSL_TX and TransmitDataCsl are both gated behind `csl`
+                // and `csl_pending` is only true when that feature is active.
+                #[cfg(feature = "csl")]
+                {
+                    Operation::TransmitDataCsl
+                }
+                #[cfg(not(feature = "csl"))]
+                {
+                    unreachable!()
+                }
             } else if !self.poll_requests.is_empty() {
                 Operation::TransmitDataIndirect
             } else if p & P_POLL != 0 && (self.direct.is_empty() || self.tx_poll_before_data) {
@@ -1939,6 +2041,7 @@ impl<
                 Operation::EnergyScan => P_ENERGY_SCAN,
                 Operation::TransmitBeacon => P_BEACON,
                 Operation::TransmitPoll => P_POLL,
+                #[cfg(feature = "csl")]
                 Operation::TransmitDataCsl => P_CSL_TX,
                 _ => 0,
             };
@@ -1972,6 +2075,7 @@ impl<
                 Err(_) => self.operation = Operation::Idle,
             },
             Operation::TransmitDataIndirect => self.start_indirect(now),
+            #[cfg(feature = "csl")]
             Operation::TransmitDataCsl => self.start_csl_tx(now),
             Operation::TransmitPoll => self.start_poll(now),
             Operation::TransmitDataDirect => self.start_direct(now),
@@ -2060,6 +2164,7 @@ impl<
         if self.caps.hw_tx_security() && key_mode1 {
             return Ok(false);
         }
+        #[cfg(feature = "csl")]
         if self.csl.enabled() && Self::has_csl_ie(frame) {
             // CSL IE: phase and frame counter are set per attempt
             // (`refresh_soft_csl`).
@@ -2071,6 +2176,7 @@ impl<
         Ok(true)
     }
 
+    #[cfg(feature = "csl")]
     fn has_csl_ie(frame: &[u8]) -> bool {
         Frame::parse(frame).is_ok_and(|f| f.csl_ie().is_some())
     }
@@ -2099,9 +2205,17 @@ impl<
                 self.config.max_frame_retries_direct,
             )
         };
+        #[cfg(feature = "csl")]
         let timed = self.next_tx_timed.take();
+        #[cfg(not(feature = "csl"))]
+        let timed: Option<u64> = None;
+        #[cfg(feature = "csl")]
         let csl_ie = self.csl.enabled() && Self::has_csl_ie(&frame);
+        #[cfg(not(feature = "csl"))]
+        let csl_ie = false;
+        #[cfg(feature = "csl")]
         let secured = Frame::parse(&frame).is_ok_and(|f| f.security_enabled());
+        #[cfg(feature = "csl")]
         let csl_plain = (csl_ie && secured && !self.caps.hw_tx_security()).then(|| frame.clone());
         // A poll with a CSL IE is not retransmitted: the next poll carries a
         // fresh phase (OpenThread `DataPollSender::PrepareDataRequest`).
@@ -2117,7 +2231,9 @@ impl<
         };
         self.tx = Some(TxOp {
             csl_ie,
+            #[cfg(feature = "csl")]
             csl_plain,
+            #[cfg(feature = "csl")]
             csl_tx: timed.is_some(),
             tx_at_us: timed,
             kind,
@@ -2141,11 +2257,14 @@ impl<
 
     fn start_csma_backoff(&mut self, now: Instant) {
         let soft = self.needs.contains(SoftMacNeeds::CSMA);
+        #[cfg(feature = "csl")]
         let hw_timing = self.caps.phy.contains(Capabilities::TRANSMIT_TIMING);
+        #[cfg(feature = "csl")]
         let radio_now = self.radio_now_us();
         let Some(tx) = self.tx.as_mut() else {
             return;
         };
+        #[cfg(feature = "csl")]
         if let Some(at) = tx.tx_at_us {
             // Timed (CSL) frame: no random backoff, a single CCA. A radio
             // without timed transmit gets it in time by the MAC
@@ -2332,7 +2451,10 @@ impl<
         let mut buf = [0u8; MAX_FRAME_LEN];
         // A CSL receiver puts its CSL IE into the poll (a 2015 frame), which
         // resynchronizes the parent (OpenThread `DataPollSender` CSL rules).
+        #[cfg(feature = "csl")]
         let csl = self.csl.enabled();
+        #[cfg(not(feature = "csl"))]
+        let csl = false;
         let mut b = FrameBuilder::new(&mut buf)
             .frame_type(FrameType::MacCmd)
             .version(if csl {
@@ -2345,8 +2467,9 @@ impl<
             .src(self.own_src_for(parent))
             .ack_request(true)
             .command(MacCommand::DataRequest);
+        #[cfg(feature = "csl")]
         if csl {
-            b = b.header_ie(CslIe {
+            b = b.header_ie(crate::frame::CslIe {
                 phase: 0,
                 period: self.csl.period,
                 rendezvous_time: None,
@@ -2571,10 +2694,14 @@ impl<
                 let Some(handle) = handle else {
                     return;
                 };
-                self.csl_dirty = true;
+                #[cfg(feature = "csl")]
+                {
+                    self.csl_dirty = true;
+                }
                 let Some(i) = self.indirect.position(handle) else {
                     return; // purged meanwhile
                 };
+                #[cfg(feature = "csl")]
                 if tx.csl_tx {
                     self.csl_tx_done(i, handle, tx, res);
                     return;
@@ -2634,9 +2761,16 @@ impl<
             let Ok(f) = Frame::parse(buf) else {
                 return;
             };
+            #[cfg(feature = "csl")]
             let csl_ie = self.csl_ack_ie(&f, info, buf.len() + FCS_LEN);
+            #[cfg(not(feature = "csl"))]
+            let csl_ie: Option<CslIe> = None;
+            #[cfg(feature = "link-metrics")]
             let mut probe = [0u8; ENH_ACK_PROBING_MAX_DATA];
+            #[cfg(feature = "link-metrics")]
             let probe_len = self.enh_ack_probe_data(&f, info, &mut probe);
+            #[cfg(not(feature = "link-metrics"))]
+            let probe_len = 0usize;
             let r = if f.version() == FrameVersion::V2015 {
                 FrameBuilder::enh_ack(&mut out, &f, frame_pending)
                     .map(|b| match csl_ie {
@@ -2645,7 +2779,10 @@ impl<
                     })
                     .map(|b| match probe_len {
                         0 => b,
+                        #[cfg(feature = "link-metrics")]
                         n => b.header_ie(VendorIe::thread_enh_ack_probing(&probe[..n])),
+                        #[cfg(not(feature = "link-metrics"))]
+                        _ => b,
                     })
                     .and_then(FrameBuilder::build)
             } else {
@@ -2671,6 +2808,7 @@ impl<
                 return;
             }
         }
+        #[cfg(feature = "csl")]
         if secured && self.csl.enabled() && Self::has_csl_ie(&ack) {
             // Acked with a secured enhanced ACK carrying our CSL IE.
             self.csl.last_sync = info
@@ -2684,6 +2822,7 @@ impl<
     /// The CSL IE for the enhanced ACK of `rx`, if it comes from our CSL
     /// parent: the phase to our next sample at the time the ACK's SFD is on
     /// the air (frame end + turnaround + SHR).
+    #[cfg(feature = "csl")]
     fn csl_ack_ie(&self, rx: &Frame<'_>, info: &PsduRxInfo, psdu_len: usize) -> Option<CslIe> {
         if !self.csl.enabled() || rx.version() != FrameVersion::V2015 {
             return None;
@@ -2714,6 +2853,7 @@ impl<
             info.timestamp_us,
             info.ack_security.is_some()
         );
+        #[cfg(feature = "csl")]
         if self.csl.enabled() && info.ack_security.is_some() {
             // Acked with a secured enhanced ACK by the radio.
             self.csl.last_sync = info
@@ -2827,6 +2967,7 @@ impl<
             let _ = self.send_data_poll(now);
         }
 
+        #[cfg(feature = "csl")]
         if let Ok(f) = Frame::parse(&buf) {
             self.csl_update_child(&f, meta.src, info.timestamp_us, now);
         }
@@ -2843,6 +2984,7 @@ impl<
                     }
                     Some(MacCommand::DataRequest) => {
                         self.counters.rx_data_poll += 1;
+                        #[cfg(feature = "csl")]
                         let csl = Frame::parse(&buf).ok().and_then(|f| {
                             (f.version() == FrameVersion::V2015 && f.security_enabled())
                                 .then(|| f.csl_ie())
@@ -2852,6 +2994,7 @@ impl<
                         self.push_event(Event::DataPollReceived {
                             src: meta.src,
                             frame_pending: acked_fp,
+                            #[cfg(feature = "csl")]
                             csl,
                             secured: meta.security,
                             lqi: info.lqi,

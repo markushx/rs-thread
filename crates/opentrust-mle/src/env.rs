@@ -382,9 +382,11 @@ pub trait MleEnv {
     /// PAN channel), the parent being `parent` (extended and short address);
     /// `period` 0 (and `None`) turns CSL off. OT `SubMac::SetCslParams`.
     /// Default: no-op.
+    #[cfg(feature = "csl")]
     fn set_csl(&mut self, _period: u16, _channel: u8, _parent: Option<(ExtAddress, Rloc16)>) {}
     /// The parent's CSL clock accuracy and uncertainty, from its CSL Clock
     /// Accuracy TLV (sizes the receive window). Default: no-op.
+    #[cfg(feature = "csl")]
     fn set_csl_parent_accuracy(&mut self, _accuracy: crate::tlv::CslClockAccuracy) {}
     /// Mesh-local prefix (to build the ML-EID address and expand registered
     /// addresses).
@@ -424,14 +426,17 @@ pub trait MleEnv {
     /// CSL children in the CSL Clock Accuracy TLV (OT
     /// `Radio::GetCslAccuracy` / `GetCslUncertainty`). `None` (the default):
     /// this device cannot transmit CSL frames and omits the TLV.
+    #[cfg(feature = "csl")]
     fn csl_clock_accuracy(&self) -> Option<crate::tlv::CslClockAccuracy> {
         None
     }
     /// A child announced its CSL channel (0 = the PAN channel): track it for
     /// CSL transmissions on that channel (its CSL IEs synchronize it).
+    #[cfg(feature = "csl")]
     fn csl_child_update(&mut self, _ext: &ExtAddress, _rloc16: Rloc16, _channel: u8) {}
     /// A child is no longer CSL synchronized (CSL synchronized timeout,
     /// mode change, removal): its frames wait for data polls again.
+    #[cfg(feature = "csl")]
     fn csl_child_desync(&mut self, _ext: &ExtAddress, _rloc16: Rloc16) {}
 
     /// Send a child supervision message (an empty frame / message that
@@ -504,6 +509,7 @@ pub trait MleEnv {
 
     /// A Link Metrics Report arrived from `from` (OT Initiator report
     /// callback): `values` unless the Subject answered with `status` only.
+    #[cfg(feature = "link-metrics")]
     fn link_metrics_report(
         &mut self,
         _from: &Ipv6Addr,
@@ -513,6 +519,7 @@ pub trait MleEnv {
     }
     /// The Subject `from` answered a Link Metrics Management Request with
     /// `status`.
+    #[cfg(feature = "link-metrics")]
     fn link_metrics_management_response(
         &mut self,
         _from: &Ipv6Addr,
@@ -521,6 +528,7 @@ pub trait MleEnv {
     }
     /// Link metrics decoded from the Enhanced ACKs of a neighbor (see
     /// `Mle::process_enh_ack_ie_data`).
+    #[cfg(feature = "link-metrics")]
     fn enh_ack_probing_report(
         &mut self,
         _rloc16: Rloc16,
@@ -532,6 +540,7 @@ pub trait MleEnv {
     /// or clear (empty) the metrics the radio puts into the ACKs to the
     /// neighbor (OT `Radio::ConfigureEnhAckProbing`). Default: not
     /// supported.
+    #[cfg(feature = "link-metrics")]
     fn configure_enh_ack_probing(
         &mut self,
         _flags: opentrust_mac::mac::LinkMetricsFlags,
@@ -545,6 +554,7 @@ pub trait MleEnv {
     /// report `flags` (empty: nothing) in its Enhanced ACKs. The MAC decodes
     /// them and frames to this neighbor use Frame Version 2015 (OT
     /// `Neighbor::IsEnhAckProbingActive`). Default: ignore.
+    #[cfg(feature = "link-metrics")]
     fn track_enh_ack_probing(
         &mut self,
         _flags: opentrust_mac::mac::LinkMetricsFlags,

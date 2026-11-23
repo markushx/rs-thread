@@ -201,12 +201,12 @@ use opentrust_net::udp::{ReceiverId, UdpSockets};
 use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
+#[cfg(feature = "border-router")]
+use crate::config::PUBLISHER_ENTRIES;
 use crate::config::{
     HOLD_BUFS, HOLD_SLOTS, INDIRECT_MSGS, INDIRECT_POOL_BLOCKS, REASM_SLOTS, RESOLVER_ENTRIES,
     SLAAC_ADDRS, TMF_CACHE, TMF_REQUESTS, TMF_RESOURCES,
 };
-#[cfg(feature = "border-router")]
-use crate::config::PUBLISHER_ENTRIES;
 use crate::stack::{Core, MacRng, NetConfig, Outbox};
 
 /// Largest UDP payload of a queued datagram (IPv6 minimum MTU minus the IPv6
@@ -277,6 +277,7 @@ pub enum Event {
         rloc16: Rloc16,
     },
     /// Link metrics from an Enhanced ACK of a probed neighbor.
+    #[cfg(feature = "link-metrics")]
     EnhAckLinkMetrics {
         /// RLOC16 of the neighbor (invalid if unknown).
         rloc16: Rloc16,
@@ -291,6 +292,7 @@ pub enum Event {
     },
     /// A Link Metrics Report arrived (OT `otLinkMetricsReportCallback`):
     /// the values, or only the Subject's status.
+    #[cfg(feature = "link-metrics")]
     LinkMetricsReport {
         /// Sender (link-local address).
         from: core::net::Ipv6Addr,
@@ -301,6 +303,7 @@ pub enum Event {
     },
     /// A Link Metrics Management Response arrived (OT
     /// `otLinkMetricsMgmtResponseCallback`).
+    #[cfg(feature = "link-metrics")]
     LinkMetricsManagement {
         /// Sender (link-local address).
         from: core::net::Ipv6Addr,
@@ -1039,6 +1042,7 @@ mod tests {
 
     /// The MLE's CSL requests reach the MAC and an SSED frame carries the
     /// CSL IE.
+    #[cfg(feature = "csl")]
     #[test]
     fn csl_parameters_reach_the_mac() {
         use opentrust_core::types::ShortAddress;
