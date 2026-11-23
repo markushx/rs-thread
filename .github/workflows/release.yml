@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write   # required for crates.io trusted publishing (OIDC)
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    # crates.io trusted publishing: register this repo+workflow as a trusted
+    # publisher on crates.io for every crate before the first tag push.
+    # https://doc.rust-lang.org/cargo/reference/publishing.html#trusted-publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Obtain crates.io OIDC token
+        id: crates-token
+        run: |
+          TOKEN=$(curl --fail -sSfL \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=crates.io" \
+            | jq -r '.value')
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      # Publish in topological dependency order.
+      # --no-verify skips the extra rebuild step in a temp dir; the full build
+      # and tests already ran in CI before this tag was pushed.
+      # A short sleep lets crates.io index each crate before the next publish
+      # validates its dependency on the previous one.
+
+      - name: Publish rs-thread-core
+        run: cargo publish --no-verify -p rs-thread-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-platform
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-platform
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-flash
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-flash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-spinel
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-spinel
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-lowpan
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-lowpan
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-mac
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-mac
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-coap
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-coap
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-net
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-net
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-dtls
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-dtls
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-dns
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-dns
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-mle
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-mle
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-mesh
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-mesh
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-meshcop
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-meshcop
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-instance
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-instance
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-ncp
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-ncp
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-nrf
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-nrf
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-embassy
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-embassy
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-cli
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-cli
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}
+
+      - name: Publish rs-thread-matter
+        run: sleep 20 && cargo publish --no-verify -p rs-thread-matter
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-token.outputs.token }}

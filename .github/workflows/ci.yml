@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]   # release.yml handles tags
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+          components: clippy
+          targets: >-
+            thumbv7em-none-eabihf,
+            thumbv8m.main-none-eabihf,
+            riscv32imac-unknown-none-elf
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --features rs-thread-core/log,rs-thread-core/ecjpake -- -D warnings
+
+  doc:
+    name: Docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --workspace --exclude openthread-sys
+
+  embedded:
+    name: Embedded (${{ matrix.alias }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - alias: check-nrf52
+            target: thumbv7em-none-eabihf
+          - alias: check-nrf54
+            target: thumbv8m.main-none-eabihf
+          - alias: check-esp32c6
+            target: riscv32imac-unknown-none-elf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: cargo ${{ matrix.alias }}
+      - name: Embedded with defmt + ecjpake
+        run: |
+          DEFMT=$(ls crates | grep -v rs-thread-sim | sed 's|$|/defmt|' | paste -sd, -)
+          cargo ${{ matrix.alias }} --features "$DEFMT,rs-thread-core/ecjpake"
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --verbose
+      - run: cargo test -p rs-thread-core --features ecjpake
+
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory, not blocking
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install --locked cargo-audit
+      - run: cargo audit
