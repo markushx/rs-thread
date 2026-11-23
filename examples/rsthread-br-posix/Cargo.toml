@@ -1,0 +1,28 @@
+[package]
+name = "rsthread-br-posix"
+description = "Thread Border Router reference binary (ot-br-posix port)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "rsthread-br-posix"
+path = "src/main.rs"
+
+[dependencies]
+rs-thread-br = { path = "../../crates/rs-thread-br" }
+rs-thread-ncp = { path = "../../crates/rs-thread-ncp", features = ["radio-spinel"] }
+tokio = { workspace = true }
+log = { workspace = true }
+env_logger = "0.11"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+
+[lints.rust]
+unsafe_code = "deny"
