@@ -13,11 +13,13 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "bbr", "commissioner", "border-agent", "srp-client", "dns-client"]
+default = ["ftd", "bbr", "border-router", "commissioner", "border-agent", "srp-client", "dns-client"]
 ftd = ["opentrust-instance/ftd"]
 # Thread 1.2 Backbone Router client glue (DUA, MLR). An end device without
 # a Backbone Router in its network can disable this.
 bbr = ["opentrust-instance/bbr"]
+# Network Data publisher and DHCPv6 (prefix / route / DNS-SRP publishing).
+border-router = ["opentrust-instance/border-router"]
 commissioner = ["ftd", "opentrust-instance/commissioner"]
 border-agent = ["commissioner", "opentrust-instance/border-agent"]
 # The SRP client and the DNS client of the instance (OT

@@ -55,6 +55,7 @@ fn instance_size_breakdown() {
     row("leader", &i.leader);
     row("local", &i.local);
     row("notifier", &i.notifier);
+    #[cfg(feature = "border-router")]
     row("publisher", &i.publisher);
     row("alocs", &i.alocs);
     row("slaac", &i.slaac);

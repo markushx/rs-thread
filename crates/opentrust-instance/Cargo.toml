@@ -13,7 +13,7 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "bbr", "bbr-server", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client"]
+default = ["ftd", "bbr", "bbr-server", "border-router", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client"]
 ftd = ["opentrust-mle/ftd", "opentrust-mesh/ftd", "opentrust-meshcop/ftd"]
 # Thread 1.2 Backbone Router client glue: Domain Unicast Address (DUA) and
 # Multicast Listener Registration (MLR). An end device without a Backbone
@@ -47,9 +47,13 @@ srp-client = ["opentrust-dns/srp-client", "opentrust-core/ecdsa"]
 # browse and service resolution.
 dns-client = ["opentrust-dns/dns-client"]
 
+# Network Data publisher (prefix, route and DNS/SRP service publishing) and
+# DHCPv6 client/server for border-router-assigned prefixes.
+# Required by srp-server (which publishes itself in the Network Data).
+border-router = ["opentrust-mesh/border-router"]
 # The SRP server (OT `Srp::Server`): registers hosts and services of clients
 # in the mesh, publishes itself in the Network Data.
-srp-server = ["ftd", "opentrust-dns/srp-server", "opentrust-core/ecdsa"]
+srp-server = ["ftd", "border-router", "opentrust-dns/srp-server", "opentrust-core/ecdsa"]
 srp-services-8 = []
 srp-services-12 = []
 trel = ["opentrust-mesh/trel"]

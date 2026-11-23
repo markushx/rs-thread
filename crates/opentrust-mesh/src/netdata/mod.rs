@@ -24,6 +24,7 @@ pub mod leader;
 pub mod local;
 pub mod lookup;
 pub mod notifier;
+#[cfg(feature = "border-router")]
 pub mod publisher;
 pub mod server_data;
 pub mod tlv;
@@ -50,5 +51,5 @@ mod notifier_tests;
 #[cfg(all(test, feature = "ftd"))]
 mod lookup_tests;
 
-#[cfg(all(test, feature = "ftd"))]
+#[cfg(all(test, feature = "ftd", feature = "border-router"))]
 mod publisher_tests;

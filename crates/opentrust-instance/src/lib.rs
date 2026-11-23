@@ -110,6 +110,7 @@ mod cm_io;
 mod commissioning;
 pub mod config;
 mod datapath;
+#[cfg(feature = "border-router")]
 mod dhcp6;
 mod diag;
 mod dns_srp;
@@ -156,6 +157,7 @@ pub use opentrust_dns::srp::{ItemState, ServiceConfig, ServiceId, SrpError, SrpE
 pub use opentrust_mac::mac::MacCounters;
 pub use opentrust_mac::mac::ScanResult as BeaconScanResult;
 pub use opentrust_mesh::netdata::local::{ExternalRouteConfig, OnMeshPrefixConfig};
+#[cfg(feature = "border-router")]
 pub use opentrust_mesh::netdata::publisher::DnsSrpService;
 pub use opentrust_mesh::netdata::tlv::{BrFlags, NetPrefix};
 pub use opentrust_meshcop::dataset::Dataset;
@@ -186,6 +188,7 @@ use opentrust_mesh::netdata::aloc::AlocSet;
 use opentrust_mesh::netdata::leader::Leader;
 use opentrust_mesh::netdata::local::LocalData;
 use opentrust_mesh::netdata::notifier::Notifier;
+#[cfg(feature = "border-router")]
 use opentrust_mesh::netdata::publisher::{Publisher, PublisherEvent};
 #[cfg(feature = "ftd")]
 use opentrust_mesh::router_id::RouterIdOutbox;
@@ -199,9 +202,11 @@ use opentrust_platform::SettingsStore;
 use rand_core::{CryptoRng, Rng};
 
 use crate::config::{
-    HOLD_BUFS, HOLD_SLOTS, INDIRECT_MSGS, INDIRECT_POOL_BLOCKS, PUBLISHER_ENTRIES, REASM_SLOTS,
-    RESOLVER_ENTRIES, SLAAC_ADDRS, TMF_CACHE, TMF_REQUESTS, TMF_RESOURCES,
+    HOLD_BUFS, HOLD_SLOTS, INDIRECT_MSGS, INDIRECT_POOL_BLOCKS, REASM_SLOTS, RESOLVER_ENTRIES,
+    SLAAC_ADDRS, TMF_CACHE, TMF_REQUESTS, TMF_RESOURCES,
 };
+#[cfg(feature = "border-router")]
+use crate::config::PUBLISHER_ENTRIES;
 use crate::stack::{Core, MacRng, NetConfig, Outbox};
 
 /// Largest UDP payload of a queued datagram (IPv6 minimum MTU minus the IPv6
@@ -354,6 +359,7 @@ pub enum Event {
         channel_mask: u32,
     },
     /// A Network Data Publisher entry changed state.
+    #[cfg(feature = "border-router")]
     Publisher(PublisherEvent),
     /// The SRP client selected or lost a server, registered, or failed.
     #[cfg(feature = "srp-client")]
@@ -462,11 +468,13 @@ pub struct Instance<S, C: InstanceCrypto, R> {
     pub(crate) leader: Leader<{ NETDATA_LEN }>,
     pub(crate) local: LocalData,
     pub(crate) notifier: Notifier,
+    #[cfg(feature = "border-router")]
     pub(crate) publisher: Publisher<PUBLISHER_ENTRIES>,
     pub(crate) alocs: AlocSet,
     pub(crate) slaac: Slaac<SLAAC_ADDRS>,
     pub(crate) glue: netdata_glue::GlueState,
     pub(crate) dnssrp: dns_srp::DnsSrp,
+    #[cfg(feature = "border-router")]
     pub(crate) dhcp6: dhcp6::Dhcp6,
     #[cfg(feature = "ftd")]
     pub(crate) updater: opentrust_meshcop::updater::DatasetUpdater,
@@ -649,11 +657,13 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             put(addr_of_mut!((*p).leader), Leader::new);
             put(addr_of_mut!((*p).local), LocalData::new);
             put(addr_of_mut!((*p).notifier), Notifier::new);
+            #[cfg(feature = "border-router")]
             put(addr_of_mut!((*p).publisher), Publisher::new);
             put(addr_of_mut!((*p).alocs), AlocSet::new);
             put(addr_of_mut!((*p).slaac), Slaac::new);
             put(addr_of_mut!((*p).glue), netdata_glue::GlueState::default);
             put(addr_of_mut!((*p).dnssrp), dns_srp::DnsSrp::new);
+            #[cfg(feature = "border-router")]
             put(addr_of_mut!((*p).dhcp6), dhcp6::Dhcp6::new);
             #[cfg(feature = "ftd")]
             put(
@@ -814,12 +824,14 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             self.resolver.next_deadline(),
             self.agent.next_deadline(),
             self.notifier.next_deadline(),
+            #[cfg(feature = "border-router")]
             self.publisher.next_deadline(),
             self.slaac.next_deadline(),
             self.core.datasets.next_deadline(),
             self.leader_deadline(),
             self.glue.next_deadline(),
             self.dnssrp.next_deadline(),
+            #[cfg(feature = "border-router")]
             self.dhcp6.next_deadline(),
             #[cfg(feature = "bbr")]
             self.bbrg.next_deadline(),

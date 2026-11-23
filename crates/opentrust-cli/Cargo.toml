@@ -13,7 +13,7 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "bbr", "bbr-server", "dataset", "scan", "ping", "tables", "netdata", "srp", "srp-server", "dns", "udp", "diag", "linkmetrics", "commissioning", "scan-servers"]
+default = ["ftd", "bbr", "bbr-server", "border-router", "dataset", "scan", "ping", "tables", "netdata", "srp", "srp-server", "dns", "udp", "diag", "linkmetrics", "commissioning", "scan-servers"]
 # Router-capable build (router table, router thresholds, leader weight).
 ftd = ["opentrust-instance/ftd", "opentrust-mle/ftd"]
 # The `dataset` command group.
@@ -36,6 +36,8 @@ dns = ["opentrust-instance/dns-client"]
 udp = []
 # `networkdiagnostic`.
 diag = []
+# Network Data publisher and DHCPv6.
+border-router = ["opentrust-instance/border-router"]
 # `bbr`, `dua` (Thread 1.2 Backbone Router role and Domain Unicast Address commands).
 bbr = ["opentrust-instance/bbr"]
 # The Backbone Router role commands (`bbr enable`, `bbr mgmt ...`, `fake`).

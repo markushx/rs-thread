@@ -10,6 +10,7 @@ use opentrust_mesh::forwarder::DropReason;
 use opentrust_mesh::netdata::aloc::desired_alocs;
 use opentrust_mesh::netdata::consumers::slaac_prefixes;
 use opentrust_mesh::netdata::notifier::{NotifierEvent, SyncInput, find_stale_child};
+#[cfg(feature = "border-router")]
 use opentrust_mesh::netdata::publisher::PublishContext;
 use opentrust_mesh::netdata::server_data;
 use opentrust_meshcop::manager::DatasetEvent;
@@ -94,6 +95,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         }
         self.sync_key_reset();
         self.slaac.poll(&mut self.core.ip6.netif, now);
+        #[cfg(feature = "border-router")]
         self.dhcp6_poll(now);
         #[cfg(feature = "ftd")]
         if self.leader.sync_timed_out(now) {
@@ -529,6 +531,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
         let attached = role.is_attached();
         let rloc = self.mle.rloc16();
+        #[cfg(feature = "border-router")]
         let dhcp_alocs = self.dhcp6_update(now, attached);
         let view = self.core.netdata.view();
         // SLAAC and ALOCs follow Network Data and role.
@@ -544,6 +547,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         };
         self.slaac
             .update(&params, &mut self.core.ip6.netif, &prefixes, None, now);
+        #[allow(unused_mut)]
         let mut want = desired_alocs(
             role == Role::Leader,
             &view,
@@ -557,6 +561,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         {
             let _ = want.push(opentrust_mesh::bbr_server::ALOC16_PRIMARY_BBR);
         }
+        #[cfg(feature = "border-router")]
         for a in dhcp_alocs {
             if !want.contains(&a) {
                 let _ = want.push(a);
@@ -565,6 +570,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
         let _ = self.alocs.update(&mut self.core.ip6.netif, &want);
 
         // Published entries follow the Network Data.
+        #[cfg(feature = "border-router")]
         if attached {
             let ctx = PublishContext {
                 attached,

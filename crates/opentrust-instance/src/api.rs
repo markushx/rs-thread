@@ -28,7 +28,9 @@ use rand_core::{CryptoRng, Rng};
 
 use crate::InstanceCrypto;
 
-use crate::{DnsSrpService, Event, Instance};
+use crate::{Event, Instance};
+#[cfg(feature = "border-router")]
+use crate::DnsSrpService;
 
 /// A UDP socket of the application (OT `otUdpSocket`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -921,6 +923,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// Publish this device as the DNS/SRP server in the Network Data (OT
     /// `otNetDataPublishDnsSrpService*`).
+    #[cfg(feature = "border-router")]
     pub fn publish_dns_srp_service(&mut self, service: DnsSrpService, now: Instant) {
         let attached = self.mle.role().is_attached();
         let ctx = opentrust_mesh::netdata::publisher::PublishContext {
@@ -944,6 +947,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// Run a publisher operation on a prefix or route and deliver its events.
+    #[cfg(feature = "border-router")]
     fn publisher_prefix_op(
         &mut self,
         now: Instant,
@@ -967,17 +971,20 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Publish an on-mesh prefix: it is added to the local Network Data only
     /// while fewer than the desired number of better entries exist (OT
     /// `otNetDataPublishOnMeshPrefix`).
+    #[cfg(feature = "border-router")]
     pub fn publish_on_mesh_prefix(&mut self, cfg: OnMeshPrefixConfig, now: Instant) -> Result<()> {
         self.publisher_prefix_op(now, |p, l, ev| p.publish_on_mesh_prefix(cfg, l, now, ev))
     }
 
     /// Publish an external route (OT `otNetDataPublishExternalRoute`).
+    #[cfg(feature = "border-router")]
     pub fn publish_external_route(&mut self, cfg: ExternalRouteConfig, now: Instant) -> Result<()> {
         self.publisher_prefix_op(now, |p, l, ev| p.publish_external_route(cfg, l, now, ev))
     }
 
     /// Replace the published external route `old` (OT
     /// `otNetDataReplacePublishedExternalRoute`).
+    #[cfg(feature = "border-router")]
     pub fn replace_published_external_route(
         &mut self,
         old: opentrust_mesh::netdata::tlv::NetPrefix,
@@ -990,6 +997,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// Stop publishing a prefix or route (OT `otNetDataUnpublishPrefix`).
+    #[cfg(feature = "border-router")]
     pub fn unpublish_prefix(
         &mut self,
         prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
@@ -1003,6 +1011,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// The published prefix or route is in the local Network Data (OT
     /// `otNetDataIsPrefixAdded`).
+    #[cfg(feature = "border-router")]
     pub fn is_published_prefix_added(
         &self,
         prefix: &opentrust_mesh::netdata::tlv::NetPrefix,
@@ -1011,6 +1020,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     }
 
     /// Stop publishing the DNS/SRP service.
+    #[cfg(feature = "border-router")]
     pub fn unpublish_dns_srp_service(&mut self, now: Instant) {
         let mut pe: heapless::Vec<_, 4> = heapless::Vec::new();
         self.publisher.unpublish_dns_srp(&mut self.local, &mut |e| {
