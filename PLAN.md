@@ -408,6 +408,7 @@ Security-relevant decisions for the review before M4:
 
 ## Phase 17 – Publish rs-thread
 
+- [x] Add GitHub Actions CI + release workflow with crates.io trusted publishing (`.github/workflows/ci.yml`, `release.yml`, `dependabot.yml`)
 - [ ] Push to Github/Gitlab
 - [ ] Release crates to crates.io
 - [ ] Announce / Market rs-thread
