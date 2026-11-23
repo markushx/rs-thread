@@ -167,7 +167,8 @@ impl<'a, A: Aes128> Ccm<'a, A> {
     ) -> Result<Self> {
         // Size of the length field L.
         let l = (15 - nonce.len()) as u8;
-        let tag_ok = tag_len == 0 || (tag_len % 2 == 0 && (4..=MAX_TAG_LEN).contains(&tag_len));
+        let tag_ok =
+            tag_len == 0 || (tag_len.is_multiple_of(2) && (4..=MAX_TAG_LEN).contains(&tag_len));
         if !tag_ok || msg_len > MAX_MESSAGE_LEN || u32::try_from(aad_len).is_err() {
             return Err(Error::InvalidArgs);
         }

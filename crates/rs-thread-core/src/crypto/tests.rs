@@ -26,7 +26,7 @@ use crate::types::{ExtAddress, ExtPanId, Iid, NetworkKey, NetworkName};
 
 fn h(s: &str) -> Vec<u8> {
     let s: Vec<u8> = s.bytes().filter(|c| !c.is_ascii_whitespace()).collect();
-    assert!(s.len() % 2 == 0);
+    assert!(s.len().is_multiple_of(2));
     s.chunks(2)
         .map(|c| u8::from_str_radix(core::str::from_utf8(c).unwrap(), 16).unwrap())
         .collect()

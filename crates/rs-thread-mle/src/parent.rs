@@ -555,11 +555,11 @@ impl<const C: usize> Mle<C> {
                     .ok_or(Error::NotFound)?
             }
         };
-        if let Some(c) = self.children.get_mut(idx) {
-            if !c.neighbor.state.is_valid_or_restoring() {
-                c.neighbor.last_heard = now;
-                c.timeout_secs = CHILD_ID_REQUEST_TIMEOUT_SECS;
-            }
+        if let Some(c) = self.children.get_mut(idx)
+            && !c.neighbor.state.is_valid_or_restoring()
+        {
+            c.neighbor.last_heard = now;
+            c.timeout_secs = CHILD_ID_REQUEST_TIMEOUT_SECS;
         }
         let max = if scan & SCAN_MASK_END_DEVICE == 0 {
             PARENT_RSP_ROUTER_JITTER
@@ -989,10 +989,10 @@ impl<const C: usize> Mle<C> {
             }
             Ok(())
         })?;
-        if let Some(c) = self.children.get_mut(idx) {
-            if c.neighbor.state == NeighborState::Restored {
-                c.neighbor.state = NeighborState::ChildUpdateRequest;
-            }
+        if let Some(c) = self.children.get_mut(idx)
+            && c.neighbor.state == NeighborState::Restored
+        {
+            c.neighbor.state = NeighborState::ChildUpdateRequest;
         }
         Ok(())
     }
@@ -1160,10 +1160,8 @@ impl<const C: usize> Mle<C> {
         }
         if restoring {
             self.child_to_valid(env, now, idx);
-        } else if changed {
-            if let Some(c) = self.children.get(idx) {
-                let _ = env.store_child_info(&c.to_child_info());
-            }
+        } else if changed && let Some(c) = self.children.get(idx) {
+            let _ = env.store_child_info(&c.to_child_info());
         }
         self.send_child_update_response_to_child(env, Some(idx), &list, challenge, rx.meta.src)?;
         Ok(RxClass::Peer)
@@ -1317,11 +1315,11 @@ impl<const C: usize> Mle<C> {
             if let Some(f) = mle_fc {
                 c.neighbor.mle_replay = MleReplay::with(f);
             }
-            if let Some(secs) = timeout {
-                if c.timeout_secs != secs {
-                    c.timeout_secs = secs;
-                    changed = true;
-                }
+            if let Some(secs) = timeout
+                && c.timeout_secs != secs
+            {
+                c.timeout_secs = secs;
+                changed = true;
             }
             if let Some(l) = leader {
                 c.network_data_version = if c.neighbor.mode.full_network_data() {
@@ -1342,10 +1340,8 @@ impl<const C: usize> Mle<C> {
             .is_some_and(|c| c.neighbor.state.is_restoring());
         if restoring {
             self.child_to_valid(env, now, idx);
-        } else if changed {
-            if let Some(c) = self.children.get(idx) {
-                let _ = env.store_child_info(&c.to_child_info());
-            }
+        } else if changed && let Some(c) = self.children.get(idx) {
+            let _ = env.store_child_info(&c.to_child_info());
         }
         Ok(if response.is_some() {
             RxClass::Authoritative

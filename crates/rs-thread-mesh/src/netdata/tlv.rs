@@ -144,7 +144,7 @@ impl NetPrefix {
         let src = bytes.get(..n).ok_or(Error::InvalidArgs)?;
         let mut b = [0u8; 16];
         b[..n].copy_from_slice(src);
-        if len % 8 != 0 {
+        if !len.is_multiple_of(8) {
             b[n - 1] &= 0xffu8 << (8 - len % 8);
         }
         Ok(Self { bytes: b, len })

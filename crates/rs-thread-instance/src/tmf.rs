@@ -576,10 +576,8 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
             );
             #[cfg(not(feature = "bbr"))]
             let bbr_handled = false;
-            if !bbr_handled {
-                if let Some(t) = mgmt::set_user_type(user) {
-                    self.core.datasets.mgmt_set_finished(now, t);
-                }
+            if !bbr_handled && let Some(t) = mgmt::set_user_type(user) {
+                self.core.datasets.mgmt_set_finished(now, t);
             }
         }
     }

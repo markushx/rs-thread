@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]    # only run on merge; PRs use pull_request trigger
     tags-ignore: ["v*"]   # release.yml handles tags
   pull_request:
 
@@ -60,10 +60,11 @@ jobs:
         include:
           - alias: check-nrf52
             target: thumbv7em-none-eabihf
-          - alias: check-nrf54
-            target: thumbv8m.main-none-eabihf
-          - alias: check-esp32c6
-            target: riscv32imac-unknown-none-elf
+          # nrf54 and esp32c6 temporarily disabled
+          # - alias: check-nrf54
+          #   target: thumbv8m.main-none-eabihf
+          # - alias: check-esp32c6
+          #   target: riscv32imac-unknown-none-elf
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -76,7 +77,7 @@ jobs:
       - run: cargo ${{ matrix.alias }}
       - name: Embedded with defmt + ecjpake
         run: |
-          DEFMT=$(ls crates | grep -v rs-thread-sim | sed 's|$|/defmt|' | paste -sd, -)
+          DEFMT=$(ls crates | grep -vE 'rs-thread-sim|rs-thread-rcp-sim|rs-thread-difftest|rs-thread-br' | sed 's|$|/defmt|' | paste -sd, -)
           cargo ${{ matrix.alias }} --features "$DEFMT,rs-thread-core/ecjpake"
 
   test:

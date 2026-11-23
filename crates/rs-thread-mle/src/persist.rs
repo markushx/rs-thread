@@ -108,13 +108,13 @@ impl<const C: usize> Mle<C> {
             info
         };
         env.store_network_info(&info)?;
-        if self.role == Role::Child {
-            if let Some(p) = &self.parent {
-                env.store_parent_info(Some(&ParentInfo {
-                    ext_address: p.router.neighbor.ext_address,
-                    version: p.router.neighbor.version,
-                }))?;
-            }
+        if self.role == Role::Child
+            && let Some(p) = &self.parent
+        {
+            env.store_parent_info(Some(&ParentInfo {
+                ext_address: p.router.neighbor.ext_address,
+                version: p.router.neighbor.version,
+            }))?;
         }
         self.mle_counter.stored(mle_fc);
         env.keys_mut().frame_counter_stored(mac_fc);

@@ -699,40 +699,39 @@ impl<const C: usize> Mle<C> {
             }
         }
 
-        if let Some(c) = &self.attach.candidate {
-            if c.parent.router.neighbor.state == NeighborState::ParentResponse
-                && c.parent.router.neighbor.ext_address != ext
+        if let Some(c) = &self.attach.candidate
+            && c.parent.router.neighbor.state == NeighborState::ParentResponse
+            && c.parent.router.neighbor.ext_address != ext
+        {
+            // Only consider partitions that are the same or better; among
+            // parents of the same partition the better parent wins.
+            #[cfg(feature = "ftd")]
+            let compare = if self.is_full_thread_device() {
+                crate::advert::compare_partitions(
+                    conn.is_singleton(),
+                    &leader_data,
+                    c.singleton,
+                    &c.leader_data,
+                )
+            } else {
+                0
+            };
+            #[cfg(not(feature = "ftd"))]
+            let compare = 0;
+            if compare < 0 {
+                return Ok(RxClass::Authoritative);
+            }
+            if compare == 0
+                && !Self::is_better_parent(
+                    c,
+                    source,
+                    two_way_margin,
+                    &conn,
+                    version,
+                    csl_metric_input,
+                )
             {
-                // Only consider partitions that are the same or better; among
-                // parents of the same partition the better parent wins.
-                #[cfg(feature = "ftd")]
-                let compare = if self.is_full_thread_device() {
-                    crate::advert::compare_partitions(
-                        conn.is_singleton(),
-                        &leader_data,
-                        c.singleton,
-                        &c.leader_data,
-                    )
-                } else {
-                    0
-                };
-                #[cfg(not(feature = "ftd"))]
-                let compare = 0;
-                if compare < 0 {
-                    return Ok(RxClass::Authoritative);
-                }
-                if compare == 0
-                    && !Self::is_better_parent(
-                        c,
-                        source,
-                        two_way_margin,
-                        &conn,
-                        version,
-                        csl_metric_input,
-                    )
-                {
-                    return Ok(RxClass::Authoritative);
-                }
+                return Ok(RxClass::Authoritative);
             }
         }
         let link_fc = t.link_frame_counter()?;
@@ -786,13 +785,13 @@ impl<const C: usize> Mle<C> {
     fn send_child_id_request<E: MleEnv>(&mut self, env: &mut E) -> Result<()> {
         let cand = self.attach.candidate.as_ref().ok_or(Error::NotFound)?;
         let cand_ext = cand.parent.router.neighbor.ext_address;
-        if let Some(p) = &self.parent {
-            if p.router.neighbor.ext_address == cand_ext {
-                if self.role == Role::Child {
-                    return Err(Error::Already);
-                }
-                self.parent = None;
+        if let Some(p) = &self.parent
+            && p.router.neighbor.ext_address == cand_ext
+        {
+            if self.role == Role::Child {
+                return Err(Error::Already);
             }
+            self.parent = None;
         }
         let cand = self.attach.candidate.as_ref().ok_or(Error::NotFound)?;
         let mut rx_challenge = [0u8; 8];
@@ -905,13 +904,12 @@ impl<const C: usize> Mle<C> {
         }
         self.update_leader_data(env, leader);
         #[cfg(feature = "ftd")]
-        if self.is_full_thread_device() {
-            if let Err(e) =
+        if self.is_full_thread_device()
+            && let Err(e) =
                 self.read_and_process_route_on_ftd_child(env, now, &rx.tlvs, source.router_id())
-            {
-                self.become_detached(env, now);
-                return Err(e);
-            }
+        {
+            self.become_detached(env, now);
+            return Err(e);
         }
         let mut parent = cand.parent;
         parent.router.neighbor.rloc16 = source;

@@ -852,7 +852,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
     /// Ask the neighbor `dst` (link-local address) for a Link Metrics
     /// Report (OT `otLinkMetricsQuery`): a single probe of `metrics` for
     /// `series_id` 0, else the report of that Forward Tracking Series. The
-    /// answer is [`Event::LinkMetricsReport`](crate::Event::LinkMetricsReport).
+    /// answer is [`Event::LinkMetricsReport`].
     #[cfg(feature = "link-metrics")]
     pub fn link_metrics_query(
         &mut self,
@@ -871,7 +871,7 @@ impl<S: SettingsStore, C: InstanceCrypto, R: Rng + CryptoRng> Instance<S, C, R> 
 
     /// Register (`metrics` given) or clear a Forward Tracking Series on the
     /// neighbor `dst` (OT `otLinkMetricsConfigForwardTrackingSeries`); the
-    /// answer is [`Event::LinkMetricsManagement`](crate::Event::LinkMetricsManagement).
+    /// answer is [`Event::LinkMetricsManagement`].
     #[cfg(feature = "link-metrics")]
     pub fn link_metrics_forward_series(
         &mut self,

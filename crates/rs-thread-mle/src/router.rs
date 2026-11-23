@@ -445,13 +445,13 @@ impl<const C: usize> Mle<C> {
     }
 
     fn remove_router_entry<E: MleEnv>(&mut self, env: &mut E, id: u8) {
-        if let Some(r) = self.rtr.table.remove(id) {
-            if r.neighbor.is_valid() {
-                env.event(MleEvent::RouterRemoved {
-                    ext: r.neighbor.ext_address,
-                    rloc16: r.neighbor.rloc16,
-                });
-            }
+        if let Some(r) = self.rtr.table.remove(id)
+            && r.neighbor.is_valid()
+        {
+            env.event(MleEvent::RouterRemoved {
+                ext: r.neighbor.ext_address,
+                rloc16: r.neighbor.rloc16,
+            });
         }
         self.rtr.allocated.remove(id);
         self.rtr.reuse[usize::from(id)] = ID_REUSE_DELAY_SECS;
@@ -543,10 +543,8 @@ impl<const C: usize> Mle<C> {
                 return (next_hop, cost);
             }
             cost = p.link_info.link_quality_in().cost();
-            if !dest_is_parent_or_sibling {
-                if let Some(r) = router {
-                    cost = cost.saturating_add(r.cost);
-                }
+            if !dest_is_parent_or_sibling && let Some(r) = router {
+                cost = cost.saturating_add(r.cost);
             }
         } else {
             if self.rtr.router_id == dest.router_id() {
@@ -603,10 +601,10 @@ impl<const C: usize> Mle<C> {
             parent_priority,
             ..Connectivity::default()
         };
-        if self.role == Role::Child {
-            if let Some(p) = &self.parent {
-                c.increment_link_quality(p.router.neighbor.link_info.link_quality_in());
-            }
+        if self.role == Role::Child
+            && let Some(p) = &self.parent
+        {
+            c.increment_link_quality(p.router.neighbor.link_info.link_quality_in());
         }
         for r in self.rtr.table.iter(StateFilter::Valid) {
             if self.has_rloc16(r.neighbor.rloc16) {

@@ -56,22 +56,20 @@ impl Net {
             let mut moved = false;
             for o in self.renv.take_out() {
                 moved = true;
-                if self.connected {
-                    if let Ok(cmd) =
+                if self.connected
+                    && let Ok(cmd) =
                         TestEnv::deliver(&o, &mut self.c, &mut self.cenv, self.now, -60)
-                    {
-                        self.seen[1][cmd.as_u8() as usize] += 1;
-                    }
+                {
+                    self.seen[1][cmd.as_u8() as usize] += 1;
                 }
             }
             for o in self.cenv.take_out() {
                 moved = true;
-                if self.connected {
-                    if let Ok(cmd) =
+                if self.connected
+                    && let Ok(cmd) =
                         TestEnv::deliver(&o, &mut self.r, &mut self.renv, self.now, -60)
-                    {
-                        self.seen[0][cmd.as_u8() as usize] += 1;
-                    }
+                {
+                    self.seen[0][cmd.as_u8() as usize] += 1;
                 }
             }
             if !moved {

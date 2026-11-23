@@ -13,13 +13,15 @@ categories.workspace = true
 readme = "../../README.md"
 
 [features]
-default = ["ftd", "srp-client", "dns-client"]
+default = ["ftd", "srp-client", "dns-client", "csl", "ping"]
 # Router-capable nodes with the commissioner and Border Agent compiled in.
 # Without it the virtual-time node is a minimal thread device (MTD) build.
-ftd = ["rs-thread-instance/ftd", "rs-thread-instance/bbr-server", "rs-thread-instance/commissioner", "rs-thread-instance/border-agent", "rs-thread-instance/scan-servers"]
+ftd = ["rs-thread-instance/ftd", "rs-thread-instance/bbr-server", "rs-thread-instance/commissioner", "rs-thread-instance/border-agent", "rs-thread-instance/border-router", "rs-thread-instance/scan-servers"]
 # The SRP and DNS clients of the simulated instances.
 srp-client = ["rs-thread-instance/srp-client"]
 dns-client = ["rs-thread-instance/dns-client"]
+csl = ["rs-thread-mac/csl", "rs-thread-instance/csl"]
+ping = ["rs-thread-instance/ping"]
 # The async test harness (`testing` module): an in-memory 802.15.4 medium,
 # a lock-step virtual-time driver for `rs_thread_embassy::RsThread::run`
 # futures and a virtual `embassy-time` driver (one per test binary).

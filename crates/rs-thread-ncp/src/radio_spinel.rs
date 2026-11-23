@@ -19,8 +19,8 @@ use std::prelude::v1::*;
 use std::collections::VecDeque;
 
 use rs_thread_platform::radio::{
-    AckSecurity, Capabilities, Config, MacCapabilities, MacKeys, PsduRxInfo, PsduTxInfo, Radio,
-    RadioCaps, RadioError, RadioErrorKind, SrcMatchConfig, RSSI_INVALID,
+    AckSecurity, Capabilities, Config, MacCapabilities, MacKeys, PsduRxInfo, PsduTxInfo,
+    RSSI_INVALID, Radio, RadioCaps, RadioError, RadioErrorKind, SrcMatchConfig,
 };
 use rs_thread_spinel::codec::{Reader, Writer};
 use rs_thread_spinel::consts::{cmd, md_flag, prop, scan_state, status};
@@ -161,8 +161,8 @@ impl<T: Transport> RadioSpinel<T> {
             .and_then(|()| value_fn(&mut w))
             .map_err(|_| Error::Protocol)?;
         let n = w.len();
-        let len = hdlc::encode(&self.spinel_buf[..n], &mut self.hdlc_buf)
-            .map_err(|_| Error::Protocol)?;
+        let len =
+            hdlc::encode(&self.spinel_buf[..n], &mut self.hdlc_buf).map_err(|_| Error::Protocol)?;
         self.io
             .write_all(&self.hdlc_buf[..len])
             .await
@@ -307,10 +307,11 @@ impl<T: Transport> RadioSpinel<T> {
     }
 
     async fn read_i8_prop(&mut self, spinel_prop: u32) -> Option<i8> {
-        self.get_prop(spinel_prop)
-            .await
-            .ok()
-            .and_then(|r| r.property().ok().and_then(|(_, v)| Reader::new(v).i8().ok()))
+        self.get_prop(spinel_prop).await.ok().and_then(|r| {
+            r.property()
+                .ok()
+                .and_then(|(_, v)| Reader::new(v).i8().ok())
+        })
     }
 }
 

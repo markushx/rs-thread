@@ -26,7 +26,7 @@
 //! - [`MacCapabilities::missing_required`] replaces the panicking
 //!   `assert_required`.
 //! - Additions: [`SoftMacNeeds`], [`RadioCaps::soft_mac_needs`] and the
-//!   [`sim::TestRadio`] in-memory radio.
+//!   `sim::TestRadio` in-memory radio (behind the `testing` feature).
 
 use core::fmt::Debug;
 

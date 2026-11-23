@@ -44,19 +44,18 @@
 //!
 //! # esp-rs `openthread` surface
 //!
-//! With the `openthread-compat` feature, the [`compat`] module has
+//! With the `openthread-compat` feature, the `compat` module has
 //! `OpenThread`, `DeviceRole`, `NetStatus`, `Channels`, `ScanResult`,
 //! `NeighborInfo`, `RouteInfo`, the counters, `SrpConf` / `SrpService` and
 //! the methods `rs-matter-embassy` uses, with the esp-rs signatures where the
 //! instance has the data (see the module docs for the differences).
 //!
 //! # edge-nal
-//!//!
-//! With the `edge-nal` feature, [`UdpStack`] implements the `edge-nal`
+//!
+//! With the `edge-nal` feature, `UdpStack` implements the `edge-nal`
 //! `UdpBind` / `UdpConnect` traits and [`UdpSocket`] the socket traits
 //! (`UdpReceive`, `UdpSend`, `Readable`, `MulticastV6`, `UdpSplit`; IPv4
-//! is rejected). `edge-nal` 0.7 needs Rust 1.88, so the feature raises the
-//! MSRV of the crate from 1.85 to 1.88; without it the MSRV is unchanged.
+//! is rejected). `edge-nal` 0.7 requires Rust 1.88 (the workspace MSRV).
 //!
 //! The crate uses no executor and no timer crate: time comes from the `Clock`
 //! stored in the resources and the `Alarm` passed to `run`. Locking is
@@ -71,7 +70,7 @@
 //! use embassy_futures::select::select;
 //! use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 //! use rs_thread_core::crypto::soft::SoftCrypto;
-//! use rs_thread_embassy::{rs-thread, Resources, UdpSocket};
+//! use rs_thread_embassy::{RsThread, Resources, UdpSocket};
 //! use rs_thread_instance::{Config, Instance, Role};
 //! use rs_thread_platform::radio::sim::TestRadio;
 //! use rs_thread_platform::time::MockClock;

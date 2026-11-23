@@ -215,7 +215,7 @@ fn print_tlv<W: Write>(o: &mut W, ty: u8, v: &[u8]) {
             hex(o, v);
             ln!(o);
         }
-        t::IP6_ADDR_LIST if v.len() % 16 == 0 => {
+        t::IP6_ADDR_LIST if v.len().is_multiple_of(16) => {
             ln!(o, "IP6 Address List:");
             for a in v.chunks_exact(16) {
                 let mut b = [0u8; 16];
@@ -246,7 +246,7 @@ fn print_tlv<W: Write>(o: &mut W, ty: u8, v: &[u8]) {
         t::SUPPLY_VOLTAGE if v.len() == 2 => {
             ln!(o, "Supply Voltage: {}mV", u16::from_be_bytes([v[0], v[1]]));
         }
-        t::CHILD_TABLE if v.len() % 3 == 0 => {
+        t::CHILD_TABLE if v.len().is_multiple_of(3) => {
             ln!(o, "Child Table:");
             for e in v.chunks_exact(3) {
                 let w = u16::from_be_bytes([e[0], e[1]]);

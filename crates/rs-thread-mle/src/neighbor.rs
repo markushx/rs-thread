@@ -871,11 +871,9 @@ impl<const N: usize> ChildTable<N> {
             let expired = slot
                 .as_ref()
                 .is_some_and(|c| c.neighbor.is_valid() && c.is_timed_out(now));
-            if expired {
-                if let Some(c) = slot.take() {
-                    on_remove(i, c);
-                    n += 1;
-                }
+            if expired && let Some(c) = slot.take() {
+                on_remove(i, c);
+                n += 1;
             }
         }
         n

@@ -54,10 +54,10 @@ pub fn log(line: &str) {
             .ok()?;
         Some(std::sync::Mutex::new(f))
     });
-    if let Some(f) = f {
-        if let Ok(mut f) = f.lock() {
-            let _ = writeln!(f, "{:>10} {line}", micros_since_start());
-        }
+    if let Some(f) = f
+        && let Ok(mut f) = f.lock()
+    {
+        let _ = writeln!(f, "{:>10} {line}", micros_since_start());
     }
 }
 
@@ -162,10 +162,11 @@ impl SimRadio {
         if self.config.promiscuous {
             return true;
         }
-        if let Some(pan) = frame.dst_pan_id() {
-            if pan != PanId::BROADCAST && Some(pan.0) != self.config.pan_id {
-                return false;
-            }
+        if let Some(pan) = frame.dst_pan_id()
+            && pan != PanId::BROADCAST
+            && Some(pan.0) != self.config.pan_id
+        {
+            return false;
         }
         match frame.dst_address() {
             Address::None => true,
@@ -228,21 +229,22 @@ impl SimRadio {
             }
             let unicast = !matches!(frame.dst_address(), Address::Short(a) if a == ShortAddress::BROADCAST)
                 && !frame.dst_address().is_none();
-            if frame.ack_request() && unicast {
-                if let Some(seq) = frame.sequence() {
-                    let pending = frame.is_data_request()
-                        && self.src_match.ack_frame_pending(
-                            match frame.src_address() {
-                                Address::Short(a) => a.0,
-                                _ => 0xfffe,
-                            },
-                            match frame.src_address() {
-                                Address::Extended(e) => u64::from_be_bytes(e.0),
-                                _ => 0,
-                            },
-                        );
-                    self.send_ack(channel, seq, pending);
-                }
+            if frame.ack_request()
+                && unicast
+                && let Some(seq) = frame.sequence()
+            {
+                let pending = frame.is_data_request()
+                    && self.src_match.ack_frame_pending(
+                        match frame.src_address() {
+                            Address::Short(a) => a.0,
+                            _ => 0xfffe,
+                        },
+                        match frame.src_address() {
+                            Address::Extended(e) => u64::from_be_bytes(e.0),
+                            _ => 0,
+                        },
+                    );
+                self.send_ack(channel, seq, pending);
             }
             let info = PsduRxInfo {
                 len,

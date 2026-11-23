@@ -898,10 +898,11 @@ impl<R: Radio, C: CryptoBackend> Rcp<R, C> {
         // A radio without `TRANSMIT_SEC` gets finished, secured frames: the
         // frame counter and key index are assigned and the frame is sealed
         // here, as the host expects of an RCP.
-        if !self.caps.phy.contains(Capabilities::TRANSMIT_SEC) && !tx.security_processed {
-            if let Err(code) = self.secure_tx(len, &mut tx) {
-                return self.last_status(out, header, code).await;
-            }
+        if !self.caps.phy.contains(Capabilities::TRANSMIT_SEC)
+            && !tx.security_processed
+            && let Err(code) = self.secure_tx(len, &mut tx)
+        {
+            return self.last_status(out, header, code).await;
         }
         let cca = req.csma.then_some(self.st.cca_threshold);
         // The host expects the RCP to retry unacknowledged frames

@@ -125,7 +125,7 @@ impl<F: NorFlash, const BUF: usize> FlashWriter<F, BUF> {
         let erase = F::ERASE_SIZE as u32;
         let bank_size = pages * erase;
         if pages == 0
-            || start % erase != 0
+            || !start.is_multiple_of(erase)
             || (start as usize + 2 * bank_size as usize) > flash.capacity()
             || F::READ_SIZE != 1
             || F::WRITE_SIZE > 16

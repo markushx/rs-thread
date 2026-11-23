@@ -25,7 +25,9 @@ pub struct TunInterface {
 
 impl core::fmt::Debug for TunInterface {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("TunInterface").field("name", &self.name).finish()
+        f.debug_struct("TunInterface")
+            .field("name", &self.name)
+            .finish()
     }
 }
 
@@ -38,14 +40,17 @@ impl TunInterface {
     /// Requires `CAP_NET_ADMIN` on Linux, admin rights on macOS/Windows.
     pub async fn open(name: &str) -> std::io::Result<Self> {
         let mut config = tun2::Configuration::default();
-        config.name(name);
+        config.tun_name(name);
         config.up();
-        let device = tun2::create_as_async(&config)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let device =
+            tun2::create_as_async(&config).map_err(|e| std::io::Error::other(e.to_string()))?;
         let actual_name = device
             .tun_name()
             .map_err(|e| std::io::Error::other(e.to_string()))?;
-        Ok(Self { device, name: actual_name })
+        Ok(Self {
+            device,
+            name: actual_name,
+        })
     }
 
     /// The kernel-assigned interface name (e.g. `"thread0"`, `"utun3"`).
@@ -75,9 +80,11 @@ impl TunInterface {
         {
             let status = tokio::process::Command::new("ip")
                 .args([
-                    "addr", "add",
+                    "addr",
+                    "add",
                     &format!("{addr}/{prefix_len}"),
-                    "dev", &self.name,
+                    "dev",
+                    &self.name,
                 ])
                 .status()
                 .await?;
@@ -102,7 +109,8 @@ impl TunInterface {
         {
             let status = tokio::process::Command::new("ifconfig")
                 .args([
-                    &self.name, "inet6",
+                    &self.name,
+                    "inet6",
                     &format!("{addr}/{prefix_len}"),
                     "alias",
                 ])
@@ -132,9 +140,12 @@ impl TunInterface {
         {
             let status = tokio::process::Command::new("ip")
                 .args([
-                    "-6", "route", "add",
+                    "-6",
+                    "route",
+                    "add",
                     &format!("{prefix}/{prefix_len}"),
-                    "dev", &self.name,
+                    "dev",
+                    &self.name,
                 ])
                 .status()
                 .await?;
@@ -149,9 +160,12 @@ impl TunInterface {
         {
             let status = tokio::process::Command::new("route")
                 .args([
-                    "-n", "add", "-inet6",
+                    "-n",
+                    "add",
+                    "-inet6",
                     &format!("{prefix}/{prefix_len}"),
-                    "-interface", &self.name,
+                    "-interface",
+                    &self.name,
                 ])
                 .status()
                 .await?;
