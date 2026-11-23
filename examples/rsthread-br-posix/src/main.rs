@@ -1,9 +1,14 @@
 //! rsthread-br-posix: Thread Border Router daemon.
 //!
-//! Opens a Spinel RCP connection (UART or TCP socket), runs the rs-thread
-//! stack over it, and bridges Thread IPv6 traffic to the host network via a
-//! TUN interface.  SRP registrations are advertised on the backbone via mDNS
-//! and DNS queries are forwarded to the upstream resolver.
+//! Drop-in replacement for `otbr-agent` with the same argument surface.
+//! Accepts both OT RCP firmware URLs (`spinel+hdlc+uart://`) and rs-thread
+//! RCP URLs (`spinel+uart://`); HDLC-lite framing is handled inside the
+//! RadioSpinel layer, so both map to the same transport.
+//!
+//! Usage (matches otbr-agent):
+//!   rsthread-br-posix [-I thread-ifname] [-B backbone-ifname]
+//!                     [-d debug-level] [-v] [--auto-attach[=0/1]]
+//!                     RADIO_URL [RADIO_URL_2]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -32,36 +37,118 @@ use rs_thread_ncp::{
 use rs_thread_platform::{Alarm, Clock, Radio, RamSettings};
 use tokio::sync::mpsc;
 
-// ── CLI ──────────────────────────────────────────────────────────────────────
+// ── CLI (matches otbr-agent) ──────────────────────────────────────────────────
 
-/// Thread Border Router daemon — Rust port of ot-br-posix.
+/// Thread Border Router daemon — rs-thread implementation of ot-br-posix.
+///
+/// Accepts both OT RCP firmware (`spinel+hdlc+uart://`) and rs-thread RCP
+/// (`spinel+uart://`) URLs.  HDLC-lite framing is handled inside the
+/// RadioSpinel layer.
 #[derive(Debug, Parser)]
+#[command(version, name = "rsthread-br-posix")]
 struct Args {
-    /// Radio URL: `spinel+uart:///dev/tty.usbmodem*` or
-    /// `spinel+socket://127.0.0.1:9000`
-    #[arg(long, short = 'r', value_name = "URL")]
-    radio_url: String,
+    /// Spinel radio URL(s).  Accepts the same schemes as otbr-agent:
+    /// `spinel+hdlc+uart:///dev/ttyUSB0?uart-baudrate=115200`,
+    /// `spinel+hdlc+uart:///dev/ttyUSB0`, or
+    /// `spinel+socket://127.0.0.1:9000`.
+    /// The `+hdlc+` variant is equivalent — HDLC framing is built in.
+    #[arg(value_name = "RADIO_URL", required = true)]
+    radio_urls: Vec<String>,
 
-    /// Backbone interface name (e.g. `en0`, `eth0`)
-    #[arg(long, short = 'b', value_name = "IFACE", default_value = "en0")]
-    backbone: String,
+    /// Thread network interface (TUN device) name.
+    #[arg(short = 'I', long = "thread-ifname", value_name = "IFNAME",
+          default_value = "wpan0")]
+    thread_ifname: String,
 
-    /// TUN interface name hint
-    #[arg(long, default_value = "thread0")]
-    tun: String,
+    /// Backbone network interface name.  May be specified multiple times;
+    /// the first value is used.
+    #[arg(short = 'B', long = "backbone-ifname", value_name = "IFNAME")]
+    backbone_ifnames: Vec<String>,
 
-    /// UDP address the DNS proxy listens on (use port 53 with CAP_NET_BIND_SERVICE / root)
-    #[arg(long, default_value = "[::1]:5300")]
+    /// Log level, 0 (emergency) – 7 (debug).  Default 5 (notice / info).
+    /// Overridden by the `RUST_LOG` environment variable if set.
+    #[arg(short = 'd', long = "debug-level", value_name = "LEVEL",
+          value_parser = clap::value_parser!(u8).range(0..=7))]
+    debug_level: Option<u8>,
+
+    /// Enable verbose (debug) logging; equivalent to `-d 7`.
+    #[arg(short = 'v', long = "verbose")]
+    verbose: bool,
+
+    /// Enable or disable auto-attach to an existing Thread network on startup.
+    /// Pass `--auto-attach` or `--auto-attach=1` to enable (default),
+    /// `--auto-attach=0` to disable.
+    #[arg(long = "auto-attach", value_name = "0|1",
+          num_args = 0..=1, default_missing_value = "1",
+          require_equals = false)]
+    auto_attach: Option<u8>,
+
+    /// REST API listen address (not yet implemented; accepted for compatibility).
+    #[arg(long = "rest-listen-address", value_name = "ADDR",
+          default_value = "::")]
+    rest_listen_address: String,
+
+    /// REST API listen port (not yet implemented; accepted for compatibility).
+    #[arg(long = "rest-listen-port", value_name = "PORT",
+          default_value_t = 8081u16)]
+    rest_listen_port: u16,
+
+    // ── rs-thread extensions (not in otbr-agent) ───────────────────────────
+
+    /// UDP address the DNS proxy listens on.
+    /// Use port 53 with CAP_NET_BIND_SERVICE or root.
+    #[arg(long = "dns-addr", value_name = "ADDR",
+          default_value = "[::1]:5300")]
     dns_addr: String,
 
-    /// Form a new Thread network immediately (leader mode).  Generates a
-    /// random Network Key.  Use `--channel` to pick the channel.
-    #[arg(long)]
+    /// Form a new Thread network immediately as leader.  Generates a random
+    /// Network Key; use `--channel` to pick the 802.15.4 channel.
+    #[arg(long = "become-leader")]
     become_leader: bool,
 
-    /// 802.15.4 channel to use with `--become-leader` (default: 15)
-    #[arg(long, default_value_t = 15u8)]
+    /// 802.15.4 channel to use with `--become-leader`.
+    #[arg(long = "channel", default_value_t = 15u8)]
     channel: u8,
+}
+
+impl Args {
+    /// Returns the first (primary) radio URL.
+    fn radio_url(&self) -> &str {
+        &self.radio_urls[0]
+    }
+
+    /// Returns the backbone interface name, defaulting to `en0` / `eth0`.
+    fn backbone(&self) -> &str {
+        self.backbone_ifnames
+            .first()
+            .map(String::as_str)
+            .unwrap_or("en0")
+    }
+
+    /// Returns true if auto-attach is enabled (the default).
+    fn auto_attach_enabled(&self) -> bool {
+        self.auto_attach.map(|v| v != 0).unwrap_or(true)
+    }
+
+    /// Applies `-d` / `-v` to the env_logger builder.
+    fn apply_log_level(&self, builder: &mut env_logger::Builder) {
+        // RUST_LOG takes priority; only apply -d/-v when it isn't set.
+        if std::env::var("RUST_LOG").is_ok() {
+            return;
+        }
+        let level = if self.verbose {
+            log::LevelFilter::Trace
+        } else {
+            match self.debug_level.unwrap_or(5) {
+                0..=3 => log::LevelFilter::Error,
+                4 => log::LevelFilter::Warn,
+                5 => log::LevelFilter::Info,
+                6 => log::LevelFilter::Debug,
+                _ => log::LevelFilter::Trace,
+            }
+        };
+        builder.filter_level(level);
+    }
 }
 
 // ── OS entropy RNG ───────────────────────────────────────────────────────────
@@ -177,7 +264,27 @@ impl core::fmt::Debug for RadioTransport {
     }
 }
 
+/// Normalises a Spinel radio URL and opens the transport.
+///
+/// Accepted schemes (case-insensitive scheme prefix):
+///   - `spinel+hdlc+uart:///dev/ttyUSB0`          (OT RCP firmware, same as below)
+///   - `spinel+hdlc+uart:///dev/ttyUSB0?uart-baudrate=115200`
+///   - `spinel+uart:///dev/ttyUSB0`               (rs-thread RCP, raw UART)
+///   - `spinel+hdlc+socket://127.0.0.1:9000`      (OT RCP over TCP)
+///   - `spinel+socket://127.0.0.1:9000`           (rs-thread RCP over TCP)
+///
+/// HDLC-lite framing is handled inside RadioSpinel, so `+hdlc+` and the
+/// plain variants are equivalent at this level.
 async fn open_transport(url: &str) -> Result<RadioTransport> {
+    // Normalise: strip `+hdlc` from the scheme (ot-cli always writes
+    // lower-case) and strip query parameters (e.g. `?uart-baudrate=115200`).
+    // We open the file descriptor directly and rely on the host's baud rate
+    // setting; a future improvement is to call tcsetattr when the query exists.
+    let normalised = url
+        .replace("spinel+hdlc+uart://", "spinel+uart://")
+        .replace("spinel+hdlc+socket://", "spinel+socket://");
+    let url: &str = normalised.split('?').next().unwrap_or(&normalised);
+
     if let Some(path) = url.strip_prefix("spinel+uart://") {
         let file = tokio::fs::OpenOptions::new()
             .read(true)
@@ -193,7 +300,9 @@ async fn open_transport(url: &str) -> Result<RadioTransport> {
         Ok(RadioTransport::Socket(stream))
     } else {
         anyhow::bail!(
-            "unknown radio URL scheme: {url}\nExpected spinel+uart:// or spinel+socket://"
+            "unknown radio URL scheme: {url}\n\
+             Expected spinel+hdlc+uart://, spinel+uart://, \
+             spinel+hdlc+socket://, or spinel+socket://"
         )
     }
 }
@@ -250,17 +359,29 @@ fn parse_srp_txt(raw: &[u8]) -> Vec<(String, Vec<u8>)> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     let args = Args::parse();
+
+    let mut log_builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    args.apply_log_level(&mut log_builder);
+    log_builder.init();
+
     log::info!("rsthread-br-posix starting");
-    log::info!("  radio URL : {}", args.radio_url);
-    log::info!("  backbone  : {}", args.backbone);
-    log::info!("  tun       : {}", args.tun);
+    log::info!("  radio URL : {}", args.radio_url());
+    log::info!("  backbone  : {}", args.backbone());
+    log::info!("  ifname    : {}", args.thread_ifname);
     log::info!("  dns addr  : {}", args.dns_addr);
+    log::info!("  auto-attach: {}", args.auto_attach_enabled());
+
+    if !args.rest_listen_address.is_empty() {
+        log::info!(
+            "  REST API  : {}:{} (not yet implemented)",
+            args.rest_listen_address, args.rest_listen_port
+        );
+    }
 
     // 1. Open the Spinel transport and initialise the radio.
-    let transport = open_transport(&args.radio_url).await?;
+    let transport = open_transport(args.radio_url()).await?;
     let mut radio = RadioSpinel::new(transport);
     let caps = radio
         .init()
@@ -279,7 +400,7 @@ async fn main() -> Result<()> {
     )));
     let rsthread: RsThread<'static, NoopRawMutex, _, _, _, _> = RsThread::new(resources);
 
-    // 4. Optionally form a new Thread network immediately.
+    // 4. Optionally form a new Thread network immediately, or auto-attach.
     if args.become_leader {
         let mut key_bytes = [0u8; 16];
         getrandom::fill(&mut key_bytes).expect("getrandom failed");
@@ -301,12 +422,14 @@ async fn main() -> Result<()> {
             "Thread network formed (channel {}, PAN 0xface)",
             args.channel
         );
-    } else {
-        // Try to restore Thread from saved settings; non-fatal if no dataset.
+    } else if args.auto_attach_enabled() {
+        // Try to resume Thread from saved settings; non-fatal if no dataset.
         rsthread
             .thread_start()
             .map_err(|e| log::warn!("thread_start: {e:?} — configure a dataset via REST API"))
             .ok();
+    } else {
+        log::info!("auto-attach disabled; waiting for dataset to be configured");
     }
 
     // 5. Enable the SRP server and publish the OMR prefix to Network Data.
@@ -328,7 +451,7 @@ async fn main() -> Result<()> {
     });
 
     // 6. Open the TUN interface.
-    let mut tun = TunInterface::open(&args.tun)
+    let mut tun = TunInterface::open(&args.thread_ifname)
         .await
         .context("open TUN interface")?;
     log::info!("TUN interface opened: {}", tun.name());
@@ -350,7 +473,7 @@ async fn main() -> Result<()> {
     let srp = Rc::new(RefCell::new(srp_proxy));
 
     // 8. Create routing manager and DNS proxy.
-    let mut routing = RoutingManager::new(&args.backbone);
+    let mut routing = RoutingManager::new(args.backbone());
     routing.set_omr_prefix(omr);
 
     let dns_addr: SocketAddr = args
