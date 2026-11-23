@@ -68,7 +68,7 @@ go-faster = []
 [dependencies]
 
 [build-dependencies]
-bindgen = "0.72.0"
+bindgen = "0.73.2"
 
 [badges]
 gitlab = { repository = "https://gitlab.com/markushx/opentrust" }
