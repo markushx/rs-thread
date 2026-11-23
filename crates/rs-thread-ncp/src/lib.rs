@@ -10,7 +10,7 @@
 //!
 //! The frame codec and HDLC-lite framing are in `rs-thread-spinel`.
 //! Deviations from OpenThread are listed in
-//! `OPENTRUST-OPENTHREAD-DIFFERENCES.md` ("Spinel").
+//! `RSTHREAD-OPENTHREAD-DIFFERENCES.md` ("Spinel").
 
 #[cfg(test)]
 extern crate std;

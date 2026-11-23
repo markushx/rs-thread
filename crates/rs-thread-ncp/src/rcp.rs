@@ -75,7 +75,7 @@ impl<T: Transport> Out<'_, T> {
 /// Static description of the RCP for `NCP_VERSION` and `HWADDR`.
 #[derive(Debug, Clone, Copy)]
 pub struct RcpInfo {
-    /// `NCP_VERSION` string, e.g. `"OPENTRUST/0.1; RCP; nrf52840"`.
+    /// `NCP_VERSION` string, e.g. `"RS-THREAD/0.1; RCP; nrf52840"`.
     pub version: &'static str,
     /// IEEE EUI-64 of the radio (`HWADDR`), canonical byte order.
     pub eui64: [u8; 8],

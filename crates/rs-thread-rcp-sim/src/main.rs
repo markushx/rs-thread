@@ -137,7 +137,7 @@ fn main() {
     // The OpenThread simulation's EUI-64: 18b430 + node ID.
     let id = u32::from(node_id).to_be_bytes();
     let info = RcpInfo {
-        version: concat!("OPENTRUST/", env!("CARGO_PKG_VERSION"), "; RCP; simulation"),
+        version: concat!("RS-THREAD/", env!("CARGO_PKG_VERSION"), "; RCP; simulation"),
         eui64: [0x18, 0xb4, 0x30, 0x00, id[0], id[1], id[2], id[3]],
         now_us,
     };

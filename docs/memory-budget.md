@@ -1,6 +1,6 @@
 # Memory budget
 
-RAM used by `opentrust_instance::Instance` (x86_64 `size_of_val`, includes a
+RAM used by `rs_thread_instance::Instance` (x86_64 `size_of_val`, includes a
 caller-provided `RamSettings<4096>`; 32-bit targets are somewhat smaller).
 Regenerate with
 `cargo test -p rs-thread-instance instance_size_breakdown -- --nocapture`;
@@ -14,7 +14,7 @@ the test asserts an upper bound per feature set (`src/size_test.rs`).
 | `ftd` only | 116240 | 87200 | 87200 |
 | MTD (`--no-default-features`) | 102800 | 78976 | 64672 |
 
-The "Capacities per role" column is the `opentrust_instance::config` module:
+The "Capacities per role" column is the `rs_thread_instance::config` module:
 with `default-features = false` the parent-role tables are zero-sized (child
 table 10 to 0, forwarder indirect queue and held datagrams, MPL buffered
 messages 4 to 0, MAC indirect queue, CSL child table, poll queue 4 to 1, MAC
@@ -39,7 +39,7 @@ default set; the "Before pooling" figures of the first column are historic.
 
 ## Storage model
 
-Queued messages live in chains of 128-byte buffers (`opentrust_core::bufpool`,
+Queued messages live in chains of 128-byte buffers (`rs_thread_core::bufpool`,
 OpenThread's message buffer size) taken from a pool owned by the queue's
 owner: outbox, Border Agent outbox, UDP sockets (one pool for all receive
 queues), indirect queue, forwarder held datagrams, CoAP endpoint (pending
@@ -288,7 +288,7 @@ fewer rs-matter clusters, `max-fabrics-*` and `stack-max-*` features.
 
 ## SRP service slots
 
-The SRP client keeps `SRP_SERVICES` service slots (`opentrust_instance::SRP_SERVICES`,
+The SRP client keeps `SRP_SERVICES` service slots (`rs_thread_instance::SRP_SERVICES`,
 default 6, features `srp-services-8` and `srp-services-12`): Matter registers one
 operational service per fabric plus the commissionable service, and requires at
 least five fabrics. With four slots only three fabrics fitted next to the

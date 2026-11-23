@@ -33,7 +33,7 @@
 //! coordinates `< p`, not the identity); every ZKP is verified
 //! (`V == r * G + h * X`, `r < n`); the peer generator in round two must
 //! not be the identity; trailing bytes are rejected. Deviations from
-//! mbedTLS are listed in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`
+//! mbedTLS are listed in `RSTHREAD-OPENTHREAD-DIFFERENCES.md`
 //! ("DTLS / EC-JPAKE").
 //!
 //! # Secrets

@@ -28,7 +28,7 @@
 //! the record sequence number of the ClientHello copied into the server's
 //! records; retransmission with doubling timeout (OpenThread: 8 s .. 60 s)
 //! and a 508-byte MTU from the second retransmission on.
-//! Deviations are listed in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`
+//! Deviations are listed in `RSTHREAD-OPENTHREAD-DIFFERENCES.md`
 //! ("DTLS / EC-JPAKE").
 //!
 //! # Not supported

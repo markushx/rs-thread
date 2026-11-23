@@ -8,7 +8,7 @@ behind Spinel) is not implemented yet.
 | crate | contents |
 |-------|----------|
 | `rs-thread-spinel` | `no_std`, no alloc: HDLC-lite framing (`Hdlc::Encoder` / `Decoder` of OpenThread, CRC-16/X.25), Spinel data types (`codec::Writer` / `Reader`: packed integers, `d`, `D`, `U`, `t(...)`), frame header and `Frame` parsing, command / status / capability / property constants |
-| `rs-thread-ncp` | `no_std`, no alloc: `rcp::Rcp`, any `opentrust_platform::radio::Radio` behind the Spinel radio property set, over a `rcp::Transport` (UART, USB CDC, pipe) |
+| `rs-thread-ncp` | `no_std`, no alloc: `rcp::Rcp`, any `rs_thread_platform::radio::Radio` behind the Spinel radio property set, over a `rcp::Transport` (UART, USB CDC, pipe) |
 | `rs-thread-rcp-sim` | host binary: `Rcp` on stdin / stdout plus OpenThread's real-time simulation radio (UDP multicast), like `ot-rcp` of the simulation platform |
 | `examples/nrf52840-leader` `--bin rcp` | firmware: the nRF52840 radio (`radio-nrf802154`) as RCP on the DK's VCOM UART |
 
@@ -102,7 +102,7 @@ PORT_OFFSET=1 ot-cli-ftd-rt 2     # a simulation peer on the same radio
 
 The node ID is the `forkpty-arg`; `rs-thread-rcp-sim` takes `PORT_BASE`
 (default 9000) and `PORT_OFFSET` (default 0) like OpenThread's simulation
-and logs to the file named by `OPENTRUST_RCP_LOG` (`OPENTRUST_RCP_HEX=1`
+and logs to the file named by `RSTHREAD_RCP_LOG` (`RSTHREAD_RCP_HEX=1`
 adds the received PSDUs); it never writes to stderr (which is the Spinel
 link).
 

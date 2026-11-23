@@ -101,7 +101,7 @@ Troubleshooting).
 ## 4. Build and flash the light with the dataset
 
 ```sh
-export OPENTRUST_DATASET=<hex from "dataset active -x">
+export RSTHREAD_DATASET=<hex from "dataset active -x">
 cd examples/nrf52840-light
 unset CARGO_TARGET_DIR
 export PATH="$(../nrf52840-leader/tools/mkshims.sh):$PATH"
@@ -112,7 +112,7 @@ probe-rs download --chip nRF52840_xxAA --probe <selector> \
 probe-rs reset --chip nRF52840_xxAA --probe <selector>
 ```
 
-The build embeds the dataset (`build.rs` reads `OPENTRUST_DATASET` and rebuilds
+The build embeds the dataset (`build.rs` reads `RSTHREAD_DATASET` and rebuilds
 when it changes). Without the variable the light forms its own standalone
 network, as before. The light attaches to the BR's network (it forms a partition
 of its own only if no router answers, as OpenThread does). A partial dataset
@@ -175,7 +175,7 @@ command; LED1 follows the attribute.
 
 Run on a Mac with ot-br-posix (`otbr-agent`, OpenThread thread-reference-20230710,
 RCP = nRF52840 Dongle, mDNSResponder advertising proxy), channel 24, on-mesh
-prefix `fd11:69::/64`, the light (this repository, `OPENTRUST_DATASET` = the
+prefix `fd11:69::/64`, the light (this repository, `RSTHREAD_DATASET` = the
 BR's dataset): the light attached (Child after about 3 to 12 s, Router after
 about a minute), got `fd11:69::<iid>` by SLAAC, registered `_matterc._udp` with
 subtypes `_L3840`, `_S15`, `_V65521`, `_CM` and TXT `D=3840 CM=1 VP=65521+32769
@@ -198,7 +198,7 @@ drops all registrations), or pair by address with
 
 ## 5a. BLE commissioning
 
-The default build of the light (feature `ble`, no `OPENTRUST_DATASET`) is
+The default build of the light (feature `ble`, no `RSTHREAD_DATASET`) is
 unprovisioned: it keeps Thread off, advertises the Matter service over BLE
 (UUID 0xFFF6, discriminator 3840, name `BT`) and waits for a commissioner. The
 Nordic SoftDevice Controller and the 802.15.4 driver share MPSL, so BLE runs
@@ -210,7 +210,7 @@ a stored or build-time dataset, does not advertise.
 ```sh
 cd examples/nrf52840-light
 CARGO_INCREMENTAL=0 cargo build --release        # BLE, unprovisioned
-# --no-default-features: Thread only, as before (OPENTRUST_DATASET still works)
+# --no-default-features: Thread only, as before (RSTHREAD_DATASET still works)
 # Button 1 held at boot: factory reset, back to BLE commissioning
 chip-tool pairing ble-thread 2 hex:<active dataset TLVs> 20202021 3840 \
     --storage-directory <dir>

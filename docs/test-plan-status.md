@@ -10,7 +10,7 @@ harness are in [test-status.md](test-status.md).
 
 ## Method
 
-- Harness: `crates/rs-thread-sim/tests/thread_cert.rs` (`OPENTRUST_CERT=1`), virtual time, OpenThread
+- Harness: `crates/rs-thread-sim/tests/thread_cert.rs` (`RSTHREAD_CERT=1`), virtual time, OpenThread
   `simulator.py`, `THREAD_VERSION=1.4`, `ot-cli-ftd` from `cargo build -p openthread-sys`
   (`OT_BORDER_ROUTER`, `OT_DUA`, `OT_MLR`, `OT_BACKBONE_ROUTER`, `OT_CSL_RECEIVER`, link metrics, SRP client and
   server; plus `ot-cli-ftd-1.1`, a Thread 1.1 build for the nodes with `'version': '1.1'`).
@@ -339,7 +339,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 ## pktverify (packet verification with tshark 4.6)
 
-`OPENTRUST_CERT_PKTVERIFY=1`, configurations `ot` and `all` only, 105 cases (the cases of the tables above
+`RSTHREAD_CERT_PKTVERIFY=1`, configurations `ot` and `all` only, 105 cases (the cases of the tables above
 without the functional tests). The "pktverify (ot / all)" column is the result of the all-OpenThread run /
 the all-rs-thread run. The CLI based status is the authoritative column: with `tshark` 4.6.x the dissection
 differs from the Wireshark version the `pktverify` checks were written for, so a failure in both

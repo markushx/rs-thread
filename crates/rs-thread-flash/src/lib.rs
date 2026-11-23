@@ -33,7 +33,7 @@
 //!
 //! # Differences from OpenThread
 //!
-//! See `OPENTRUST-OPENTHREAD-DIFFERENCES.md`: OpenThread's reference
+//! See `RSTHREAD-OPENTHREAD-DIFFERENCES.md`: OpenThread's reference
 //! platform writes synchronously, one record per `otPlatSettings*` call; here
 //! writes are deferred and merged per key.
 

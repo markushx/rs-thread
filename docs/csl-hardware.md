@@ -175,7 +175,7 @@ VCOM and debug interface were gone) and no border router was running.
 
 A second restore difference showed in `Cert_6_5_02`: OpenThread restores the extended
 address at instance creation, rs-thread only at `thread start`, so a reset device reported a
-random address before the start (see OPENTRUST-OPENTHREAD-DIFFERENCES.md).
+random address before the start (see RSTHREAD-OPENTHREAD-DIFFERENCES.md).
 
 ## Parent loss and re-attach
 

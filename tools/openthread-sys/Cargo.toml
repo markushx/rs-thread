@@ -6,12 +6,12 @@ edition = "2018"
 build = "build.rs"
 links = "openthread"
 license = "Apache-2.0"
-description = "Rust FFI bindings for OpenThread (used by OpenTrust as interop/test oracle)"
+description = "Rust FFI bindings for OpenThread (used by rs-thread as interop/test oracle)"
 keywords = ["openthread", "thread"]
 categories = ["api-bindings", "embedded"]
 # TODO: add no-std to categories, when done
-homepage = "https://gitlab.com/markushx/opentrust/"
-repository = "https://gitlab.com/markushx/opentrust/"
+homepage = "https://github.com/markushx/rs-thread/"
+repository = "https://github.com/markushx/rs-thread/"
 readme = "README.md"
 
 include = [
@@ -55,7 +55,7 @@ cli = []
 ftd = []
 mtd = []
 # Real-time simulation nodes and the OpenThread posix host (`ot-cli-posix`) for
-# the Spinel interoperability tests of `opentrust-rcp-sim`.
+# the Spinel interoperability tests of `rs-thread-rcp-sim`.
 posix-host = []
 # C++ shim over OpenThread internals for differential tests (`shim/diff_shim.cpp`).
 diff-shim = []
@@ -71,5 +71,5 @@ go-faster = []
 bindgen = "0.72.0"
 
 [badges]
-gitlab = { repository = "https://gitlab.com/markushx/opentrust" }
+github = { repository = "https://github.com/markushx/rs-thread" }
 maintenance = { status = "experimental" }

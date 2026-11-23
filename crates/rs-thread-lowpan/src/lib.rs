@@ -30,7 +30,7 @@
 //!   [`reassembly::Reassembler::next_deadline`] and call `expire`.
 //!
 //! Behaviour follows OpenThread (`lowpan.cpp`, `mesh_forwarder.cpp`); the
-//! deviations are listed in `OPENTRUST-OPENTHREAD-DIFFERENCES.md`.
+//! deviations are listed in `RSTHREAD-OPENTHREAD-DIFFERENCES.md`.
 
 #[cfg(test)]
 extern crate std;

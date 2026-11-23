@@ -1,14 +1,14 @@
 # OpenThread observations
 
-Behaviour of OpenThread that OpenTrust follows for interoperability or
+Behaviour of OpenThread that rs-thread follows for interoperability or
 certification, but that is questionable against the Thread specification or
 from a security point of view. Each entry is a candidate for a later review
-(and possibly a report upstream). Differences in OpenTrust itself are listed in
-`OPENTRUST-OPENTHREAD-DIFFERENCES.md`.
+(and possibly a report upstream). Differences in rs-thread itself are listed in
+`RSTHREAD-OPENTHREAD-DIFFERENCES.md`.
 
 ## Joiner receives the Network Key after a rejected JOIN_FIN
 
-- **Status:** OpenTrust follows OpenThread (decision 2026-11-16: keep for now).
+- **Status:** rs-thread follows OpenThread (decision 2026-11-16: keep for now).
 - **Spec (Thread 1.4.1, 8.9.2.2 JOIN_FIN.rsp):** "When JOIN_FIN.rsp is
   encapsulated as DTLS Application Data in a RLY_TX.ntf message, the
   Commissioner MUST include the KEK TLV in this RLY_TX.ntf message." There is no
@@ -28,11 +28,11 @@ from a security point of view. Each entry is a candidate for a later review
   has proven the PSKd, so the Commissioner admitted it cryptographically; the
   `Reject` only concerns the vendor provisioning application. Still, a device
   told "wrong Commissioner" ends up with the Network Key.
-- **OpenTrust before the change:** relayed the KEK only for `Accept`, and the
+- **rs-thread before the change:** relayed the KEK only for `Accept`, and the
   Joiner failed with a security error on `Reject`. OpenThread certification
   cases Cert_8_1_06 and Cert_8_2_05 fail with that behaviour.
-- **Code:** `crates/opentrust-meshcop/src/commissioner.rs` (KEK with every
-  JOIN_FIN.rsp), `crates/opentrust-meshcop/src/joiner.rs` (Entrust state after
+- **Code:** `crates/rs-thread-meshcop/src/commissioner.rs` (KEK with every
+  JOIN_FIN.rsp), `crates/rs-thread-meshcop/src/joiner.rs` (Entrust state after
   any State value).
 - **Options for later:** a build/runtime option for the strict behaviour (no KEK
   on `Reject`, Joiner stops on `Reject`); ask the Thread Group whether the
@@ -45,7 +45,7 @@ from a security point of view. Each entry is a candidate for a later review
   scan runs (for example `scan` on the CLI), no result callback ever arrives, the
   timer is not restarted and the request is never answered; the Commissioner
   waits for a report that does not come.
-- **OpenTrust:** the server tries again after 500 ms
+- **rs-thread:** the server tries again after 500 ms
   (`EnergyScanServer::scan_failed`, `PanIdQueryServer::scan_failed`).
 - **Options for later:** answer the request with an empty list after a number of
   retries.
@@ -61,7 +61,7 @@ from a security point of view. Each entry is a candidate for a later review
 - **Assessment:** harmless but accidental; the order is not specified. The
   certification case Cert_5_3_08 verifies its pings in the order of the `ipaddr`
   listing, so the order is observable.
-- **OpenTrust:** copies the order (`crates/opentrust-instance/src/dhcp6.rs`,
+- **rs-thread:** copies the order (`crates/rs-thread-instance/src/dhcp6.rs`,
   Reply): the prefixes this node serves in reverse Network Data order. A server
   that removed and re-added prefixes may order differently from OpenThread (the
   slot positions are not modelled).
@@ -70,12 +70,12 @@ from a security point of view. Each entry is a candidate for a later review
 
 - **OpenThread:** `DataPollSender::ResetKeepAliveTimer` (called after an acknowledged secured data frame to a Thread 1.2 parent) only restarts the poll timer when `mPollPeriod == GetDefaultPollPeriod()`, the period derived from the child timeout. A device with `pollperiod 2000` therefore keeps polling on its own schedule, but a device whose application period is longer than the default (the default wins as the minimum) has its poll postponed by every data frame.
 - **Why it matters:** LowPower 7.1.2 pings with a timeout equal to the poll period; a postponing implementation misses it.
-- **OpenTrust:** copies the condition (`PollSender::mle_period`).
+- **rs-thread:** copies the condition (`PollSender::mle_period`).
 
 ## Link metrics of a radio without LQI
 
 - **OpenThread:** the simulation radio reports `OT_RADIO_LQI_NONE` (0) for every received frame; `Neighbor::AggregateLinkMetrics` still counts the frame, with LQI 0.
-- **OpenTrust:** counts such frames with LQI 0 as well.
+- **rs-thread:** counts such frames with LQI 0 as well.
 
 ## Simulated radio acknowledges frames for short address 0x0000 on every node
 
@@ -88,7 +88,7 @@ the radio reports it as the ACK of the transmission, so every transmission to
 the router fails its 15 retries. The alternate short address of the simulated
 radio is probably never initialised to invalid. About 1 run in 62 gives the
 router Router ID 0; the thread-cert and mtd tests flaked at that rate.
-The OpenTrust virtual-time simulator drops an ACK from a node whose
+The rs-thread virtual-time simulator drops an ACK from a node whose
 known short address differs from a 0x0000 destination.
 
 ## SRP server: a duplicate "delete all RRsets" record ends the service description pass silently
@@ -101,8 +101,8 @@ known short address differs from a 0x0000 destination.
   records from the start of the update section.
 - **Assessment:** accidental; the result is a parse failure further on. It
   cannot make a signature verify that does not.
-- **OpenTrust:** rejects the message with FORMERR
-  (`crates/opentrust-dns/src/srp/server.rs`, `service_description`).
+- **rs-thread:** rejects the message with FORMERR
+  (`crates/rs-thread-dns/src/srp/server.rs`, `service_description`).
 
 ## SRP server: the signer name of the SIG(0) record is not checked
 
@@ -111,13 +111,13 @@ known short address differs from a 0x0000 destination.
   matters (the key binds the names).
 - **Assessment:** consistent with RFC 9665 (the signature proves possession of
   the key registered for the names).
-- **OpenTrust:** copies it (`additional_section`).
+- **rs-thread:** copies it (`additional_section`).
 
 ## SRP server: a KEY record of any name sets the host key
 
 - **OpenThread:** the host description pass takes the first KEY record of the
   update section for the host regardless of its owner name.
-- **OpenTrust:** copies it (`host_description`).
+- **rs-thread:** copies it (`host_description`).
 
 ## `RCP_MAC_KEY` carries the shifted key ID mode
 
@@ -125,7 +125,7 @@ known short address differs from a 0x0000 destination.
 mode `Mac::Frame::kKeyIdMode1`, which is the security control bits of the
 802.15.4 auxiliary header (`1 << 3` = 8), not the mode number 1. The Spinel
 field is documented as "key ID mode", a host that sends 1 gets `InvalidArgs`.
-OpenTrust accepts 8 like OpenThread (`opentrust-ncp`).
+rs-thread accepts 8 like OpenThread (`rs-thread-ncp`).
 
 ## Transmit done with a frame when no ACK was requested
 
@@ -133,7 +133,7 @@ OpenTrust accepts 8 like OpenThread (`opentrust-ncp`).
 transmission succeeded, also when no ACK was requested or received: a zero
 length frame with RSSI 0, noise floor -128, channel 0 and LQI 255. The host
 (`RadioSpinel::ParseRadioFrame`) reads it as "no ACK frame" only because the
-length is zero. OpenTrust sends the same bytes.
+length is zero. rs-thread sends the same bytes.
 
 ## Posix host requires `tx-security` and `tx-timing` from every RCP
 

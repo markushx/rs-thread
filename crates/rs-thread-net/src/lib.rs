@@ -35,7 +35,7 @@
 //! [`resolver::ResolverEnv`], [`resolver::ChildLookup`].
 //!
 //! Behaviour follows OpenThread's `src/core/net`; deviations are listed in
-//! `OPENTRUST-OPENTHREAD-DIFFERENCES.md` ("Network layer (IPv6)").
+//! `RSTHREAD-OPENTHREAD-DIFFERENCES.md` ("Network layer (IPv6)").
 
 #[cfg(test)]
 extern crate std;
