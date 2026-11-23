@@ -87,6 +87,26 @@ Notes, no optimisation done:
 | ESP32-C6 | 512 kB | fits comfortably | fits comfortably |
 | ESP32-H2 | 320 kB | fits | fits |
 
+## Optional feature sizes
+
+The table below lists the new Cargo features added for end-device size reduction.
+Sizes are approximate x86_64 `size_of` gains (negative = bytes saved vs. default);
+no measurement has been taken yet — these are estimates pending a DK build.
+
+| Feature | Crates gated | What it removes when disabled |
+|---|---|---|
+| `ping` | `opentrust-instance`, `opentrust-embassy` | ICMPv6 echo-request sender, `PingReply` queue, embassy `ping_seq` field; saves about 200 B |
+| `dtls-server` | `opentrust-dtls`, enabled by `commissioner` | DTLS 1.2 server role: `Session::server()`, HVR / cookie path, server handshake methods; saves about 2 kB of flash (server flight builders) |
+| `border-agent` | `opentrust-meshcop` (via `commissioner`) | ePSKc module; already gated by `commissioner` in the firmware |
+| `csl` | `opentrust-instance`, `opentrust-embassy` | CSL accuracy fields in MLE, `SetCsl`/`ReceiveAt` radio actions; saves about 300–500 B |
+| `link-metrics` | `opentrust-instance`, `opentrust-embassy` | Link Metrics probe/report handlers and neighbor extension data; saves about 1 kB |
+| `testing` | `opentrust-platform`, `opentrust-sim` | `TestRadio`, `MockClock`, `MockAlarm`; zero cost in production builds (never compiled unless `cfg(test)` or the feature is set) |
+
+The two firmware targets (`nrf52840-leader`, `nrf52840-light`) use
+`default-features = false, features = ["ftd"]` for `opentrust-instance`
+and `opentrust-embassy`, so none of the above optional features are compiled
+into production images unless explicitly added.
+
 ## What remains
 
 - Core (MAC 5848, IPv6 5768, MAC tx queue 4640, `RamSettings` 4096) and the
