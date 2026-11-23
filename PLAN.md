@@ -402,8 +402,51 @@ Security-relevant decisions for the review before M4:
 
 ## Phase 16 – Port ot-br-posix
 
-- [ ] Port ot-br-posix to Rust
-  - Context: `ot-br-posix` talks to its radio through the OpenThread posix platform and Spinel, so an rs-thread RCP (`docs/spinel.md`) already works under the unmodified C++ border router; a Rust border router would use the host side of Spinel (`rs-thread-spinel` codec, a `RadioSpinel`-like `Radio` implementation over a `Transport`, the rs-thread stack on the host) in place of the OpenThread posix platform
+**Goal**: a Rust `std`/Linux border router binary (`examples/rsthread-br-posix`) that uses the rs-thread stack with a Spinel-RCP radio and bridges a Thread mesh to the IP backbone — a Rust replacement for `ot-br-posix`.
+Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); components in scope: `src/agent`, `src/border_router`, `src/mdns`, `src/rest`.
+
+### 16a – Spinel host transport (`rs-thread-ncp`, `std` feature)
+
+- [ ] `rs-thread-ncp`: add a host-side `RadioSpinel` module (feature `radio-spinel`, `std`-only) that is the mirror of the existing device-side `Rcp`: it drives an RCP by sending Spinel property-get/set/insert/remove commands and dispatching unsolicited `STREAM_RAW` frames; implements `rs_thread_platform::radio::Radio` so the rs-thread MAC can use it transparently
+  - Transport: reuse the existing `Transport` trait (`rcp.rs:48`); add a tokio-backed `UartTransport` (`tokio-serial` crate or `/dev/tty*` via `tokio::fs`) and a `SocketTransport` (Unix-domain or TCP socket, for use with `rs-thread-rcp-sim`)
+  - Property mapping: `PROP_PHY_CHAN`, `PROP_MAC_15_4_PANID`, `PROP_MAC_15_4_LADDR/SADDR`, `PROP_STREAM_RAW` (TX with frame metadata, RX callback dispatch), `PROP_PHY_RSSI`, `PROP_MAC_ENERGY_SCAN_RESULT`, `PROP_MAC_SCAN_STATE`, `PROP_RADIO_CAPS`
+  - `SoftMacNeeds`: derive from `PROP_RADIO_CAPS` exactly as the device side does (capabilities the RCP advertises → subtract from what the host does in software)
+  - Response tracking: in-flight TID map, `WAIT_RESPONSE_TIMEOUT` retry, unsolicited frame dispatch loop
+- [ ] Extend `rs-thread-rcp-sim/tests/posix_host.rs` to exercise the new host-side `RadioSpinel` ↔ `rs-thread-rcp-sim` path (rs-thread node → `SocketTransport` → `rs-thread-rcp-sim` → virtual radio → OT nodes; bidirectional frames, attach, ping); replaces the `openthread-sys` posix-host shim in that test
+
+### 16b – rs-thread host stack
+
+- [ ] `rs-thread-instance`: verify the `std` + `alloc` feature build on Linux (`x86_64-unknown-linux-gnu`); ensure `Instance` and `rs_thread_embassy::ThreadRunner` accept a `RadioSpinel<impl Transport>` as the radio (the trait bound is already `Radio`; confirm it compiles cleanly with the new host driver)
+- [ ] `rs-thread-instance`: expose an `Instance::handle_ip6_from_host` entry point that feeds an IPv6 datagram arriving from the backbone into the Thread IP layer (symmetric to the existing `poll_event` `Ip6Datagram` variant that sends Thread datagrams toward the host)
+
+### 16c – Tun/tap interface and backbone routing (`crates/rs-thread-br`, new crate)
+
+- [ ] `rs-thread-br` (`std`, Linux + macOS): `TunInterface` — creates a `tun` device (Linux `IFF_TUN`, macOS `utun`), reads/writes raw IPv6 packets as `AsyncRead`/`AsyncWrite`, adds/removes system routes for the Thread mesh-local prefix and on-mesh prefixes via `rtnetlink` (Linux) or `PF_ROUTE` (macOS); `feature = "tun"` guards the OS-specific code
+  - Inject path: `Instance::poll_event` `Ip6Datagram` variant → write to tun fd
+  - Receive path: read tun fd → `Instance::handle_ip6_from_host`
+- [ ] Border routing manager (`rs_thread_br::routing`): OMR prefix selection (pick a stable ULA /64 from the router address if no on-mesh prefix is published; persist in settings), periodic unsolicited RA/RIO transmission on the backbone interface using the existing `rs-thread-net` ICMPv6 frame builder, react to `Instance` Network Data events (prefix added/removed → update RA content and re-transmit), listen for backbone RAs and push learned prefixes into Thread Network Data via `Instance::add_external_route`
+
+### 16d – SRP advertising proxy (`rs_thread_br::srp_proxy`)
+
+- [ ] Enable `srp-server` on the host-stack `Instance`; subscribe to `Instance::srp_server_event` (host / service added / removed / updated / expired); bridge each live registration to the backbone via `mdns-sd` (crate `mdns-sd ≥ 0.11`, pure Rust, `std`): register PTR/SRV/TXT/AAAA records as mDNS services on the backbone interface, remove them when the SRP lease expires or the host de-registers
+- [ ] `_meshcop._udp` and `_meshcop-e._udp` mDNS advertisements for the Border Agent and ePSKc listener (state bitmap fields `sb`, `at`, `id`, `vn`, `mn`, `dd`, `tt`, `bb`, `dn`, `omr`; driven from `Instance` Network Data and `border_agent_state`)
+
+### 16e – DNS proxy (`rs_thread_br::dns_proxy`)
+
+- [ ] UDP DNS proxy listening on the Thread mesh-local anycast DNS-SD address (service ALOC) and loopback port 53; forward queries for names not in the local SRP server to an upstream resolver (read from `/etc/resolv.conf` or a `--upstream-dns` flag); return the reply; use `hickory-resolver ≥ 0.25` for upstream UDP/TCP DNS
+
+### 16f – Binary and integration
+
+- [ ] `examples/rsthread-br-posix` (workspace crate, `std`, Linux/macOS): daemon binary that:
+  1. opens the Spinel transport (`--radio-url` for UART path or `spinel+socket://…`)
+  2. creates the rs-thread `Instance` with `RadioSpinel` as the radio and runs the embassy thread runner
+  3. creates the `TunInterface`, adds the mesh-local route, starts border routing RA/RIO
+  4. starts the SRP advertising proxy and DNS proxy
+  5. serves a minimal REST API (`feature = "rest"`, `axum ≥ 0.8`) with `GET /node`, `GET /networks`, `GET /commissioner` mirroring the `ot-br-posix` REST surface (`src/rest/`)
+  6. handles `SIGTERM`/`SIGINT` with a graceful `Instance::thread_stop`
+- [ ] Workspace `Cargo.toml`: add `examples/rsthread-br-posix`; shared `target/` dir
+- [ ] Integration test (`examples/rsthread-br-posix/tests/integration.rs`): start the binary with `rs-thread-rcp-sim` as the Spinel socket backend, attach a second rs-thread node through the virtual-time medium; assert: Thread attaches, the OMR prefix appears in Network Data, an SRP registration on Thread is bridged to the backbone `mdns-sd` responder, a DNS query from the Thread node resolves through the proxy
+- [ ] Hardware smoke test (`docs/thread-border-router.md` section: rsthread-br-posix): run `rsthread-br-posix` with the nRF52840 Dongle RCP (`/dev/tty.usbmodem*`), join the nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle
 
 ## Phase 17 – ESP32 targets
 
