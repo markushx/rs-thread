@@ -421,9 +421,12 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 
 ### 16c – Tun/tap interface and backbone routing (`crates/rs-thread-br`, new crate)
 
-- [ ] `rs-thread-br` (`std`, Linux + macOS): `TunInterface` — creates a `tun` device (Linux `IFF_TUN`, macOS `utun`), reads/writes raw IPv6 packets as `AsyncRead`/`AsyncWrite`, adds/removes system routes for the Thread mesh-local prefix and on-mesh prefixes via `rtnetlink` (Linux) or `PF_ROUTE` (macOS); `feature = "tun"` guards the OS-specific code
+- [ ] `rs-thread-br` (`std`, Linux + macOS): `TunInterface` trait (OS-agnostic) + platform implementations behind `#[cfg(target_os)]`; reads/writes raw IPv6 packets as `AsyncRead`/`AsyncWrite`, adds/removes system routes for the Thread mesh-local prefix and on-mesh prefixes
+  - Linux: `IFF_TUN` via `/dev/net/tun`, route management via `rtnetlink` (feature `tun`, default on Linux)
+  - macOS: `utun` via `ioctl`/`PF_SYSTEM`, route management via `PF_ROUTE` socket (feature `tun`, default on macOS)
   - Inject path: `Instance::poll_event` `Ip6Datagram` variant → write to tun fd
   - Receive path: read tun fd → `Instance::handle_ip6_from_host`
+- [ ] Windows support (optional, feature `tun-windows`): `TunInterface` backend via the `wintun` crate (WireGuard's WinTUN driver, redistributable `wintun.dll`/`.sys`, must be installed separately); route management via IP Helper API (`iphlpapi.dll`, `windows` crate bindings); raw ICMPv6 socket for RA/RIO requires elevated privileges — same requirement as Linux/macOS; mark as not tested against `ot-br-posix` behavior (which is Linux-only)
 - [ ] Border routing manager (`rs_thread_br::routing`): OMR prefix selection (pick a stable ULA /64 from the router address if no on-mesh prefix is published; persist in settings), periodic unsolicited RA/RIO transmission on the backbone interface using the existing `rs-thread-net` ICMPv6 frame builder, react to `Instance` Network Data events (prefix added/removed → update RA content and re-transmit), listen for backbone RAs and push learned prefixes into Thread Network Data via `Instance::add_external_route`
 
 ### 16d – SRP advertising proxy (`rs_thread_br::srp_proxy`)
