@@ -3,7 +3,7 @@
 RAM used by `opentrust_instance::Instance` (x86_64 `size_of_val`, includes a
 caller-provided `RamSettings<4096>`; 32-bit targets are somewhat smaller).
 Regenerate with
-`cargo test -p opentrust-instance instance_size_breakdown -- --nocapture`;
+`cargo test -p rs-thread-instance instance_size_breakdown -- --nocapture`;
 the test asserts an upper bound per feature set (`src/size_test.rs`).
 
 ## Total per feature set
@@ -46,12 +46,12 @@ queues), indirect queue, forwarder held datagrams, CoAP endpoint (pending
 requests and cached responses), DNS/SRP datagrams. An allocation that does not
 fit fails with `NoBufs`. The pool sizes are const generics with defaults.
 
-## Matter light node (`opentrust-matter`)
+## Matter light node (`rs-thread-matter`)
 
-RAM of the on-off light of `crates/opentrust-matter/tests/light.rs` (x86_64
+RAM of the on-off light of `crates/rs-thread-matter/tests/light.rs` (x86_64
 `size_of_val`, debug build; the release build prints the same numbers).
 Regenerate with
-`cargo test -p opentrust-matter --test light -- --nocapture`.
+`cargo test -p rs-thread-matter --test light -- --nocapture`.
 
 | Object | Bytes |
 |---|---|
@@ -95,16 +95,16 @@ no measurement has been taken yet — these are estimates pending a DK build.
 
 | Feature | Crates gated | What it removes when disabled |
 |---|---|---|
-| `ping` | `opentrust-instance`, `opentrust-embassy` | ICMPv6 echo-request sender, `PingReply` queue, embassy `ping_seq` field; saves about 200 B |
-| `dtls-server` | `opentrust-dtls`, enabled by `commissioner` | DTLS 1.2 server role: `Session::server()`, HVR / cookie path, server handshake methods; saves about 2 kB of flash (server flight builders) |
-| `border-agent` | `opentrust-meshcop` (via `commissioner`) | ePSKc module; already gated by `commissioner` in the firmware |
-| `csl` | `opentrust-instance`, `opentrust-embassy` | CSL accuracy fields in MLE, `SetCsl`/`ReceiveAt` radio actions; saves about 300–500 B |
-| `link-metrics` | `opentrust-instance`, `opentrust-embassy` | Link Metrics probe/report handlers and neighbor extension data; saves about 1 kB |
-| `testing` | `opentrust-platform`, `opentrust-sim` | `TestRadio`, `MockClock`, `MockAlarm`; zero cost in production builds (never compiled unless `cfg(test)` or the feature is set) |
+| `ping` | `rs-thread-instance`, `rs-thread-embassy` | ICMPv6 echo-request sender, `PingReply` queue, embassy `ping_seq` field; saves about 200 B |
+| `dtls-server` | `rs-thread-dtls`, enabled by `commissioner` | DTLS 1.2 server role: `Session::server()`, HVR / cookie path, server handshake methods; saves about 2 kB of flash (server flight builders) |
+| `border-agent` | `rs-thread-meshcop` (via `commissioner`) | ePSKc module; already gated by `commissioner` in the firmware |
+| `csl` | `rs-thread-instance`, `rs-thread-embassy` | CSL accuracy fields in MLE, `SetCsl`/`ReceiveAt` radio actions; saves about 300–500 B |
+| `link-metrics` | `rs-thread-instance`, `rs-thread-embassy` | Link Metrics probe/report handlers and neighbor extension data; saves about 1 kB |
+| `testing` | `rs-thread-platform`, `rs-thread-sim` | `TestRadio`, `MockClock`, `MockAlarm`; zero cost in production builds (never compiled unless `cfg(test)` or the feature is set) |
 
 The two firmware targets (`nrf52840-leader`, `nrf52840-light`) use
-`default-features = false, features = ["ftd"]` for `opentrust-instance`
-and `opentrust-embassy`, so none of the above optional features are compiled
+`default-features = false, features = ["ftd"]` for `rs-thread-instance`
+and `rs-thread-embassy`, so none of the above optional features are compiled
 into production images unless explicitly added.
 
 ## What remains
@@ -125,7 +125,7 @@ into production images unless explicitly added.
 Measured on the nRF52840 DK with both radio backends: `cargo build --release` of the leader firmware
 (`opt-level = "s"`, fat LTO, `panic = "abort"`, rustc 1.95), `Instance` with the
 `ftd` feature only (no commissioner / border agent), soft crypto (including
-the ECDSA / EC-JPAKE code `opentrust-instance` always pulls in), a 4096-byte
+the ECDSA / EC-JPAKE code `rs-thread-instance` always pulls in), a 4096-byte
 `RamSettings`, defmt over RTT.
 
 | Section | `radio-embassy` | `radio-nrf802154` (default) |
@@ -190,13 +190,13 @@ of per-function `[u8; 1280]` arrays.
 
 ## Matter light on the nRF52840 DK (`examples/nrf52840-light`)
 
-Firmware: the `opentrust-matter` on-off light (`ThreadRunner` +
+Firmware: the `rs-thread-matter` on-off light (`ThreadRunner` +
 `MatterStack::run_thread_oper`, Thread only, no BLE) with a preset dataset
 (the node is Leader), `radio-nrf802154`, rs-matter test device attestation,
 RustCrypto backend of rs-matter (`rustcrypto`: pure Rust p256 / aes / sha2, no
 hardware crypto; it needs `alloc`, so there is a 4096-byte `embedded-alloc`
 heap, 0 bytes used while idle), `case-responder-only`, a flash-backed key-value store
-(`opentrust-flash`, see below), defmt over RTT, LED1 follows the OnOff attribute.
+(`rs-thread-flash`, see below), defmt over RTT, LED1 follows the OnOff attribute.
 It builds, boots, becomes Leader and runs rs-matter (PASE window open,
 mDNS, responders); it logs the pairing code `3497-011-2332`, discriminator 3840
 and the QR code. Not commissioned (no controller and no BLE here); the LED
@@ -222,13 +222,13 @@ The bump area is filled once at start (futures of the transport, responders and
 the operational task), not per transaction: PASE and CASE run on the stack and in
 fixed buffers inside those futures, so 28 kB stays enough. The only heap user of the
 RustCrypto backend is the PKCS#10 request of commissioning (`x509-cert`): 531 bytes
-at peak (`crates/opentrust-matter/tests/heap.rs`, counting allocator, host build),
+at peak (`crates/rs-thread-matter/tests/heap.rs`, counting allocator, host build),
 so the 4096-byte heap has about 3.5 kB of headroom and was not raised.
 Measured on the DK against a real border router and chip-tool (PASE, attestation, CSR,
 AddNOC, CASE, CommissioningComplete, On/Off toggle): stack high-water 35192 bytes
 (31352 idle), heap 0 bytes used when sampled every 2 s, no bump or allocation failure.
 
-### Persistent settings in flash (`opentrust-flash`)
+### Persistent settings in flash (`rs-thread-flash`)
 
 Both firmwares keep their settings in the last 24 KiB of flash (outside the
 linker's `FLASH` region, so the image cannot overlap it, and untouched when

@@ -1,0 +1,62 @@
+[package]
+name = "rs-thread-embassy"
+description = "Executor-agnostic async facade (embassy-sync) for the OpenTrust Thread stack"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["ftd", "bbr", "border-router", "commissioner", "border-agent", "srp-client", "dns-client", "ping", "csl", "link-metrics"]
+ftd = ["rs-thread-instance/ftd"]
+# Thread 1.2 Backbone Router client glue (DUA, MLR). An end device without
+# a Backbone Router in its network can disable this.
+bbr = ["rs-thread-instance/bbr"]
+# Network Data publisher and DHCPv6 (prefix / route / DNS-SRP publishing).
+border-router = ["rs-thread-instance/border-router"]
+commissioner = ["ftd", "rs-thread-instance/commissioner"]
+border-agent = ["commissioner", "rs-thread-instance/border-agent"]
+# The SRP client and the DNS client of the instance (OT
+# `OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE`, `OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE`).
+srp-client = ["rs-thread-instance/srp-client"]
+dns-client = ["rs-thread-instance/dns-client"]
+ping = ["rs-thread-instance/ping"]
+csl = ["rs-thread-instance/csl"]
+link-metrics = ["rs-thread-instance/link-metrics"]
+edge-nal = ["dep:edge-nal"]
+openthread-compat = ["dep:bitflags"]
+defmt = ["dep:defmt", "rs-thread-core/defmt", "rs-thread-platform/defmt", "rs-thread-mac/defmt", "rs-thread-net/defmt", "rs-thread-mle/defmt", "rs-thread-mesh/defmt", "rs-thread-meshcop/defmt", "rs-thread-instance/defmt"]
+log = ["dep:log", "rs-thread-core/log", "rs-thread-platform/log", "rs-thread-mac/log", "rs-thread-net/log", "rs-thread-mle/log", "rs-thread-mesh/log", "rs-thread-meshcop/log", "rs-thread-instance/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-platform = { workspace = true }
+rs-thread-mac = { workspace = true }
+rs-thread-net = { workspace = true }
+rs-thread-mle = { workspace = true }
+rs-thread-mesh = { workspace = true }
+rs-thread-meshcop = { workspace = true }
+rs-thread-instance = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-futures = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
+edge-nal = { version = "0.7", default-features = false, optional = true }
+bitflags = { workspace = true, optional = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Enables the `edge-nal` feature for the tests (feature unification).
+rs-thread-embassy = { path = ".", features = ["edge-nal", "openthread-compat"] }
+rs-thread-sim = { workspace = true, features = ["testing", "ftd"] }
+rs-thread-dns = { workspace = true, features = ["srp-client", "dns-client"] }
+
+[lints]
+workspace = true

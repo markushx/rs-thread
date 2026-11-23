@@ -1,0 +1,46 @@
+[package]
+name = "rs-thread-mac"
+description = "IEEE 802.15.4 MAC layer (frames, security, CSMA-CA, CSL, link metrics) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+# Thread 1.2 Link Metrics: Enhanced-ACK probing tables and subject/initiator
+# roles in the MAC. On by default.
+link-metrics = []
+# Coordinated Sampled Listening: receiver timing (SSED) and child tracking
+# (parent/FTD). On by default.
+csl = []
+defmt = [
+    "dep:defmt",
+    "rs-thread-core/defmt",
+    "rs-thread-platform/defmt",
+    "heapless/defmt",
+]
+log = ["dep:log", "rs-thread-core/log", "rs-thread-platform/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-platform = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
+# `select` for the async `MacDriver` (executor-agnostic, no allocation).
+embassy-futures = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Test-only: independent CCM implementation for differential/reference vectors.
+aes = { workspace = true }
+ccm = { workspace = true }
+
+[lints]
+workspace = true

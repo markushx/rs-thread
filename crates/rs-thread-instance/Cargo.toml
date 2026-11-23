@@ -1,0 +1,110 @@
+[package]
+name = "rs-thread-instance"
+description = "Thread node integration layer (Instance) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["ftd", "bbr", "bbr-server", "border-router", "commissioner", "border-agent", "scan-servers", "srp-client", "dns-client", "link-metrics", "csl", "ping"]
+ftd = ["rs-thread-mle/ftd", "rs-thread-mesh/ftd", "rs-thread-meshcop/ftd"]
+# Thread 1.2 Backbone Router client glue: Domain Unicast Address (DUA) and
+# Multicast Listener Registration (MLR). An end device without a Backbone
+# Router in its network can disable this to save flash and RAM.
+bbr = ["rs-thread-mesh/bbr"]
+# The Thread 1.2 Backbone Router role of this device (BBR service, answering
+# DUA and MLR registrations).
+bbr-server = ["ftd", "bbr"]
+commissioner = ["ftd", "rs-thread-meshcop/commissioner"]
+border-agent = ["commissioner", "rs-thread-meshcop/border-agent"]
+tcat = ["rs-thread-meshcop/tcat"]
+# The device side of the Commissioner's Announce Begin, Energy Scan and PAN ID
+# Query requests (`/c/ab`, `/c/es`, `/c/pq`; OT `AnnounceBeginServer`,
+# `EnergyScanServer`, `PanIdQueryServer`).
+scan-servers = []
+# Thread 1.2 Link Metrics: initiator (querying) and subject (reporting) roles,
+# Enhanced-ACK based probing.
+link-metrics = ["rs-thread-mle/link-metrics", "rs-thread-mac/link-metrics", "rs-thread-mesh/link-metrics"]
+# ICMPv6 echo-request sender and reply queue (OT `otIcmp6SendEchoRequest`).
+# ICMPv6 echo replies to incoming pings are always answered; this only gates
+# the application API for sending pings and reading replies.
+ping = []
+# Thread 1.2 Coordinated Sampled Listening: receiver side (child) and
+# parent-side child tracking.
+csl = ["rs-thread-mle/csl", "rs-thread-mac/csl", "rs-thread-mesh/csl"]
+# The Link Metrics Manager (OT `Utils::LinkMetricsManager`).
+link-metrics-manager = ["link-metrics"]
+# The History Tracker (OT `Utils::HistoryTracker`): recent network information
+# and IPv6 messages sent and received. Costs RAM; off in firmware.
+history-tracker = []
+# IPv6 fragmentation and reassembly above 6LoWPAN (OT
+# `OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE`): UDP datagrams of up to 1952
+# bytes. Costs RAM (reassembly slots, larger buffers); off in firmware.
+ip6-fragmentation = ["rs-thread-net/ip6-fragmentation"]
+
+# The SRP client (OT `OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE`): registers hosts
+# and services with an SRP server, auto-starts from the Network Data. Needs
+# ECDSA P-256 on the crypto backend (SIG(0) signing).
+srp-client = ["rs-thread-dns/srp-client", "rs-thread-core/ecdsa"]
+# The DNS / DNS-SD client (OT `OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE`): AAAA,
+# browse and service resolution.
+dns-client = ["rs-thread-dns/dns-client"]
+
+# Network Data publisher (prefix, route and DNS/SRP service publishing) and
+# DHCPv6 client/server for border-router-assigned prefixes.
+# Required by srp-server (which publishes itself in the Network Data).
+border-router = ["rs-thread-mesh/border-router"]
+# The SRP server (OT `Srp::Server`): registers hosts and services of clients
+# in the mesh, publishes itself in the Network Data.
+srp-server = ["ftd", "border-router", "rs-thread-dns/srp-server", "rs-thread-core/ecdsa"]
+srp-services-8 = []
+srp-services-12 = []
+trel = ["rs-thread-mesh/trel"]
+defmt = [
+    "dep:defmt",
+    "rs-thread-core/defmt",
+    "rs-thread-platform/defmt",
+    "rs-thread-mac/defmt",
+    "rs-thread-net/defmt",
+    "rs-thread-mle/defmt",
+    "rs-thread-mesh/defmt",
+    "rs-thread-meshcop/defmt",
+    "rs-thread-dns/defmt",
+]
+log = [
+    "dep:log",
+    "rs-thread-core/log",
+    "rs-thread-platform/log",
+    "rs-thread-mac/log",
+    "rs-thread-net/log",
+    "rs-thread-mle/log",
+    "rs-thread-mesh/log",
+    "rs-thread-meshcop/log",
+    "rs-thread-dns/log",
+]
+
+[dependencies]
+rs-thread-core = { workspace = true, features = ["ecjpake"] }
+rs-thread-platform = { workspace = true }
+rs-thread-mac = { workspace = true }
+rs-thread-lowpan = { workspace = true }
+rs-thread-net = { workspace = true }
+rs-thread-coap = { workspace = true }
+rs-thread-mle = { workspace = true }
+rs-thread-mesh = { workspace = true }
+rs-thread-meshcop = { workspace = true }
+rs-thread-dns = { workspace = true, default-features = false }
+heapless = { workspace = true }
+rand_core = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true

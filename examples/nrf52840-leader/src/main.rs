@@ -1,5 +1,5 @@
-//! OpenTrust leader on the nRF52840 DK: forms a Thread network with a fixed
-//! test dataset (channel 25, PAN ID 0x1234, name "OpenTrust") and logs the
+//! rs-thread leader on the nRF52840 DK: forms a Thread network with a fixed
+//! test dataset (channel 25, PAN ID 0x1234, name "rs-thread") and logs the
 //! role, RLOC16, ML-EID and MAC counters over RTT.
 
 #![no_std]
@@ -12,11 +12,11 @@ use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use nrf52840_leader::Board;
-use opentrust_core::crypto::soft::SoftCrypto;
-use opentrust_embassy::{OpenTrust, Resources};
-use opentrust_instance::{ExtAddress, Instance};
-use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::{Radio, RamSettings};
+use rs_thread_core::crypto::soft::SoftCrypto;
+use rs_thread_embassy::{RsThread, Resources};
+use rs_thread_instance::{ExtAddress, Instance};
+use rs_thread_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
+use rs_thread_platform::{Radio, RamSettings};
 use panic_probe as _;
 use static_cell::StaticCell;
 
@@ -82,7 +82,7 @@ async fn main(spawner: Spawner) {
 
     let ext = ext_address();
     info!("ext address {:x}", ext.0);
-    let config = opentrust_instance::Config::router(ext, caps);
+    let config = rs_thread_instance::Config::router(ext, caps);
     // Built in place in static memory: the instance is ~100 kB, it never
     // lives on the stack.
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
@@ -91,12 +91,12 @@ async fn main(spawner: Spawner) {
     info!("stack peak during init {} bytes", stack_high_water());
     // Steady state from here on: measure again from a clean pattern.
     paint_stack();
-    let ot = OpenTrust::new(res);
+    let ot = RsThread::new(res);
 
     let app = async {
         ot.with(|i, now| {
             let ds =
-                opentrust_instance::Dataset::from_tlvs(&nrf52840_leader::DATASET_TLVS).unwrap();
+                rs_thread_instance::Dataset::from_tlvs(&nrf52840_leader::DATASET_TLVS).unwrap();
             i.set_active_dataset(&ds, now).unwrap();
             i.ip6_set_enabled(true);
             i.become_leader(now).unwrap();

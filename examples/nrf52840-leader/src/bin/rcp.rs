@@ -2,7 +2,7 @@
 //!
 //! The nRF52840's 802.15.4 radio (`radio-nrf802154`) behind HDLC-lite framed
 //! Spinel on UARTE0, the pins of the J-Link VCOM port (TX P0.06, RX P0.08,
-//! 460800 8N1, no flow control), served by `opentrust_ncp::rcp::Rcp`. An
+//! 460800 8N1, no flow control), served by `rs_thread_ncp::rcp::Rcp`. An
 //! OpenThread posix host (`ot-br-posix`, `ot-cli`) uses it as
 //!
 //! ```text
@@ -21,8 +21,8 @@ use embassy_nrf::buffered_uarte::{self, BufferedUarte, BufferedUarteRx, Buffered
 use embassy_nrf::interrupt::{self, InterruptExt, Priority};
 use embassy_nrf::{bind_interrupts, peripherals, uarte};
 use nrf52840_leader::Board;
-use opentrust_core::crypto::soft::SoftCrypto;
-use opentrust_ncp::rcp::{Rcp, RcpInfo, Transport};
+use rs_thread_core::crypto::soft::SoftCrypto;
+use rs_thread_ncp::rcp::{Rcp, RcpInfo, Transport};
 use panic_probe as _;
 use static_cell::StaticCell;
 
@@ -75,7 +75,7 @@ fn eui64() -> [u8; 8] {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let Board { radio, uart, .. } = nrf52840_leader::init(&spawner);
-    info!("OpenTrust RCP");
+    info!("RsThread RCP");
 
     // Application interrupts must stay below MPSL's priorities.
     interrupt::UARTE0.set_priority(Priority::P3);
@@ -98,7 +98,7 @@ async fn main(spawner: Spawner) {
     let mut io = Uart { rx, tx };
 
     let info = RcpInfo {
-        version: concat!("OPENTRUST/", env!("CARGO_PKG_VERSION"), "; RCP; nrf52840"),
+        version: concat!("RSTHREAD/", env!("CARGO_PKG_VERSION"), "; RCP; nrf52840"),
         eui64: eui64(),
         now_us,
     };

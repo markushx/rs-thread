@@ -1,0 +1,45 @@
+[package]
+name = "rs-thread-mle"
+description = "Mesh Link Establishment (MLE): attach, roles, partitions for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+# Parent-side (router/FTD) handling of attaching children. On by default;
+# end-device-only builds can use `default-features = false`.
+default = ["ftd"]
+ftd = []
+# Thread 1.2 Link Metrics Initiator and Subject roles (MLE protocol,
+# Forward Tracking Series, Enhanced-ACK probing). On by default.
+link-metrics = ["rs-thread-mac/link-metrics"]
+# CSL receiver (SSED) and parent-side CSL scheduling. On by default.
+csl = ["rs-thread-mac/csl"]
+# Expose the simulator and the fake environment to other crates' tests.
+test-support = ["ftd", "dep:rs-thread-platform"]
+defmt = ["dep:defmt", "rs-thread-core/defmt", "rs-thread-mac/defmt", "rs-thread-net/defmt", "rs-thread-coap/defmt"]
+log = ["dep:log", "rs-thread-core/log", "rs-thread-mac/log", "rs-thread-net/log", "rs-thread-coap/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-mac = { workspace = true }
+rs-thread-net = { workspace = true }
+rs-thread-coap = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
+rs-thread-platform = { workspace = true, optional = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+rs-thread-platform = { workspace = true }
+
+[lints]
+workspace = true

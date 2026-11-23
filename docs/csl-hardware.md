@@ -1,6 +1,6 @@
 # CSL on the nRF52840 (SSED under an OpenThread parent)
 
-OpenTrust as a Thread 1.2 synchronized sleepy end device on the nRF52840 DK
+rs-thread as a Thread 1.2 synchronized sleepy end device on the nRF52840 DK
 (`examples/nrf52840-leader`, `--bin cli --features cli-all`, backend
 `radio-nrf802154`) under an OpenThread parent (`ot-cli-ftd`, ot-nrf528xx,
 OpenThread `e5629fa`, second DK; channel 25, PAN 0x1234, no other nodes).
@@ -8,14 +8,14 @@ OpenThread `e5629fa`, second DK; channel 25, PAN 0x1234, no other nodes).
 ## Set-up
 
 Peer: `dataset set active <hex>`, `ifconfig up`, `thread start` (it becomes Leader).
-OpenTrust: `dataset set active <hex>`, `mode -`, `pollperiod 240000`, `ifconfig up`,
+rs-thread: `dataset set active <hex>`, `mode -`, `pollperiod 240000`, `ifconfig up`,
 `thread start`, wait for `child`, then `csl period <us>` and `csl channel 25`.
 The CSL period is given in microseconds (a multiple of 160). `csl period` works at
 100, 200, 500 and 1000 ms, set after the attach and also changed on a running link.
 
 The peer's CSL support: `csl accuracy` / `csl uncertainty` only (20 and 20), no `csl
 period|channel|timeout`: that `ot-cli-ftd` is CSL transmitter only, so the reverse
-direction (OpenTrust parent, OpenThread SSED) cannot be run on this hardware.
+direction (rs-thread parent, OpenThread SSED) cannot be run on this hardware.
 
 ## What the hardware path does
 
@@ -174,7 +174,7 @@ TLVs). Not measured on the board after the fix: the second DK was not reachable 
 VCOM and debug interface were gone) and no border router was running.
 
 A second restore difference showed in `Cert_6_5_02`: OpenThread restores the extended
-address at instance creation, OpenTrust only at `thread start`, so a reset device reported a
+address at instance creation, rs-thread only at `thread start`, so a reset device reported a
 random address before the start (see OPENTRUST-OPENTHREAD-DIFFERENCES.md).
 
 ## Parent loss and re-attach

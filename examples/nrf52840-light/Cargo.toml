@@ -1,6 +1,6 @@
 [package]
 name = "nrf52840-light"
-description = "Matter on-off light over OpenTrust Thread on the nRF52840 DK (RAM sizing firmware, not a workspace member)"
+description = "Matter on-off light over rs-thread Thread on the nRF52840 DK (RAM sizing firmware, not a workspace member)"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -17,7 +17,7 @@ publish = false
 default = ["ble"]
 ble = [
     "nrf52840-leader/ble",
-    "opentrust-matter/ble-trouble",
+    "rs-thread-matter/ble-trouble",
     "dep:nrf-sdc",
     "dep:rand_core09",
 ]
@@ -30,13 +30,13 @@ med = []
 # Board bring-up (clocks, MPSL, radio, RNG, LED) of the leader firmware; the
 # radio backend is nrf802154 (the default of that crate).
 nrf52840-leader = { path = "../nrf52840-leader" }
-opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }
-opentrust-platform = { path = "../../crates/opentrust-platform", features = ["defmt"] }
-opentrust-instance = { path = "../../crates/opentrust-instance", default-features = false, features = ["ftd", "defmt"] }
-opentrust-embassy = { path = "../../crates/opentrust-embassy", default-features = false, features = ["ftd", "defmt"] }
-opentrust-flash = { path = "../../crates/opentrust-flash", features = ["defmt"] }
-opentrust-nrf = { path = "../../crates/opentrust-nrf", default-features = false, features = ["defmt"] }
-opentrust-matter = { path = "../../crates/opentrust-matter", default-features = false, features = ["ftd", "defmt"] }
+rs-thread-core = { path = "../../crates/rs-thread-core", features = ["defmt"] }
+rs-thread-platform = { path = "../../crates/rs-thread-platform", features = ["defmt"] }
+rs-thread-instance = { path = "../../crates/rs-thread-instance", default-features = false, features = ["ftd", "defmt"] }
+rs-thread-embassy = { path = "../../crates/rs-thread-embassy", default-features = false, features = ["ftd", "defmt"] }
+rs-thread-flash = { path = "../../crates/rs-thread-flash", features = ["defmt"] }
+rs-thread-nrf = { path = "../../crates/rs-thread-nrf", default-features = false, features = ["defmt"] }
+rs-thread-matter = { path = "../../crates/rs-thread-matter", default-features = false, features = ["ftd", "defmt"] }
 # The pure-Rust RustCrypto backend (p256, aes, sha2, ...); it needs `alloc`
 # for a few convenience paths, so the firmware has a small heap.
 rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false, features = ["rustcrypto", "defmt", "case-responder-only"] }
@@ -59,7 +59,7 @@ rand_core = { version = "0.10", default-features = false }
 rand_core09 = { package = "rand_core", version = "0.9", default-features = false, optional = true }
 nrf-sdc = { version = "0.4", default-features = false, features = ["nrf52840", "peripheral", "defmt"], optional = true }
 
-# rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.OPENTRUST.md).
+# rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.RSTHREAD.md).
 [patch."https://github.com/project-chip/rs-matter"]
 rs-matter-sc = { path = "../../third_party/rs-matter-sc" }
 

@@ -1,0 +1,205 @@
+//! The MeshCoP commissioning roles owned by the [`Instance`](crate::Instance):
+//! the Joiner (always), the Joiner Router and the leader's commissioner
+//! session (`ftd`), the on-mesh Commissioner (`commissioner`) and the
+//! Border Agent (`border-agent`).
+
+use heapless::Deque;
+use rs_thread_core::crypto::CryptoBackend;
+use rs_thread_core::crypto::ecjpake::{P256, SoftP256};
+use rs_thread_core::crypto::soft::SoftCrypto;
+#[cfg(feature = "border-agent")]
+use rs_thread_meshcop::border_agent::BorderAgent;
+#[cfg(feature = "commissioner")]
+use rs_thread_meshcop::commissioner::Commissioner;
+use rs_thread_meshcop::joiner::Joiner;
+#[cfg(feature = "ftd")]
+use rs_thread_meshcop::joiner_router::JoinerRouter;
+#[cfg(feature = "ftd")]
+use rs_thread_meshcop::leader::LeaderState;
+
+use crate::cm_io::JoinerAction;
+
+/// ECDSA P-256 where the SRP client or server needs it, nothing otherwise.
+#[cfg(any(feature = "srp-client", feature = "srp-server"))]
+pub trait EcdsaBound: rs_thread_core::crypto::ecdsa::EcdsaP256 {}
+#[cfg(any(feature = "srp-client", feature = "srp-server"))]
+impl<T: rs_thread_core::crypto::ecdsa::EcdsaP256> EcdsaBound for T {}
+/// ECDSA P-256 where the SRP client or server needs it, nothing otherwise.
+#[cfg(not(any(feature = "srp-client", feature = "srp-server")))]
+pub trait EcdsaBound {}
+#[cfg(not(any(feature = "srp-client", feature = "srp-server")))]
+impl<T> EcdsaBound for T {}
+
+/// The cryptography an [`Instance`](crate::Instance) needs: the
+/// [`CryptoBackend`] (AES-CCM*, SHA-256, HMAC, CMAC), ECDSA P-256 (SRP
+/// client and server; only with `srp-client` or `srp-server`) and the P-256 group of EC-JPAKE (DTLS of the Joiner, the
+/// Commissioner and the Border Agent).
+///
+/// Implemented for the software backend [`SoftCrypto`] (with
+/// [`SoftP256`]); a hardware backend implements it once with its own curve
+/// type, so the instance keeps three type parameters.
+pub trait InstanceCrypto: CryptoBackend<Sha256: Clone> + EcdsaBound + Clone {
+    /// The P-256 group used by EC-JPAKE.
+    type Curve: P256 + Clone;
+
+    /// A handle to the P-256 group.
+    fn curve(&self) -> Self::Curve;
+}
+
+impl InstanceCrypto for SoftCrypto {
+    type Curve = SoftP256;
+
+    fn curve(&self) -> SoftP256 {
+        SoftP256
+    }
+}
+
+/// The commissioning roles and their glue state.
+pub(crate) struct Commissioning<C: InstanceCrypto> {
+    /// The Joiner (idle unless [`Instance::joiner_start`](crate::Instance)).
+    pub joiner: Joiner<C, C::Curve>,
+    /// The Joiner Router (opens the Joiner UDP port while joining is
+    /// allowed and this is an attached FTD).
+    #[cfg(feature = "ftd")]
+    pub jr: JoinerRouter,
+    /// The leader's commissioner session (`/c/lp`, `/c/la`, `/c/cs`,
+    /// `/c/cg`).
+    #[cfg(feature = "ftd")]
+    pub leader: LeaderState,
+    /// The on-mesh Commissioner.
+    #[cfg(feature = "commissioner")]
+    pub comm: Commissioner<C, C::Curve>,
+    /// The Border Agent.
+    #[cfg(feature = "border-agent")]
+    pub ba: BorderAgent<C, C::Curve>,
+    /// Datagrams of the Border Agent for the external Commissioner.
+    #[cfg(feature = "border-agent")]
+    pub ba_out: BaOut,
+    /// The unsecure Joiner UDP port (Joiner, or Joiner Router).
+    pub joiner_port: Option<u16>,
+    /// Highest key ID mode 0 frame counter accepted under the current KEK.
+    pub kek_rx_fc: Option<u32>,
+    /// Key ID mode 0 frames dropped (no KEK exchange with the sender).
+    pub kek_drops: u32,
+    pub actions: Deque<JoinerAction, 4>,
+    /// The factory EUI-64 (Joiner ID derivation).
+    pub eui64: rs_thread_core::types::ExtAddress,
+}
+
+/// A DTLS datagram of the Border Agent to the external Commissioner.
+#[cfg(feature = "border-agent")]
+#[derive(Debug, Clone)]
+pub struct BaDatagram {
+    /// The listener (Border Agent or ePSKc port) it is sent from.
+    pub listener: rs_thread_meshcop::border_agent::Listener,
+    /// The Commissioner.
+    pub peer: rs_thread_coap::endpoint::Peer,
+    /// The DTLS records.
+    pub data: heapless::Vec<u8, 1280>,
+}
+
+/// Queue of [`BaDatagram`]s; the records are stored in a pool of
+/// [`crate::stack::OUTBOX_BUF`]-byte buffers (`NoBufs` when it is full).
+#[cfg(feature = "border-agent")]
+#[derive(Debug, Default)]
+pub(crate) struct BaOut {
+    q: Deque<
+        (
+            rs_thread_meshcop::border_agent::Listener,
+            rs_thread_coap::endpoint::Peer,
+            rs_thread_core::bufpool::Chain,
+        ),
+        4,
+    >,
+    pool: rs_thread_core::bufpool::BufPool<12, { crate::stack::OUTBOX_BUF }>,
+}
+
+#[cfg(feature = "border-agent")]
+impl BaOut {
+    pub(crate) fn push(
+        &mut self,
+        listener: rs_thread_meshcop::border_agent::Listener,
+        peer: rs_thread_coap::endpoint::Peer,
+        data: &[u8],
+    ) -> rs_thread_core::Result<()> {
+        if self.q.is_full() {
+            return Err(rs_thread_core::Error::NoBufs);
+        }
+        let chain = self.pool.alloc(data)?;
+        let _ = self.q.push_back((listener, peer, chain));
+        Ok(())
+    }
+
+    pub(crate) fn pop_front(&mut self) -> Option<BaDatagram> {
+        let (listener, peer, chain) = self.q.pop_front()?;
+        let mut data = heapless::Vec::new();
+        let _ = data.resize_default(chain.len());
+        self.pool.read(&chain, &mut data);
+        self.pool.free(chain);
+        Some(BaDatagram {
+            listener,
+            peer,
+            data,
+        })
+    }
+}
+
+impl<C: InstanceCrypto> Commissioning<C> {
+    /// Build the state in place: the roles are 7 to 15 kB each, so they are
+    /// written straight into `slot` instead of through a stack temporary.
+    ///
+    /// # Safety
+    ///
+    /// `slot` must be valid for writes of `Self` and suitably aligned. Every
+    /// field is initialised on return.
+    #[allow(unsafe_code)]
+    #[inline(never)]
+    pub(crate) unsafe fn init(
+        slot: *mut Self,
+        crypto: &C,
+        eui64: rs_thread_core::types::ExtAddress,
+        leader_session_id: u16,
+        ba_id: [u8; 16],
+    ) {
+        #[cfg(not(feature = "ftd"))]
+        let _ = leader_session_id;
+        #[cfg(not(feature = "border-agent"))]
+        let _ = ba_id;
+        use core::ptr::addr_of_mut;
+        // SAFETY: the caller guarantees `slot`; each field is written once.
+        unsafe {
+            addr_of_mut!((*slot).joiner).write(Joiner::new(crypto.clone(), crypto.curve()));
+            #[cfg(feature = "ftd")]
+            addr_of_mut!((*slot).jr).write(JoinerRouter::new());
+            #[cfg(feature = "ftd")]
+            addr_of_mut!((*slot).leader).write(LeaderState::new(leader_session_id));
+            #[cfg(feature = "commissioner")]
+            addr_of_mut!((*slot).comm).write(Commissioner::new(crypto.clone(), crypto.curve()));
+            #[cfg(feature = "border-agent")]
+            addr_of_mut!((*slot).ba).write(BorderAgent::new(crypto.clone(), crypto.curve(), ba_id));
+            #[cfg(feature = "border-agent")]
+            addr_of_mut!((*slot).ba_out).write(BaOut::default());
+            addr_of_mut!((*slot).joiner_port).write(None);
+            addr_of_mut!((*slot).kek_rx_fc).write(None);
+            addr_of_mut!((*slot).kek_drops).write(0);
+            addr_of_mut!((*slot).actions).write(Deque::new());
+            addr_of_mut!((*slot).eui64).write(eui64);
+        }
+    }
+
+    /// The earliest timer of the roles.
+    pub(crate) fn next_deadline(&self) -> Option<rs_thread_core::time::Instant> {
+        [
+            self.joiner.next_deadline(),
+            #[cfg(feature = "ftd")]
+            self.jr.next_deadline(),
+            #[cfg(feature = "commissioner")]
+            self.comm.next_deadline(),
+            #[cfg(feature = "border-agent")]
+            self.ba.next_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+    }
+}

@@ -1,6 +1,6 @@
 # rs-matter / esp-rs/openthread integration research
 
-Purpose: define the API surface OpenTrust (`opentrust-embassy`, `opentrust-matter`) must offer to be a drop-in
+Purpose: define the API surface rs-thread (`rs-thread-embassy`, `rs-thread-matter`) must offer to be a drop-in
 replacement for `esp-rs/openthread` underneath rs-matter.
 
 ## Sources and revisions (shallow clones, read-only; build scripts not executed)
@@ -14,7 +14,7 @@ replacement for `esp-rs/openthread` underneath rs-matter.
 
 Clones live in the session scratchpad (`.../scratchpad/research/`), not in the repo. Paths below are relative to each repo root.
 
-Key architectural finding: the glue is **three layers**, and OpenTrust must replace the middle one:
+Key architectural finding: the glue is **three layers**, and rs-thread must replace the middle one:
 
 ```
 rs-matter  (+ rs-matter-stack, in-tree)      <- defines NetStack/NetSocket/Mdns/NetCtl/ThreadDiag/Icd/GattPeripheral
@@ -134,7 +134,7 @@ impl<'a> UdpSocket<'a> {
 }
 ```
 (multicast join/leave is `OpenThread::join_multicast/leave_multicast`). The edge-nal binding is the separate crate `edge-nal-openthread` 0.3.0 (edge-net repo, `edge-nal-openthread/src/lib.rs`):
-`OtUdpStack<'a>(OpenThread<'a>)` implements `edge_nal::{UdpBind, UdpConnect}`; `OtUdpSocket` implements `UdpSend, UdpReceive, Readable, MulticastV4, MulticastV6, UdpSocket, UdpSplit, UdpSplitMulticast` (+ the same for `&OtUdpSocket`). This crate is tiny; OpenTrust can supply an equivalent (or have rs-matter-embassy depend on an `opentrust-*` variant).
+`OtUdpStack<'a>(OpenThread<'a>)` implements `edge_nal::{UdpBind, UdpConnect}`; `OtUdpSocket` implements `UdpSend, UdpReceive, Readable, MulticastV4, MulticastV6, UdpSocket, UdpSplit, UdpSplitMulticast` (+ the same for `&OtUdpSocket`). This crate is tiny; rs-thread can supply an equivalent (or have rs-matter-embassy depend on an `rs-thread-*` variant).
 Alternative path: `enet` feature gives an `embassy-net` `Device` (IP medium) so smoltcp sockets/`edge-nal-embassy` work; rs-matter-embassy's `OtNetStack` does **not** use it (uses native OT UDP, max 1 socket: `OT_MAX_UDP_SOCKETS = 1`, RX buf = `MAX_RX_PACKET_SIZE`).
 
 ### 1.6 SRP client API (feature `srp-client`; `openthread/src/srp.rs`)
@@ -244,7 +244,7 @@ pub enum WirelessCreds<'a> { Wifi{ ssid, pass }, Thread { dataset_tlv: &'a [u8] 
 pub enum NetCtlError { NetworkNotFound, UnsupportedSecurity, AuthFailure, OtherConnectionFailure, IpBindFailed, IpV6Failed, Other(Error) }
 pub trait NetChangeNotif: MaybeSendSync { fn wait_changed(&self) -> impl Future<Output = ()> + MaybeSend; }   // rs-matter-dm/src/networks.rs:49
 ```
-Matter's add/update network = Operational Dataset as raw **Thread TLV bytes** (AddOrUpdateThreadNetwork); rs-matter stores it (`ThreadNetworks`, persisted in KV store) and calls `connect` at ConnectNetwork. The backend only needs: scan, apply dataset TLV + enable, report connected. Note `supported_thread_features` (e.g. `IS_FULL_THREAD_DEVICE`, `IS_SLEEPY_END_DEVICE_CAPABLE`, ...) is currently left at the default by `OtNetCtl` - a spot OpenTrust can do better.
+Matter's add/update network = Operational Dataset as raw **Thread TLV bytes** (AddOrUpdateThreadNetwork); rs-matter stores it (`ThreadNetworks`, persisted in KV store) and calls `connect` at ConnectNetwork. The backend only needs: scan, apply dataset TLV + enable, report connected. Note `supported_thread_features` (e.g. `IS_FULL_THREAD_DEVICE`, `IS_SLEEPY_END_DEVICE_CAPABLE`, ...) is currently left at the default by `OtNetCtl` - a spot rs-thread can do better.
 
 ### 2.4 Thread Network Diagnostics data
 `rs-matter-dm/src/clusters/thread_diag.rs:236`: `pub trait ThreadDiag: WirelessDiag` (plus `WirelessDiag::connected() -> Result<bool, Error>`), all methods with defaults returning "null"/empty; exact set:
@@ -270,7 +270,7 @@ fn overrun_count(&self) -> Result<u64, Error>;  fn reset_counts(&self) -> Result
 fn active_timestamp(&self) -> Result<Option<u64>, Error>;  fn pending_timestamp(&self) -> Result<Option<u64>, Error>;  fn delay(&self) -> Result<Option<u32>, Error>;
 ```
 Data structs: `NeighborTable { ext_address, age, rloc16, ... }`, `RouteTable { ext_address, rloc16, router_id, ... }`, `MacCounters { tx_total_count, tx_unicast_count, ... }`, `MleCounters { detached_role_count, child_role_count, router_role_count, ... }`
-(full field lists: `rs-matter-dm/src/clusters/thread_diag.rs:43-200`; fields mirror Matter ThreadNetworkDiagnostics structs, i.e. the MAC/MLE counters OpenTrust must keep anyway for Thread spec §counters).
+(full field lists: `rs-matter-dm/src/clusters/thread_diag.rs:43-200`; fields mirror Matter ThreadNetworkDiagnostics structs, i.e. the MAC/MLE counters rs-thread must keep anyway for Thread spec §counters).
 Also `NetifDiag` (`gen_diag.rs:156`): `fn netifs(&self, f: &mut dyn FnMut(&NetifInfo) -> Result<(), Error>) -> Result<(), Error>` with `NetifInfo { name, operational, offprem_svc_reachable_ipv4/ipv6, hw_addr, ipv4_addrs, ipv6_addrs, netif_type, netif_index }`.
 
 ### 2.5 ICD hooks
@@ -282,15 +282,15 @@ pub struct IcdNetParams { pub power_mode: IcdPowerMode /*Active|Idle*/, pub oper
 pub struct IcdModeConfig { idle_mode_duration_s, active_mode_duration_ms, active_mode_threshold_ms, user_active_mode_trigger_hint, user_active_mode_trigger_instruction }
 consts: STAY_ACTIVE_MAX_MS = 30_000, SIT_SLOW_POLL_MAX_MS = 15_000, DEFAULT_FAST_POLL_MS = 300, DEFAULT_SLOW_POLL_MS = 15_000
 ```
-Reaction side lives in `rs-matter-embassy/src/wireless/thread.rs`: `configure_sed`, `apply_icd_params(ot, &IcdNetParams, csl: bool)`, `run_icd(&ot, Option<&Icd>)` (re-applies on power-mode change, i.e. fast poll while Active, slow poll / CSL while Idle; child timeout = f(max_poll_interval), constants `CHILD_TIMEOUT_DEFAULT_S=240`, `CHILD_TIMEOUT_MARGIN_S=30`, `CHILD_SUPERVISION_INTERVAL_S=129`, `CHILD_SUPERVISION_CHECK_TIMEOUT_DEFAULT_S=190`). So OpenTrust needs dynamic, runtime-changeable: rx-on-when-idle, poll period, CSL period/timeout, child timeout, supervision intervals. (LIT also benefits from MLE "Link Metrics" / check-in; no hook exists today beyond these.) Uncertain: exact semantics of `run_icd` - read only the top-level shape.
+Reaction side lives in `rs-matter-embassy/src/wireless/thread.rs`: `configure_sed`, `apply_icd_params(ot, &IcdNetParams, csl: bool)`, `run_icd(&ot, Option<&Icd>)` (re-applies on power-mode change, i.e. fast poll while Active, slow poll / CSL while Idle; child timeout = f(max_poll_interval), constants `CHILD_TIMEOUT_DEFAULT_S=240`, `CHILD_TIMEOUT_MARGIN_S=30`, `CHILD_SUPERVISION_INTERVAL_S=129`, `CHILD_SUPERVISION_CHECK_TIMEOUT_DEFAULT_S=190`). So rs-thread needs dynamic, runtime-changeable: rx-on-when-idle, poll period, CSL period/timeout, child timeout, supervision intervals. (LIT also benefits from MLE "Link Metrics" / check-in; no hook exists today beyond these.) Uncertain: exact semantics of `run_icd` - read only the top-level shape.
 
 ### 2.6 Async-runtime assumptions / MSRV
 - Executor-agnostic. `rs-matter-utils` depends on `embassy-sync`, `embassy-time`, `embassy-futures`, `critical-section`; feature `os` swaps in std. Own `select*`, `Notification`, `IfMutex`, `Timer` wrappers over those.
-- Traits use `impl Future + MaybeSend`; `MaybeSend`/`MaybeSendSync` are empty unless feature `send-sync` (work-stealing executors). A no-std OpenTrust facade should *not* require `Send` but should be **`Send` when its parts are** so the feature can be flipped (avoid `Rc`/`RefCell` in public futures, or document).
+- Traits use `impl Future + MaybeSend`; `MaybeSend`/`MaybeSendSync` are empty unless feature `send-sync` (work-stealing executors). A no-std rs-thread facade should *not* require `Send` but should be **`Send` when its parts are** so the feature can be flipped (avoid `Rc`/`RefCell` in public futures, or document).
 - Fixed-size, in-place initialised (`Init`/`init!`) statics, no heap except ~4 KB for x509 (per README of examples). Futures are bump-allocated in `rs-matter-stack` (`BUMP_SIZE`).
 - Time: `rs_matter::utils::timers::{Duration, Instant, Timer}` = embassy-time. Tied to `embassy-time` driver, same as `openthread`.
 - Crypto: rs-matter has its own `Crypto` trait (`rs-matter-crypto/src/lib.rs:60`, impls `rustcrypto` / `mbedtls`), `Crypto::Rand<'a>: CryptoRng + Copy`. rs-matter-embassy passes its `CryptoRng + Copy` into the OT runner (rand_core 0.10).
-- MSRV: rs-matter **1.92**, rs-matter-embassy **1.92**, edge-nal-openthread 1.88, openthread 1.85. Edition 2021 across all. OpenTrust MSRV must be <= 1.92 if it is to be consumed together (and >= what native AFIT needs, 1.75).
+- MSRV: rs-matter **1.92**, rs-matter-embassy **1.92**, edge-nal-openthread 1.88, openthread 1.85. Edition 2021 across all. rs-thread MSRV must be <= 1.92 if it is to be consumed together (and >= what native AFIT needs, 1.75).
 
 ---
 
@@ -310,14 +310,14 @@ pub trait GattPeripheral: MaybeSend {
   or **`nimble-rs`** (C NimBLE; `src/ble/nimble.rs`; ~10 KB flash / ~3 KB RAM more on ESP32-C6). Controllers: ESP (`esp-radio` `ble`), nRF (`nrf-sdc` SoftDevice Controller + `nrf-mpsl`), RP (cyw43).
 - Concurrent BLE + Thread ("coex") is first-class: `ThreadCoexDriver`/`ThreadCoexTask` and `run_coex`, with 15.4 and BLE arbitration done by the *radio driver layer* (`nrf-mpsl` + `nrf-802154` on Nordic, ESP coex in `esp-radio`), not by the Thread stack. README of esp-rs/openthread: `nrf-802154` "supports BLE coex".
 
-**Recommendation: OpenTrust owns no BLE/BTP code for Matter commissioning.** Leave GATT/BTP to rs-matter (+ rs-matter-embassy / trouble-host); OpenTrust only has to
+**Recommendation: rs-thread owns no BLE/BTP code for Matter commissioning.** Leave GATT/BTP to rs-matter (+ rs-matter-embassy / trouble-host); rs-thread only has to
 (a) not assume exclusive ownership of the 802.15.4 radio (the `Radio` trait must tolerate an MPSL-style time-sliced radio: `transmit` may be delayed/fail, `receive` may be interrupted; document in the contract),
 (b) work under `run_coex` (Thread run-future must be cancellable and restartable, and `set_sleep` must let BLE use the antenna), and
 (c) let the Matter glue apply the dataset received via BLE-based Network Commissioning (`NetCtl::connect`).
 
-**Does Thread 1.4 TCAT change this?** Partly, but not the Matter recommendation. TCAT (Thread Commissioning over BLE/TLS, Thread 1.4) runs a DTLS/TLS-secured command channel, either over BLE (GATT carrying a TLS stream) or over IP (secure CoAP/TCP on the mesh); the *TLS/TCAT command logic* is Thread-spec scope and belongs in OpenTrust's `-meshcop`/`-tcat` sans-IO crate
-(byte-stream in/out, cert-based ECDHE-ECDSA, TCAT TLVs; use MeshCoP, dataset set/get, diag). Neither rs-matter nor esp-rs/openthread implements TCAT (only a `-sys` Cargo comment mentions cert-based TCAT DTLS as manual opt-in; I found no Rust API), so OpenTrust would be the first Rust implementation.
-Recommendation: OpenTrust owns the **TCAT session engine** (transport-agnostic, `AsyncRead/Write`-like or sans-IO), and ships at most a thin, optional `opentrust-tcat-ble` adapter implementing the Thread TCAT GATT service on top of `trouble-host` (reusing the same controller as Matter's BTP; must co-exist with it - only one peripheral connection at a time is enabled in rs-matter-embassy: `MAX_CONNECTIONS = 1`). GATT UUIDs and the TCAT BLE framing must be taken from the Thread 1.4 spec (not verified here; marked **uncertain**). Defer the BLE adapter until after the core TCAT engine exists. A Matter-only product never needs TCAT.
+**Does Thread 1.4 TCAT change this?** Partly, but not the Matter recommendation. TCAT (Thread Commissioning over BLE/TLS, Thread 1.4) runs a DTLS/TLS-secured command channel, either over BLE (GATT carrying a TLS stream) or over IP (secure CoAP/TCP on the mesh); the *TLS/TCAT command logic* is Thread-spec scope and belongs in rs-thread's `-meshcop`/`-tcat` sans-IO crate
+(byte-stream in/out, cert-based ECDHE-ECDSA, TCAT TLVs; use MeshCoP, dataset set/get, diag). Neither rs-matter nor esp-rs/openthread implements TCAT (only a `-sys` Cargo comment mentions cert-based TCAT DTLS as manual opt-in; I found no Rust API), so rs-thread would be the first Rust implementation.
+Recommendation: rs-thread owns the **TCAT session engine** (transport-agnostic, `AsyncRead/Write`-like or sans-IO), and ships at most a thin, optional `rs-thread-tcat-ble` adapter implementing the Thread TCAT GATT service on top of `trouble-host` (reusing the same controller as Matter's BTP; must co-exist with it - only one peripheral connection at a time is enabled in rs-matter-embassy: `MAX_CONNECTIONS = 1`). GATT UUIDs and the TCAT BLE framing must be taken from the Thread 1.4 spec (not verified here; marked **uncertain**). Defer the BLE adapter until after the core TCAT engine exists. A Matter-only product never needs TCAT.
 
 ---
 
@@ -325,55 +325,55 @@ Recommendation: OpenTrust owns the **TCAT session engine** (transport-agnostic, 
 
 ### 4.1 Target
 `rs-matter-embassy`'s `openthread` feature compiles against exactly this surface of the `openthread` crate (extracted from `src/ot.rs`, `src/wireless/thread.rs`, `src/wireless/thread/{esp_thread,nrf}.rs`, and `edge-nal-openthread`).
-OpenTrust offers it in `opentrust-embassy` as a **source-compatible facade** (type/method names and signatures identical), and glues in `opentrust-matter`.
+rs-thread offers it in `rs-thread-embassy` as a **source-compatible facade** (type/method names and signatures identical), and glues in `rs-thread-matter`.
 
 Two integration options (recommended order):
-1. **Compat facade (fastest, zero upstream change)**: `opentrust-embassy` exposes `OpenThread`, `OtResources`, `OtUdpResources`, `OtSrpResources`, `Radio`, ... with the same names; users swap the dependency (`openthread = { package = "opentrust-embassy", ... }`), and `rs-matter-embassy`/`edge-nal-openthread` keep working untouched.
-2. **Own glue crate `opentrust-matter`** (long-term, avoids dependence on a facade-shaped API): implements rs-matter-stack `ThreadDriver` / `ThreadCoexDriver` / `NetStack` / `Mdns` / `NetCtl` / `ThreadDiag` / `NetifDiag` / `NetChangeNotif` directly (code analogous to `rs-matter-embassy/src/ot.rs`), so it can skip the edge-nal hop and the `RefCell`-based single instance, and add TCAT/LIT/CSL polish. Ship both; (2) can be a fork-free PR into `rs-matter-embassy` behind a new `opentrust` feature.
+1. **Compat facade (fastest, zero upstream change)**: `rs-thread-embassy` exposes `OpenThread`, `OtResources`, `OtUdpResources`, `OtSrpResources`, `Radio`, ... with the same names; users swap the dependency (`openthread = { package = "rs-thread-embassy", ... }`), and `rs-matter-embassy`/`edge-nal-openthread` keep working untouched.
+2. **Own glue crate `rs-thread-matter`** (long-term, avoids dependence on a facade-shaped API): implements rs-matter-stack `ThreadDriver` / `ThreadCoexDriver` / `NetStack` / `Mdns` / `NetCtl` / `ThreadDiag` / `NetifDiag` / `NetChangeNotif` directly (code analogous to `rs-matter-embassy/src/ot.rs`), so it can skip the edge-nal hop and the `RefCell`-based single instance, and add TCAT/LIT/CSL polish. Ship both; (2) can be a fork-free PR into `rs-matter-embassy` behind a new `opentrust` feature.
 
 ### 4.2 Minimum compat surface (names/signatures to mirror from `esp-rs/openthread`)
 Types: `OpenThread<'a>` (Clone), `OtResources`, `OtUdpResources<const N, const RX>`, `OtSrpResources<const N, const BUF>`, `OtError`, `NetStatus`, `DeviceRole { Disabled, Detached, Child, Router, Leader, Other(_) }` with `is_connected()`, `Channels` (bitflags), `ScanResult { pan_id, extended_pan_id: u64, network_name: &str, channel, version, ext_address: u64, rssi, lqi }`, `UdpSocket`, `SrpConf`, `SrpService`, `SrpServiceSlot`, `DnsResponse`, `Settings` + `SettingsKey` + `RamSettings` + `SharedRamSettings` + `RamSettingsChange`, `SecurityPolicy`, `OperationalDatasetComponents`, `NeighborInfo`, `RouteInfo`, `MacCounters`, `MleCounters`, `IpCounters`, `Capabilities`, `Radio`.
 Methods used by rs-matter-embassy (must exist, same semantics): `new_with_udp_srp`, `run(radio).await -> !`, `wait_changed`, `enable_ipv6`, `enable_thread`, `set_active_dataset_tlv`, `scan`, `net_status`, `is_commissioned`, `device_role`, `rx_on_when_idle`, `channel`, `network_name`, `pan_id`, `mesh_local_prefix`, `partition_id`, `leader_weight`, `net_data_version`, `net_data_stable_version`, `leader_router_id`, `ext_address`, `rloc16`, `supported_channel_mask`, `neighbor_table`, `route_table`, `router_eligible` (ftd), `mac_counters`, `mle_counters`, `ipv6_addrs`, `ieee_eui64`, `set_link_mode`, `set_poll_period`, `set_child_timeout`, `set_csl_period`, `set_child_supervision_*`, `CSL_MAX_PERIOD_US`, all `srp_*`, `dns_browse`, `dns_resolve_service[_and_host_address]`, `dns_resolve_address`, `join_multicast`, `leave_multicast`, `UdpSocket::{bind, connect, wait_recv_available, recv, send}`.
-Plus `opentrust-embassy` additionally exposes a *native* (non-compat) idiomatic API on top of the sans-IO core.
+Plus `rs-thread-embassy` additionally exposes a *native* (non-compat) idiomatic API on top of the sans-IO core.
 
 Traits: `Radio` (4.3 below), `Settings` (as above), `OtRng = rand_core::CryptoRng` (rand_core 0.10).
 
 ### 4.3 Radio trait: mirror it verbatim, extend additively
-- Keep `opentrust-platform::Radio` **identical** to `openthread::Radio` (same names, same `async fn`s, same `RadioCaps`/`Capabilities`/`MacCapabilities`/`Config`/`SrcMatchConfig`/`PsduTxInfo`/`PsduRxInfo`/`CslConfig`/`MacKeys`/`AckSecurity`, same error trait `RadioError::kind()`), so existing drivers - `nrf-802154` (`features=["openthread"]`), `esp-radio` wrapper `EspRadio`, `SpinelRadio`, `MacRadio`, `ProxyRadio` - work unchanged against OpenTrust. Do not split into sync/async variants; sans-IO core sees a narrower internal trait and the embassy layer adapts.
+- Keep `rs-thread-platform::Radio` **identical** to `openthread::Radio` (same names, same `async fn`s, same `RadioCaps`/`Capabilities`/`MacCapabilities`/`Config`/`SrcMatchConfig`/`PsduTxInfo`/`PsduRxInfo`/`CslConfig`/`MacKeys`/`AckSecurity`, same error trait `RadioError::kind()`), so existing drivers - `nrf-802154` (`features=["openthread"]`), `esp-radio` wrapper `EspRadio`, `SpinelRadio`, `MacRadio`, `ProxyRadio` - work unchanged against rs-thread. Do not split into sync/async variants; sans-IO core sees a narrower internal trait and the embassy layer adapts.
 - Since the trait lives in the `openthread` crate, a real "same trait" requires either (a) a shared tiny crate (e.g. `ieee802154-radio`/`thread-radio`) that both depend on - propose upstream - or (b) a blanket adapter `impl<R: openthread::Radio> opentrust::Radio for R` behind an optional `openthread-radio-compat` feature (cost: pulls `openthread` -> `openthread-sys` dependency in the dependency graph; avoid by default). Preferred: (a), fallback: copy the trait and keep a conformance test that the signatures match (CI check against a pinned `openthread` version).
-- Adopt the contract in `docs/radio-contract.md` as OpenTrust's own radio spec and port `MacRadio`'s software emulation (ack, src-match, filtering, retries) - it is exactly the MAC offload OpenTrust Phase 2 needs. Be careful about the `-> !` `run` and cancellation-safety requirements.
+- Adopt the contract in `docs/radio-contract.md` as rs-thread's own radio spec and port `MacRadio`'s software emulation (ack, src-match, filtering, retries) - it is exactly the MAC offload rs-thread Phase 2 needs. Be careful about the `-> !` `run` and cancellation-safety requirements.
 - Pay attention to the pending API churn: the CHANGELOG "Unreleased" breaking change (`transmit(&mut psdu, &mut PsduTxInfo, ...)`, `PsduMeta -> PsduRxInfo`, `OpenThread::new*` taking `&RadioCaps`) means mirror the **unreleased HEAD**, not the 0.4.0 release; track upstream.
 
 ### 4.4 Storage, RNG, time
-- Keep the `Settings` trait shape (sync, key/index/blob, `sensitive_keys` hint) so `OtPersist`'s `RamSettings`+KV persistence is reusable; define OpenTrust's own `SettingsKey` numbering to be **compatible with OT key IDs** (it makes dataset migration from an OpenThread-based firmware possible; **uncertain** whether worth the constraint).
+- Keep the `Settings` trait shape (sync, key/index/blob, `sensitive_keys` hint) so `OtPersist`'s `RamSettings`+KV persistence is reusable; define rs-thread's own `SettingsKey` numbering to be **compatible with OT key IDs** (it makes dataset migration from an OpenThread-based firmware possible; **uncertain** whether worth the constraint).
 - RNG: accept `&mut dyn rand_core::CryptoRng` (0.10).
 - Time: embassy-time, nothing else. Core takes `now` as input (sans-IO); the embassy layer owns timers.
 
-### 4.5 `opentrust-matter` glue (what rs-matter needs, by trait)
-| rs-matter trait | OpenTrust provider | Backed by |
+### 4.5 `rs-thread-matter` glue (what rs-matter needs, by trait)
+| rs-matter trait | rs-thread provider | Backed by |
 |---|---|---|
-| `rs_matter_stack::net::{NetStack, NetSocket}` + `NetworkSend/Receive/Multicast` | `OtNetStack` | OpenTrust UDP sockets (1 socket for Matter port 5540; ideally a few more to avoid re-binding for SRP/DNS later) |
+| `rs_matter_stack::net::{NetStack, NetSocket}` + `NetworkSend/Receive/Multicast` | `OtNetStack` | rs-thread UDP sockets (1 socket for Matter port 5540; ideally a few more to avoid re-binding for SRP/DNS later) |
 | `rs_matter_stack::mdns::Mdns` | `OtMdns` | SRP client + DNS-SD client (Phase 7/8 in PLAN) |
 | `NetCtl` + `NetChangeNotif` | `OtNetCtl` | discovery scan, dataset TLV apply, attach with timeout, role watcher |
 | `ThreadDiag` + `WirelessDiag` | `OtNetCtl` | MLE/MAC counters, neighbor/route tables, leader data, dataset components |
 | `NetifDiag` + `NetChangeNotif` | `OtNetif` | address list (ML-EID, RLOC, link-local, GUA/ALOC) |
-| `ThreadDriver` / `ThreadCoexDriver` | `OtThreadRunner` | `OpenTrust::run(radio)` + persist loop + ICD loop |
+| `ThreadDriver` / `ThreadCoexDriver` | `OtThreadRunner` | `rs-thread::run(radio)` + persist loop + ICD loop |
 | `Icd` hooks | `apply_icd_params` | poll period, CSL, child timeout, supervision, link mode |
 | `GattPeripheral` | **not ours** | rs-matter-embassy (trouble-host/nimble) |
-| `KvBlobStoreAccess` | not ours | rs-matter; OpenTrust persists its settings through `Settings` |
+| `KvBlobStoreAccess` | not ours | rs-matter; rs-thread persists its settings through `Settings` |
 Required data/knobs from the Thread core for this table: MAC and MLE counters (all fields of Matter's `MacCounters`/`MleCounters`), neighbor table (ext addr, age, rloc16, link frame counter, mle frame counter, LQI, avg/last RSSI, frame error rate, message error rate, rx-on-when-idle, full-thread-device, full-network-data, is-child), route table (ext addr, rloc16, router id, next hop, path cost, LQI in/out, age, allocated, link established), leader data (partition id, weighting, data versions, leader router id), security policy, dataset component presence flags, active/pending timestamp + delay timer, channel mask, `RoutingRole` mapping (Disabled->Unspecified, Detached->Unassigned, Child: `!rx_on_when_idle`->SleepyEndDevice, router-eligible+ftd->REED, else EndDevice).
 
 ### 4.6 Implementation notes / gotchas learned
-1. **One-instance rule**: esp-rs/openthread enforces a single `OpenThread`. rs-matter-embassy relies on `OtNetContext` lock to re-create `OpenThread` per `run` (thread driver may be restarted on Wi-Fi/Thread switch). OpenTrust should support restart with the same resources (no leaking global state), and ideally multiple instances (simulation).
+1. **One-instance rule**: esp-rs/openthread enforces a single `OpenThread`. rs-matter-embassy relies on `OtNetContext` lock to re-create `OpenThread` per `run` (thread driver may be restarted on Wi-Fi/Thread switch). rs-thread should support restart with the same resources (no leaking global state), and ideally multiple instances (simulation).
 2. **`run` returns `!`** and is raced against the Matter task via `select4`; dropping it must be safe at any await point.
-3. **Network change notification** is one waker (`wait_changed`); rs-matter calls it from `NetChangeNotif` in several tasks (netif + netctl) - OpenTrust should use `embassy_sync::signal`/`Watch`/`MultiWakerRegistration` so multiple waiters work.
+3. **Network change notification** is one waker (`wait_changed`); rs-matter calls it from `NetChangeNotif` in several tasks (netif + netctl) - rs-thread should use `embassy_sync::signal`/`Watch`/`MultiWakerRegistration` so multiple waiters work.
 4. **`NetCtl::scan` is async + callback with borrowed data**; `connect` must time out and return `NetCtlError::OtherConnectionFailure` (rs-matter-embassy uses 20 s, spec failsafe is typically 60 s+).
-5. **Memory**: Matter on Thread gets only one UDP socket in the adapter; SRP buffers `OT_SRP_BUF_SZ = 512`, 4 records; OT settings buf 1024 B. Use these as sizing baselines. OpenThread keeps its own C heap and shares MbedTLS with rs-matter (a pain point addressed via `heap-*` features) - OpenTrust being pure Rust with a shared `rs_matter::crypto::Crypto`-compatible primitive layer (or RustCrypto, as rs-matter's default) removes this class of problem; consider letting `opentrust-matter` accept rs-matter's `Crypto` object for AES/CMAC/SHA/ECJPAKE where possible (**uncertain**: rs-matter's `Crypto` trait does not obviously expose AES-CCM*/EC-JPAKE; would need checking `rs-matter-crypto`).
-6. **Features to match**: `ftd` vs MTD (`router_eligible`, REED role), `csl-receiver`, `srp-client`, `dns-client`, `ping-sender` (rs-matter-embassy enables only `matter` = srp + dns + ping). `border-router` is out of scope for OpenTrust initially (also a non-goal upstream).
-7. **Chips** that the downstream ecosystem already targets with this stack: ESP32-C6/H2, nRF52840, nRF54L05/10/15/LM20 (rs-matter-embassy features `nrf52840`, `nrf54l*`). `rs-matter-embassy/src/wireless/thread/nrf.rs` and `esp_thread.rs` contain the board-glue (MPSL, timers) - reuse as-is when OpenTrust matches the `Radio` trait.
+5. **Memory**: Matter on Thread gets only one UDP socket in the adapter; SRP buffers `OT_SRP_BUF_SZ = 512`, 4 records; OT settings buf 1024 B. Use these as sizing baselines. OpenThread keeps its own C heap and shares MbedTLS with rs-matter (a pain point addressed via `heap-*` features) - rs-thread being pure Rust with a shared `rs_matter::crypto::Crypto`-compatible primitive layer (or RustCrypto, as rs-matter's default) removes this class of problem; consider letting `rs-thread-matter` accept rs-matter's `Crypto` object for AES/CMAC/SHA/ECJPAKE where possible (**uncertain**: rs-matter's `Crypto` trait does not obviously expose AES-CCM*/EC-JPAKE; would need checking `rs-matter-crypto`).
+6. **Features to match**: `ftd` vs MTD (`router_eligible`, REED role), `csl-receiver`, `srp-client`, `dns-client`, `ping-sender` (rs-matter-embassy enables only `matter` = srp + dns + ping). `border-router` is out of scope for rs-thread initially (also a non-goal upstream).
+7. **Chips** that the downstream ecosystem already targets with this stack: ESP32-C6/H2, nRF52840, nRF54L05/10/15/LM20 (rs-matter-embassy features `nrf52840`, `nrf54l*`). `rs-matter-embassy/src/wireless/thread/nrf.rs` and `esp_thread.rs` contain the board-glue (MPSL, timers) - reuse as-is when rs-thread matches the `Radio` trait.
 
 ### 4.7 Test harness hint
-`openthread/tests` (excluded workspace member) runs upstream OpenThread E2E + expect tests with a virtual-time lock-step `embassy_executor::raw` executor plus `tests/esp`, `tests/nrf` for HIL. This is the closest existing "OpenThread test framework in cargo" and is directly relevant to the project goal "re-use OpenThread tests via cargo test"; it can be pointed at OpenTrust once the compat facade exists. (Not examined in depth; **uncertain** how pluggable it is.)
+`openthread/tests` (excluded workspace member) runs upstream OpenThread E2E + expect tests with a virtual-time lock-step `embassy_executor::raw` executor plus `tests/esp`, `tests/nrf` for HIL. This is the closest existing "OpenThread test framework in cargo" and is directly relevant to the project goal "re-use OpenThread tests via cargo test"; it can be pointed at rs-thread once the compat facade exists. (Not examined in depth; **uncertain** how pluggable it is.)
 
 ---
 

@@ -1,7 +1,7 @@
 # Differential tests against OpenThread
 
-`crates/opentrust-difftest` feeds the same inputs to OpenThread and to
-OpenTrust and compares the outputs byte for byte (or semantically where
+`crates/rs-thread-difftest` feeds the same inputs to OpenThread and to
+rs-thread and compares the outputs byte for byte (or semantically where
 OpenThread intentionally differs; each such case is classified in the test and
 listed below). The OpenThread side is OpenThread's own C++ classes, called
 through a small shim.
@@ -16,7 +16,7 @@ through a small shim.
   in front of the OpenThread libraries.
 - The shim exposes `extern "C"` functions that take byte buffers or
   fixed-layout structs and return byte buffers (the layouts are mirrored in
-  `crates/opentrust-difftest/src/ffi.rs`). It creates one `ot::Instance`
+  `crates/rs-thread-difftest/src/ffi.rs`). It creates one `ot::Instance`
   (`otInstanceInitSingle`) per test process; `ffi::lock()` serializes the tests
   (OpenThread's instance is not thread safe) and changes into a scratch
   directory first (the simulation platform writes its flash file to `./tmp`).
@@ -28,14 +28,14 @@ through a small shim.
 
 ```sh
 # Default: every test prints "skipped" and passes, nothing from OpenThread is built.
-cargo test -p opentrust-difftest
+cargo test -p rs-thread-difftest
 
 # Build OpenThread (cmake, ninja; sources in the submodule or $OPENTHREAD_SRC)
 # and compare. About 10 s once OpenThread is built.
-cargo test -p opentrust-difftest --features ot
+cargo test -p rs-thread-difftest --features ot
 
 # Long run: 300 000 random cases per test.
-OPENTRUST_DIFF_CASES=300000 cargo test -p opentrust-difftest --features ot --release
+OPENTRUST_DIFF_CASES=300000 cargo test -p rs-thread-difftest --features ot --release
 ```
 
 `cargo test --workspace --exclude openthread-sys` does not build OpenThread: the
@@ -124,7 +124,7 @@ Our behaviour differs from OpenThread's identically in these places: see
 `OPENTRUST-OPENTHREAD-DIFFERENCES.md`. A trailing PadN of any size is elided as a
 whole by both (RFC 6282 allows it only up to 7 octets).
 
-**Bug found and fixed in OpenTrust:** a context shorter than 64 bits was used
+**Bug found and fixed in rs-thread:** a context shorter than 64 bits was used
 even when the address had non-zero bits between the prefix and the IID; those
 bits were lost (OpenThread has the same flaw). Such a context is now only used
 if those bits are zero (commit "6LoWPAN: only use a context shorter than 64
@@ -163,8 +163,8 @@ truncation.
 
 **Bug found and fixed:** OpenThread rejects control characters in network names
 (`IsValidUtf8String`); we accepted them. Fixed in `NetworkName::from_bytes`
-and the dataset validation (regression tests in `opentrust-core` and
-`opentrust-meshcop`). Remaining difference: OpenThread's UTF-8 check only looks
+and the dataset validation (regression tests in `rs-thread-core` and
+`rs-thread-meshcop`). Remaining difference: OpenThread's UTF-8 check only looks
 at lead and continuation bytes, so overlong encodings and surrogates pass; we
 reject them. OpenThread keeps at most 16 bytes of a longer name in its
 `otOperationalDataset` (the TLV check accepts any length, as we do).
@@ -205,8 +205,8 @@ reported by OpenThread, only the first by us (not generated: invalid).
 **Bug found and fixed:** `Tlv::FindTlv` in OpenThread starts from "not found"
 and a truncated TLV ends the walk without changing it, so a wanted TLV behind a
 malformed one is reported as not found. `opentrust_core::tlv::find` returned a
-parse error. It now returns `NotFound`; existing unit tests of `opentrust-core`
-and `opentrust-mesh` that expected `Parse` were updated.
+parse error. It now returns `NotFound`; existing unit tests of `rs-thread-core`
+and `rs-thread-mesh` that expected `Parse` were updated.
 
 ## Not covered
 
@@ -216,7 +216,7 @@ and `opentrust-mesh` that expected `Parse` were updated.
   Registration, Link Metrics), the MeshCoP TLV set outside the dataset
   (commissioning, steering data) and CoAP: covered by the ported OpenThread unit
   vectors (`docs/ot-unit-test-port.md`) and the mixed-network tests
-  (`opentrust-sim`), not yet differentially.
+  (`rs-thread-sim`), not yet differentially.
 - Multipurpose (wake-up) frames and security levels 1 to 4 on the MAC (see
   above).
 - Fuzzing with coverage feedback (`cargo fuzz`) is a separate item.

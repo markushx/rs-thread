@@ -1,0 +1,105 @@
+[package]
+name = "rs-thread-cli"
+description = "OpenThread-compatible CLI for the OpenTrust Thread stack"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["ftd", "bbr", "bbr-server", "border-router", "dataset", "scan", "ping", "tables", "netdata", "srp", "srp-server", "dns", "udp", "diag", "linkmetrics", "commissioning", "scan-servers"]
+# Router-capable build (router table, router thresholds, leader weight).
+ftd = ["rs-thread-instance/ftd", "rs-thread-mle/ftd"]
+# The `dataset` command group.
+dataset = []
+# `scan`, `scan energy`, `discover`.
+scan = []
+# `ping`.
+ping = []
+# `child`, `router`, `neighbor`, `counters`.
+tables = []
+# `netdata`, `prefix`, `route`.
+netdata = []
+# `srp client` (the SRP client of the instance).
+srp = ["rs-thread-instance/srp-client"]
+# `srp server` (the SRP server of the instance).
+srp-server = ["srp", "ftd", "rs-thread-instance/srp-server"]
+# `dns` (the DNS client of the instance).
+dns = ["rs-thread-instance/dns-client"]
+# `udp`.
+udp = []
+# `networkdiagnostic`.
+diag = []
+# Network Data publisher and DHCPv6.
+border-router = ["rs-thread-instance/border-router"]
+# `bbr`, `dua` (Thread 1.2 Backbone Router role and Domain Unicast Address commands).
+bbr = ["rs-thread-instance/bbr"]
+# The Backbone Router role commands (`bbr enable`, `bbr mgmt ...`, `fake`).
+bbr-server = ["bbr", "ftd", "rs-thread-instance/bbr-server"]
+# `linkmetrics` (Thread 1.2 Link Metrics Initiator).
+linkmetrics = ["rs-thread-instance/link-metrics-manager"]
+# `commissioner`, `joiner`.
+commissioning = ["ftd", "joiner", "rs-thread-instance/commissioner"]
+# `joiner` (also on the MTD build).
+joiner = []
+# Answer the Commissioner's Announce Begin, Energy Scan and PAN ID Query
+# requests (also on the MTD build).
+scan-servers = ["rs-thread-instance/scan-servers"]
+# Host binary `rs-thread-cli-sim`: simulated nodes behind OT-style prompts.
+sim = ["sim-mtd", "bbr-server", "rs-thread-sim/ftd", "ftd", "commissioning", "srp-server"]
+# The `[THCI]` commissioning trace lines of OpenThread's reference device
+# build on the CLI output (read by the thread-cert scripts).
+cert-log = ["dep:log", "rs-thread-meshcop/cert-log"]
+# Host binary `rs-thread-cli-vt-mtd`: a minimal thread device (no router, no
+# commissioner, no Border Agent) on the virtual-time simulation platform.
+sim-mtd = ["dep:rs-thread-sim", "bbr", "dataset", "scan", "ping", "tables", "netdata", "srp", "dns", "udp", "diag", "linkmetrics", "joiner", "scan-servers", "cert-log", "ip6-fragmentation", "history", "factory-diag", "rs-thread-instance/srp-services-12"]
+# `diag` (OT factory diagnostics: bookkeeping only, no raw frames).
+factory-diag = []
+# `history` (OT History Tracker: netinfo, rx, tx, rxtx); RAM cost.
+history = ["rs-thread-instance/history-tracker"]
+# IPv6 fragmentation and reassembly (UDP payloads up to 1952 bytes); RAM cost.
+ip6-fragmentation = ["rs-thread-instance/ip6-fragmentation", "rs-thread-net/ip6-fragmentation"]
+defmt = ["dep:defmt", "rs-thread-core/defmt"]
+log = ["dep:log", "rs-thread-core/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-instance = { workspace = true }
+rs-thread-platform = { workspace = true }
+rs-thread-meshcop = { workspace = true }
+rs-thread-mle = { workspace = true }
+rs-thread-mesh = { workspace = true }
+rs-thread-dns = { workspace = true }
+rs-thread-net = { workspace = true }
+rand_core = { workspace = true }
+heapless = { workspace = true }
+rs-thread-sim = { workspace = true, optional = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+rs-thread-sim = { workspace = true, features = ["ftd"] }
+
+[[bin]]
+name = "rs-thread-cli-sim"
+path = "src/bin/sim.rs"
+required-features = ["sim"]
+
+[[bin]]
+name = "rs-thread-cli-vt"
+path = "src/bin/vt.rs"
+required-features = ["sim"]
+
+[[bin]]
+name = "rs-thread-cli-vt-mtd"
+path = "src/bin/vt_mtd.rs"
+required-features = ["sim-mtd"]
+
+[lints]
+workspace = true

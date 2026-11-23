@@ -13,12 +13,12 @@ use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use nrf52840_leader::Board;
-use opentrust_core::crypto::soft::SoftCrypto;
-use opentrust_core::time::{Duration, Instant};
-use opentrust_embassy::{Event, OpenTrust, Resources};
-use opentrust_instance::{ExtAddress, Instance};
-use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::{Radio, RamSettings};
+use rs_thread_core::crypto::soft::SoftCrypto;
+use rs_thread_core::time::{Duration, Instant};
+use rs_thread_embassy::{Event, RsThread, Resources};
+use rs_thread_instance::{ExtAddress, Instance};
+use rs_thread_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
+use rs_thread_platform::{Radio, RamSettings};
 use panic_probe as _;
 use static_cell::StaticCell;
 
@@ -43,13 +43,13 @@ async fn main(spawner: Spawner) {
     let Board { rng, mut radio, .. } = nrf52840_leader::init(&spawner);
     let caps = radio.init().await.unwrap();
     let instance = Instance::new(
-        opentrust_instance::Config::router(ext_address(), caps),
+        rs_thread_instance::Config::router(ext_address(), caps),
         RamSettings::<4096>::new(),
         SoftCrypto,
         rng,
     );
     let res: &'static Res = RES.init(Resources::new(instance, EmbassyClock));
-    let ot = OpenTrust::new(res);
+    let ot = RsThread::new(res);
 
     let app = async {
         for round in 0..3u8 {

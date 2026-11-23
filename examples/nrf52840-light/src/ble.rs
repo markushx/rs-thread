@@ -6,14 +6,14 @@
 //! rs-matter has a commissioning window open on BLE: dropping it (`sdc_disable`)
 //! stops advertising and any connection, and releases MPSL's timeslots to
 //! Thread alone. The BLE host (`trouble-host`) and the BTP engine are
-//! `opentrust_matter::ble`.
+//! `rs_thread_matter::ble`.
 //!
 //! The structure follows `SdcGattPeripheral` of `rs-matter-embassy`
 //! (`src/wireless/thread/nrf.rs`, MIT OR Apache-2.0).
 
 use defmt::{info, warn};
 use nrf_sdc::{Builder, Mem, Peripherals};
-use opentrust_matter::ble::{TroubleBtpGattContext, TroubleBtpGattPeripheral};
+use rs_thread_matter::ble::{TroubleBtpGattContext, TroubleBtpGattPeripheral};
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::stack::ble::GattPeripheral;
 use rs_matter::transport::network::btp::{AdvData, Btp};
@@ -48,7 +48,7 @@ impl<R: rand_core::CryptoRng> rand_core09::CryptoRng for Rng09<R> {}
 
 /// The BLE side of the radio: everything the SoftDevice Controller needs.
 pub struct SdcGatt<R> {
-    mpsl: &'static opentrust_nrf::Mpsl,
+    mpsl: &'static rs_thread_nrf::Mpsl,
     sdc: Peripherals<'static>,
     mem: &'static mut Mem<SDC_MEM>,
     context: &'static TroubleBtpGattContext,
@@ -57,7 +57,7 @@ pub struct SdcGatt<R> {
 
 impl<R> SdcGatt<R> {
     pub fn new(
-        mpsl: &'static opentrust_nrf::Mpsl,
+        mpsl: &'static rs_thread_nrf::Mpsl,
         sdc: Peripherals<'static>,
         mem: &'static mut Mem<SDC_MEM>,
         context: &'static TroubleBtpGattContext,

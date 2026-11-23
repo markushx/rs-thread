@@ -1,6 +1,6 @@
-//! OpenThread-compatible CLI of OpenTrust on the nRF52840 DK.
+//! OpenThread-compatible CLI of rs-thread on the nRF52840 DK.
 //!
-//! The interpreter of `opentrust-cli` runs over UARTE0 on the pins of the
+//! The interpreter of `rs-thread-cli` runs over UARTE0 on the pins of the
 //! J-Link VCOM port (TX P0.06, RX P0.08, 115200 8N1), like `ot-cli-ftd` on
 //! `ot-nrf528xx`: prompt `> `, the typed line is echoed, CR or LF ends it,
 //! backspace edits it, and asynchronous output (ping replies, scan results,
@@ -9,7 +9,7 @@
 //!
 //! The settings (datasets, network info with the frame counters stored ahead,
 //! child and parent info, ...) are persisted in
-//! the Thread region of flash (`opentrust-flash`, see `memory.x`) and survive
+//! the Thread region of flash (`rs-thread-flash`, see `memory.x`) and survive
 //! a reset. `reset` restarts the chip; `factoryreset` erases the settings
 //! first (the next boot picks a new random extended address unless the network information restores one), as does Button 1 held
 //! at boot.
@@ -33,13 +33,13 @@ use embassy_nrf::{bind_interrupts, peripherals, uarte};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use nrf52840_leader::Board;
-use opentrust_cli::Cli;
-use opentrust_core::crypto::soft::SoftCrypto;
-use opentrust_embassy::{OpenTrust, Resources};
-use opentrust_flash::{FlashWriter, Settings, Shared};
-use opentrust_instance::Instance;
-use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::Radio;
+use rs_thread_cli::Cli;
+use rs_thread_core::crypto::soft::SoftCrypto;
+use rs_thread_embassy::{RsThread, Resources};
+use rs_thread_flash::{FlashWriter, Settings, Shared};
+use rs_thread_instance::Instance;
+use rs_thread_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
+use rs_thread_platform::Radio;
 use panic_probe as _;
 use static_cell::StaticCell;
 
@@ -125,12 +125,12 @@ async fn main(spawner: Spawner) {
     .unwrap();
     info!("settings: {} bytes loaded", STORE.with(|i| i.used()));
     let caps = radio.init().await.unwrap();
-    info!("OpenTrust CLI");
-    let config = opentrust_instance::Config::router(opentrust_instance::RANDOM_EXT_ADDRESS, caps);
+    info!("RsThread CLI");
+    let config = rs_thread_instance::Config::router(rs_thread_instance::RANDOM_EXT_ADDRESS, caps);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
         Instance::init(slot, config, STORE.settings(), SoftCrypto, rng);
     });
-    let ot = OpenTrust::new(res);
+    let ot = RsThread::new(res);
 
     // Application interrupts must stay below MPSL's priorities.
     interrupt::UARTE0.set_priority(Priority::P3);
@@ -221,7 +221,7 @@ fn feed(
     l: &mut Line,
     c: u8,
     cli: &mut Cli,
-    ot: &OpenTrust<'_, NoopRawMutex, EmbassyClock, Store, SoftCrypto, NrfRng<'static>>,
+    ot: &RsThread<'_, NoopRawMutex, EmbassyClock, Store, SoftCrypto, NrfRng<'static>>,
     o: &mut Sink,
 ) {
     let was_cr = core::mem::take(&mut l.after_cr);

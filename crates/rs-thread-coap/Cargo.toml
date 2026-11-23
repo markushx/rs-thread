@@ -1,0 +1,31 @@
+[package]
+name = "rs-thread-coap"
+description = "CoAP, Thread Management Framework (TMF) and CoAPS for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "rs-thread-core/defmt", "rs-thread-net/defmt"]
+log = ["dep:log", "rs-thread-core/log", "rs-thread-net/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-net = { workspace = true }
+rand_core = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Test oracle only: differential codec tests (host std); never used in no_std code.
+coap-lite = { version = "0.13", default-features = false }

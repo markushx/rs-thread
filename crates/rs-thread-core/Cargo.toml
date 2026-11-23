@@ -1,0 +1,44 @@
+[package]
+name = "rs-thread-core"
+description = "Core types, errors, buffers, timers, crypto/settings traits and logging for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["soft-crypto"]
+# Software crypto backend (`crypto::soft::SoftCrypto`) on RustCrypto crates.
+# Disable to use only a hardware backend.
+soft-crypto = ["dep:aes", "dep:cmac", "dep:hmac", "dep:sha2"]
+# EC-JPAKE on P-256 (`crypto::ecjpake`, Thread commissioning / DTLS
+# `TLS_ECJPAKE_WITH_AES_128_CCM_8`); pulls in RustCrypto `p256`.
+ecjpake = ["dep:p256"]
+# ECDSA P-256 / SHA-256 signing (`crypto::ecdsa`, SRP SIG(0)); RustCrypto `p256`.
+ecdsa = ["dep:p256", "p256/ecdsa"]
+defmt = ["dep:defmt"]
+log = ["dep:log"]
+
+[dependencies]
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+rand_core = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+aes = { workspace = true, optional = true, features = ["zeroize"] }
+cmac = { workspace = true, optional = true, features = ["zeroize"] }
+hmac = { workspace = true, optional = true, features = ["zeroize"] }
+sha2 = { workspace = true, optional = true }
+p256 = { workspace = true, optional = true }
+
+[dev-dependencies]
+ccm = { workspace = true }
+
+[lints]
+workspace = true

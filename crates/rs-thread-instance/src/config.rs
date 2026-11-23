@@ -1,0 +1,99 @@
+//! Capacities of the instance: every fixed-size table and buffer pool of the
+//! stack in one place (OpenThread: `config/*.h` capacity macros). The values
+//! differ between the full device (`ftd`) and the end-device build
+//! (`default-features = false`): an end device has no children, no indirect
+//! queue, no held datagrams (it sends everything off-link to its parent, so
+//! it never runs an address query) and no MPL forwarding buffers (OT
+//! `ip6_mpl.cpp` buffers messages for retransmission under `OPENTHREAD_FTD`
+//! only; the seed set for duplicate detection stays).
+
+/// Capacity of the child table (router role).
+pub const CHILDREN: usize = if cfg!(feature = "ftd") { 10 } else { 0 };
+
+/// UDP sockets of the application.
+pub const UDP_SOCKETS: usize = 5;
+/// Receive queue depth of each UDP socket.
+pub const UDP_QUEUE: usize = 2;
+/// Registered UDP receivers (internal protocols).
+pub const UDP_RECEIVERS: usize = 4;
+/// Buffers (of 128 bytes) in the pool of the UDP receive queues.
+pub const UDP_POOL_BLOCKS: usize = 16;
+
+/// Datagrams held while an address query runs.
+pub const HOLD_SLOTS: usize = if cfg!(feature = "ftd") { 2 } else { 0 };
+/// Buffers that hold datagrams while an address query runs (the default of
+/// the forwarder; two full-size datagrams with IPv6 fragmentation).
+pub const HOLD_BUFS: usize = if !cfg!(feature = "ftd") {
+    0
+} else if cfg!(feature = "ip6-fragmentation") {
+    24
+} else {
+    12
+};
+/// Datagrams being reassembled from 6LoWPAN fragments.
+pub const REASM_SLOTS: usize = 2;
+/// Messages in the indirect queue for sleepy children.
+pub const INDIRECT_MSGS: usize = if cfg!(feature = "ftd") { 4 } else { 0 };
+/// Buffers (of 128 bytes) in the pool of the indirect queue.
+pub const INDIRECT_POOL_BLOCKS: usize = if cfg!(feature = "ftd") { 16 } else { 0 };
+
+/// Entries of the MPL seed set (duplicate detection; every node).
+pub const MPL_SEEDS: usize = 35;
+/// Buffered messages of MPL forwarding (retransmissions; routers only).
+pub const MPL_BUFS: usize = if cfg!(feature = "ftd") { 4 } else { 0 };
+
+/// Network Data capacity in bytes.
+pub const NETDATA_LEN: usize = 512;
+
+/// Buffers (of 128 bytes) of the TMF and application outbox.
+pub const TMF_OUTBOX_BLOCKS: usize = 16;
+/// Buffers (of 128 bytes) of the MLE outbox.
+pub const MLE_OUTBOX_BLOCKS: usize = 8;
+
+/// Pending requests of the TMF agent.
+pub const TMF_REQUESTS: usize = 4;
+/// Resource slots of the TMF agent.
+pub const TMF_RESOURCES: usize = 32;
+/// Cached responses of the TMF agent.
+pub const TMF_CACHE: usize = 4;
+/// Largest TMF message: a Relay Receive / Transmit carries a whole DTLS
+/// record of the Joiner (FTD only; an end device relays nothing).
+pub const TMF_MSG: usize = if cfg!(feature = "ftd") { 1024 } else { 320 };
+
+/// Entries of the address resolver cache.
+pub const RESOLVER_ENTRIES: usize = 8;
+/// Entries of the Network Data publisher.
+pub const PUBLISHER_ENTRIES: usize = 3;
+/// SLAAC addresses.
+pub const SLAAC_ADDRS: usize = 4;
+
+/// Frames in the MAC direct transmit queue.
+pub const MAC_TX: usize = rs_thread_mac::mac::TX_QUEUE_LEN;
+/// Frames in the MAC indirect queue (for sleepy children).
+pub const MAC_INDIRECT: usize = if cfg!(feature = "ftd") {
+    rs_thread_mac::mac::INDIRECT_QUEUE_LEN
+} else {
+    0
+};
+/// Events in the MAC upward queue.
+pub const MAC_EVENTS: usize = rs_thread_mac::mac::EVENT_QUEUE_LEN;
+/// Data poll requests in the MAC queue (parent side). The queue is a
+/// `heapless::Deque`, which needs at least one slot.
+pub const MAC_POLL_REQUESTS: usize = if cfg!(feature = "ftd") {
+    rs_thread_mac::mac::POLL_REQUEST_QUEUE_LEN
+} else {
+    1
+};
+/// Entries of the MAC short to extended address map.
+pub const MAC_NEIGHBORS: usize = if cfg!(feature = "ftd") {
+    rs_thread_mac::mac::NEIGHBOR_MAP_LEN
+} else {
+    4
+};
+/// CSL children of the MAC (parent side): zero when CSL is disabled so the
+/// parent-side CSL tracking table is compiled away entirely.
+pub const MAC_CSL_CHILDREN: usize = if cfg!(all(feature = "ftd", feature = "csl")) {
+    rs_thread_mac::mac::CSL_CHILD_LEN
+} else {
+    0
+};

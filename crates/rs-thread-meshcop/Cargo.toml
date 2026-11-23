@@ -1,0 +1,55 @@
+[package]
+name = "rs-thread-meshcop"
+description = "Mesh Commissioning Protocol (MeshCoP): datasets, joiner, commissioner for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+# Leader / router side: dataset leader handlers, commissioner session state.
+# The Joiner (DTLS client, Joiner Entrust) is always built; a joiner-only
+# end device uses `default-features = false`.
+default = ["ftd", "commissioner", "border-agent"]
+ftd = ["rs-thread-mle/ftd", "rs-thread-mesh/ftd"]
+# The Commissioner (on-mesh, and the core of an external Commissioner).
+commissioner = ["ftd", "rs-thread-dtls/dtls-server"]
+# The Border Agent and the external Commissioner's client side.
+border-agent = ["commissioner"]
+# The TCAT Device's command engine (Thread 1.4.1 chapter 13, ADR 0002);
+# transport- and TLS-agnostic, optional.
+tcat = []
+# Certification trace of JOIN_FIN / JOIN_ENT to the `log` crate (target
+# `thci`), as OpenThread's reference device `LogCert` lines.
+cert-log = ["dep:log"]
+defmt = ["dep:defmt", "rs-thread-core/defmt", "rs-thread-coap/defmt", "rs-thread-mle/defmt", "rs-thread-net/defmt", "rs-thread-mesh/defmt", "rs-thread-dtls/defmt"]
+log = ["dep:log", "rs-thread-core/log", "rs-thread-coap/log", "rs-thread-mle/log", "rs-thread-net/log", "rs-thread-mesh/log", "rs-thread-dtls/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-coap = { workspace = true }
+rs-thread-mle = { workspace = true }
+rs-thread-net = { workspace = true }
+rs-thread-mesh = { workspace = true }
+rs-thread-dtls = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Build and test the optional TCAT engine with the default checks.
+rs-thread-meshcop = { path = ".", default-features = false, features = ["tcat"] }
+rs-thread-mle = { workspace = true, features = ["test-support"] }
+rs-thread-platform = { workspace = true }
+
+[lints]
+workspace = true

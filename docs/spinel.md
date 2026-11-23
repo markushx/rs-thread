@@ -1,15 +1,15 @@
-# Spinel: OpenTrust as OpenThread's radio co-processor
+# Spinel: rs-thread as OpenThread's radio co-processor
 
-Spinel is the host/co-processor protocol of OpenThread. OpenTrust implements
-the **RCP** side (an OpenTrust radio serves OpenThread host software such as
-`ot-br-posix` or the posix `ot-cli`); the **NCP** side (the OpenTrust stack
+Spinel is the host/co-processor protocol of OpenThread. rs-thread implements
+the **RCP** side (an rs-thread radio serves OpenThread host software such as
+`ot-br-posix` or the posix `ot-cli`); the **NCP** side (the rs-thread stack
 behind Spinel) is not implemented yet.
 
 | crate | contents |
 |-------|----------|
-| `opentrust-spinel` | `no_std`, no alloc: HDLC-lite framing (`Hdlc::Encoder` / `Decoder` of OpenThread, CRC-16/X.25), Spinel data types (`codec::Writer` / `Reader`: packed integers, `d`, `D`, `U`, `t(...)`), frame header and `Frame` parsing, command / status / capability / property constants |
-| `opentrust-ncp` | `no_std`, no alloc: `rcp::Rcp`, any `opentrust_platform::radio::Radio` behind the Spinel radio property set, over a `rcp::Transport` (UART, USB CDC, pipe) |
-| `opentrust-rcp-sim` | host binary: `Rcp` on stdin / stdout plus OpenThread's real-time simulation radio (UDP multicast), like `ot-rcp` of the simulation platform |
+| `rs-thread-spinel` | `no_std`, no alloc: HDLC-lite framing (`Hdlc::Encoder` / `Decoder` of OpenThread, CRC-16/X.25), Spinel data types (`codec::Writer` / `Reader`: packed integers, `d`, `D`, `U`, `t(...)`), frame header and `Frame` parsing, command / status / capability / property constants |
+| `rs-thread-ncp` | `no_std`, no alloc: `rcp::Rcp`, any `opentrust_platform::radio::Radio` behind the Spinel radio property set, over a `rcp::Transport` (UART, USB CDC, pipe) |
+| `rs-thread-rcp-sim` | host binary: `Rcp` on stdin / stdout plus OpenThread's real-time simulation radio (UDP multicast), like `ot-rcp` of the simulation platform |
 | `examples/nrf52840-leader` `--bin rcp` | firmware: the nRF52840 radio (`radio-nrf802154`) as RCP on the DK's VCOM UART |
 
 ## Status
@@ -20,9 +20,9 @@ behind Spinel) is not implemented yet.
   specification.
 - RCP engine: tests against `TestRadio` (what a host sees: boot notification,
   identity properties, configuration, receive, transmit with ACK / retries /
-  failure, source match, MAC keys, energy scan, reset), `cargo test -p opentrust-ncp`.
-- Interoperability: OpenThread's posix host `ot-cli` with `opentrust-rcp-sim`
-  as RCP (`crates/opentrust-rcp-sim/tests/posix_host.rs`): the host forms a
+  failure, source match, MAC keys, energy scan, reset), `cargo test -p rs-thread-ncp`.
+- Interoperability: OpenThread's posix host `ot-cli` with `rs-thread-rcp-sim`
+  as RCP (`crates/rs-thread-rcp-sim/tests/posix_host.rs`): the host forms a
   network, an `ot-cli-ftd` simulation node joins and both ping each other;
   and the reverse (the OpenThread node leads, the host attaches). A subset of
   OpenThread's own `tests/scripts/expect/posix-*.exp` runs against the RCP
@@ -70,7 +70,7 @@ behind Spinel) is not implemented yet.
   (`CNTR_*`), `STREAM_LOG` / `STREAM_DEBUG`, multi-PAN (`MULTIPAN_*`),
   `SPINEL_RESET_BOOTLOADER`, diagnostics (`diag`).
 - CSL: the RCP does not fill the CSL IE phase of frames a CSL child sends
-  (`PsduTxInfo::csl_present` is never set), and `opentrust-rcp-sim` answers
+  (`PsduTxInfo::csl_present` is never set), and `rs-thread-rcp-sim` answers
   every frame with an immediate ACK (no enhanced ACK, so no CSL). A radio
   with `TRANSMIT_SEC` (nRF52840) does its own CSL processing.
 
@@ -89,18 +89,18 @@ OpenThread posix host and the real-time simulation nodes, about 3 min):
 
 ```sh
 cargo build -p openthread-sys --features posix-host   # -> <target>/ot-sim/ot-cli-posix, ot-cli-ftd-rt, ot-rcp-rt
-cargo build -p opentrust-rcp-sim
-cargo test -p opentrust-rcp-sim                        # skips without the OpenThread binaries
+cargo build -p rs-thread-rcp-sim
+cargo test -p rs-thread-rcp-sim                        # skips without the OpenThread binaries
 ```
 
 By hand:
 
 ```sh
-PORT_OFFSET=1 ot-cli-posix 'spinel+hdlc+forkpty://target/debug/opentrust-rcp-sim?forkpty-arg=1'
+PORT_OFFSET=1 ot-cli-posix 'spinel+hdlc+forkpty://target/debug/rs-thread-rcp-sim?forkpty-arg=1'
 PORT_OFFSET=1 ot-cli-ftd-rt 2     # a simulation peer on the same radio
 ```
 
-The node ID is the `forkpty-arg`; `opentrust-rcp-sim` takes `PORT_BASE`
+The node ID is the `forkpty-arg`; `rs-thread-rcp-sim` takes `PORT_BASE`
 (default 9000) and `PORT_OFFSET` (default 0) like OpenThread's simulation
 and logs to the file named by `OPENTRUST_RCP_LOG` (`OPENTRUST_RCP_HEX=1`
 adds the received PSDUs); it never writes to stderr (which is the Spinel
@@ -109,12 +109,12 @@ link).
 OpenThread's expect scripts (`tests/scripts/expect/posix-*.exp`) run against
 the RCP with `OT_NODE_TYPE=rcp`, `OT_POSIX_APPS` pointing at a directory with
 `ot-cli-posix` as `ot-cli`, and `OT_SIMULATION_APPS` at one with
-`opentrust-rcp-sim` as `ncp/ot-rcp` (and the real-time `ot-cli-ftd` as
+`rs-thread-rcp-sim` as `ncp/ot-rcp` (and the real-time `ot-cli-ftd` as
 `cli/ot-cli-ftd`). Keep the working directory fresh per run: the posix host
 and the simulation nodes persist their settings (frame counters!) in `tmp/`,
 and stale ones make the secured frames of a new run fail the replay check.
 
-### Expect scripts against `opentrust-rcp-sim`
+### Expect scripts against `rs-thread-rcp-sim`
 
 A script counts as passed when it reaches its final `dispose_all` (the
 `dispose_all` itself hangs on macOS because the posix CLI ignores `^D`, so
@@ -163,6 +163,6 @@ Host side: `spinel+hdlc+uart:///dev/cu.usbmodemXXXX?uart-baudrate=460800`.
 OpenThread itself moved from NCP to RCP + posix host for the border router;
 the remaining NCP hosts are `wpantund` (unmaintained), the Zephyr / ESP hosts
 and `pyspinel`'s `spinel-cli.py`. An NCP would serve `NET_*`, `THREAD_*`,
-`IPV6_*` and `STREAM_NET` from `opentrust-instance` over the same
-`Transport`; the codec and constants of `opentrust-spinel` are written for
+`IPV6_*` and `STREAM_NET` from `rs-thread-instance` over the same
+`Transport`; the codec and constants of `rs-thread-spinel` are written for
 it.

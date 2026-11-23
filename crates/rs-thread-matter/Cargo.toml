@@ -1,0 +1,58 @@
+[package]
+name = "rs-thread-matter"
+description = "rs-matter integration for the OpenTrust Thread stack (Matter over Thread)"
+version.workspace = true
+edition.workspace = true
+# rs-matter needs 1.92 (the workspace MSRV is 1.85).
+rust-version = "1.92"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["ftd"]
+# Router-capable node (REED role, route table); without it the node is an
+# end device.
+ftd = ["rs-thread-embassy/ftd"]
+# BTP GATT peripheral (Matter commissioning over BLE) on `trouble-host`.
+ble-trouble = ["dep:trouble-host", "dep:bt-hci", "dep:embedded-io", "dep:static_cell"]
+defmt = ["dep:defmt", "trouble-host?/defmt", "bt-hci?/defmt", "rs-thread-flash/defmt", "rs-thread-core/defmt", "rs-thread-embassy/defmt", "rs-matter/defmt"]
+log = ["dep:log", "trouble-host?/log", "bt-hci?/log", "rs-thread-core/log", "rs-thread-embassy/log", "rs-matter/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-platform = { workspace = true }
+rs-thread-instance = { workspace = true }
+rs-thread-meshcop = { workspace = true }
+rs-thread-dns = { workspace = true }
+rs-thread-flash = { workspace = true }
+# Matter advertises through the SRP client and resolves peers through the
+# DNS client.
+rs-thread-embassy = { path = "../rs-thread-embassy", version = "0.1.0", default-features = false, features = ["srp-client", "dns-client"] }
+rs-matter = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-futures = { workspace = true }
+heapless = { workspace = true }
+rand_core = { workspace = true }
+# `central` is off: Matter commissioning is peripheral-only, and the central
+# role would pull the larger SoftDevice Controller variant.
+trouble-host = { version = "0.8", optional = true, default-features = false, features = ["peripheral", "gatt", "derive", "default-packet-pool"] }
+bt-hci = { version = "0.10", optional = true, default-features = false }
+embedded-io = { version = "0.7", optional = true }
+static_cell = { version = "2", optional = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+rs-thread-sim = { workspace = true, features = ["testing", "ftd"] }
+# `std` (alloc, no `os`: the test harness brings its own embassy-time driver)
+# and the RustCrypto backend for the Matter side of the tests.
+rs-matter = { workspace = true, features = ["std", "rustcrypto"] }
+rand = "0.10"
+
+[lints]
+workspace = true

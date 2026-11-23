@@ -15,13 +15,13 @@ curve P-256 (secp256r1). The password is the PSKd (Joiner) or the PSKc
 (`PMS = SHA-256(x(PMSK))`), the RFC 5246 PRF/key block and
 `KEK = SHA-256(key_block)[0..16]`, and the AEAD (RFC 6655 `AES_128_CCM_8`).
 
-What OpenTrust already has (Phase 1, `opentrust_core::crypto`): AES-CCM*
+What rs-thread already has (Phase 1, `opentrust_core::crypto`): AES-CCM*
 (incl. M=8, so `AES_128_CCM_8` record protection), SHA-256, HMAC-SHA256,
 the TLS 1.2 PRF (`kdf::tls12_prf_sha256`) and the KEK derivation
 (`kdf::kek_from_master_secret`). Missing: the EC-JPAKE key exchange on P-256
 and the DTLS 1.2 record/handshake layer.
 
-Constraints: `no_std`, no heap, MSRV 1.85, no `unsafe` in OpenTrust crates,
+Constraints: `no_std`, no heap, MSRV 1.85, no `unsafe` in rs-thread crates,
 Apache-2.0, must coexist with rs-matter (which already pulls in RustCrypto
 `p256` 0.14 for SPAKE2+ in its `rustcrypto` backend).
 
@@ -68,7 +68,7 @@ rs-matter's `EcPoint`/`EcScalar`). A minimal DTLS 1.2 implementing exactly
 one suite and one key exchange: record layer (epochs, 48-bit sequence
 numbers, replay window, `AES_128_CCM_8` via our CCM*), handshake framing
 with fragmentation/reassembly into a fixed buffer, retransmission timers
-(sans-IO, driven by `opentrust-core::timer`), cookie exchange
+(sans-IO, driven by `rs-thread-core::timer`), cookie exchange
 (HelloVerifyRequest), `Finished` verification via the TLS PRF, and the
 EC-JPAKE extension (`ecjpake_key_kp_pair_list`, RFC 8235 Schnorr NIZK proofs) and
 ServerKeyExchange/ClientKeyExchange. No certificates, no renegotiation, no
@@ -115,16 +115,16 @@ self-test vectors become Rust KATs, and `tools/openthread-sys` (OpenThread +
 mbedTLS) serves as the interop/differential peer for full Joiner and
 Commissioner handshakes in simulation.
 
-Placement: EC-JPAKE in `opentrust-core::crypto::ecjpake` (feature
-`ecjpake`, pulls in `p256`), DTLS in `opentrust-coap` (or a dedicated
-`opentrust-dtls` crate if it grows), driven by `opentrust-meshcop`.
+Placement: EC-JPAKE in `rs-thread-core::crypto::ecjpake` (feature
+`ecjpake`, pulls in `p256`), DTLS in `rs-thread-coap` (or a dedicated
+`rs-thread-dtls` crate if it grows), driven by `rs-thread-meshcop`.
 
 ## Consequences
 
 - `p256 = { version = "0.14", default-features = false, features =
   ["arithmetic"] }` (same line as rs-matter, so a combined build has a
   single copy). Implemented: `opentrust_core::crypto::ecjpake` (feature
-  `ecjpake`) and the `opentrust-dtls` crate (with `coaps::Coaps` behind
+  `ecjpake`) and the `rs-thread-dtls` crate (with `coaps::Coaps` behind
   `SecureTransport`).
 - Security review of the EC-JPAKE/DTLS code is mandatory before M4
   (constant-time scalar handling, ZKP verification incl. point validation
@@ -133,7 +133,7 @@ Placement: EC-JPAKE in `opentrust-core::crypto::ecjpake` (feature
 - Test plan: mbedTLS `ecjpake` self-test KATs; ZKP negative tests; DTLS
   handshake transcripts captured from OpenThread (`ot-cli` joiner/commissioner
   in simulation) replayed against the Rust implementation; live interop with
-  OpenThread nodes in `opentrust-sim`; fuzzing of the record/handshake
+  OpenThread nodes in `rs-thread-sim`; fuzzing of the record/handshake
   parsers.
 - If the minimal DTLS turns out too costly, fall back to (b) for DTLS only,
   isolated in a `-sys` crate behind a feature, keeping EC-JPAKE in Rust.

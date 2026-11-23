@@ -1,0 +1,32 @@
+[package]
+name = "rs-thread-ncp"
+description = "Spinel RCP (radio co-processor) and NCP support for the OpenTrust Thread stack"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+defmt = ["dep:defmt", "rs-thread-core/defmt", "rs-thread-platform/defmt", "rs-thread-mac/defmt", "rs-thread-spinel/defmt", "heapless/defmt"]
+log = ["dep:log", "rs-thread-core/log", "rs-thread-platform/log", "rs-thread-mac/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-platform = { workspace = true }
+rs-thread-mac = { workspace = true }
+rs-thread-spinel = { workspace = true }
+heapless = { workspace = true }
+embassy-futures = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+
+[lints]
+workspace = true

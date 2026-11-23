@@ -1,4 +1,4 @@
-# Thread Border Router for the OpenTrust Matter light
+# Thread Border Router for the rs-thread Matter light
 
 The nRF52840 light (`examples/nrf52840-light`) can be commissioned two ways:
 over BLE (the default build, section 5a: chip-tool hands it the Thread dataset)
@@ -76,7 +76,7 @@ INFRA_IF_NAME=eth0 ./script/setup        # builds and installs otbr-agent, sets 
 Both enable the SRP server with the advertising proxy (`OTBR_SRP_ADVERTISING_PROXY=ON`),
 the Border Routing manager (it announces the OMR prefix) and the web UI on
 port 80/8080. The SRP server is published in the Network Data as service
-`5d` (unicast) or `5c` (anycast); OpenTrust's SRP client finds either.
+`5d` (unicast) or `5c` (anycast); rs-thread's SRP client finds either.
 
 ## 3. Form the network and get the dataset
 
@@ -359,7 +359,7 @@ interface to other tools: a light that is not commissioned through their own
 Matter controller app (which needs BLE for the first step, or a QR code the
 ecosystem app drives itself) cannot join them. The Apple and Google credentials
 are shared with Matter devices only during their own commissioning, over BLE.
-OpenTrust's light can be commissioned over BLE (section 5a), but only by a
+rs-thread's light can be commissioned over BLE (section 5a), but only by a
 commissioner that has the dataset to give it: use your own BR (this document)
 with `chip-tool pairing ble-thread`, or the standalone network of the
 Thread-only build. Commissioning it through an ecosystem app needs that app's

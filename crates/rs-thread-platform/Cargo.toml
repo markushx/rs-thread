@@ -1,0 +1,35 @@
+[package]
+name = "rs-thread-platform"
+description = "Platform abstraction traits (radio, clock/alarm, entropy, settings) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+# In-memory test radio (`radio::sim::TestRadio`) and mock clock.
+# Enabled automatically in test builds via `#[cfg(test)]` guards.
+# Enable explicitly when you need them from non-test code (the sim crate).
+testing = []
+defmt = ["dep:defmt", "rs-thread-core/defmt", "heapless/defmt"]
+log = ["dep:log", "rs-thread-core/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+heapless = { workspace = true }
+bitflags = { workspace = true }
+rand_core = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[dev-dependencies]
+embassy-futures = { workspace = true }
+
+[lints]
+workspace = true

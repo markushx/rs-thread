@@ -5,8 +5,8 @@ Status: accepted
 ## Context
 
 The protocol crates are sans-IO building blocks. Each has its own test
-simulator that feeds the hooks of that layer by hand (`opentrust-mle::sim`,
-`opentrust-mesh::sim`, `opentrust-meshcop::net_sim`). A device needs one
+simulator that feeds the hooks of that layer by hand (`rs-thread-mle::sim`,
+`rs-thread-mesh::sim`, `rs-thread-meshcop::net_sim`). A device needs one
 object that owns every layer, connects the hooks and exposes a public API
 (OpenThread: `otInstance` plus `otThread*`, `otDataset*`, `otIp6*`, `otUdp*`,
 `otSrpClient*`).
@@ -15,9 +15,9 @@ object that owns every layer, connects the hooks and exposes a public API
 
 ### Where it lives
 
-A new crate `opentrust-instance`. It depends on `-core`, `-platform`, `-mac`,
+A new crate `rs-thread-instance`. It depends on `-core`, `-platform`, `-mac`,
 `-lowpan`, `-net`, `-coap`, `-mle`, `-mesh`, `-meshcop`, `-dns`. Nothing below
-depends on it; `opentrust-embassy` (async facade), `opentrust-sim` (test radio
+depends on it; `rs-thread-embassy` (async facade), `rs-thread-sim` (test radio
 medium) and the future `-matter` / `-cli` / `-ncp` depend on it. Features
 mirror the lower crates and are forwarded: `ftd` (default), `commissioner`,
 `border-agent`, `tcat`, `trel`, `defmt`, `log`. An MTD-only build
@@ -37,7 +37,7 @@ instance.next_deadline() -> Option<Instant>
 instance.poll_event() -> Option<Event>
 ```
 
-The async facade (`opentrust-embassy`) runs the `Radio` trait against these
+The async facade (`rs-thread-embassy`) runs the `Radio` trait against these
 calls (as `MacDriver` does for the bare MAC); the simulator calls them
 directly with virtual time. Time, entropy and settings are arguments or
 generic parameters: `C: CryptoBackend`, `R: rand_core::Rng`
@@ -113,7 +113,7 @@ no globals):
 - joiner (`commissioner`-independent, always present): `joiner_start`;
   commissioner (feature): `commissioner_start`, `commissioner_add_joiner`.
 
-Types: `Role` (from `opentrust-mle`), `Dataset` (from `opentrust-meshcop`),
+Types: `Role` (from `rs-thread-mle`), `Dataset` (from `rs-thread-meshcop`),
 `Event`, `Config`.
 
 ## Consequences

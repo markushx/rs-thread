@@ -1,4 +1,4 @@
-//! OpenTrust node for interoperability tests against OpenThread on the
+//! rs-thread node for interoperability tests against OpenThread on the
 //! nRF52840 DK. It takes the shared test dataset
 //! ([`nrf52840_leader::DATASET_TLVS`]) and starts Thread: it attaches to the
 //! network of the peer (it only forms a partition of its own if nobody
@@ -8,7 +8,7 @@
 //! of the shared mesh-local prefix, reachable whichever device leads).
 //!
 //! The settings (datasets, network info with the frame counters, parent and
-//! child info) are persisted in flash (`opentrust-flash`, region in
+//! child info) are persisted in flash (`rs-thread-flash`, region in
 //! `memory.x`): after a reset the node restores its role, RLOC16 and ML-EID
 //! and reattaches to its parent with a Child Update instead of a full attach.
 //! Button 1 held at boot erases the settings (factory reset).
@@ -29,13 +29,13 @@ use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use nrf52840_leader::Board;
-use opentrust_core::crypto::soft::SoftCrypto;
-use opentrust_core::settings::NetworkInfo;
-use opentrust_embassy::{OpenTrust, Resources};
-use opentrust_flash::{FlashWriter, Settings, Shared};
-use opentrust_instance::{Dataset, Instance};
-use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::Radio;
+use rs_thread_core::crypto::soft::SoftCrypto;
+use rs_thread_core::settings::NetworkInfo;
+use rs_thread_embassy::{RsThread, Resources};
+use rs_thread_flash::{FlashWriter, Settings, Shared};
+use rs_thread_instance::{Dataset, Instance};
+use rs_thread_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
+use rs_thread_platform::Radio;
 use panic_probe as _;
 use static_cell::StaticCell;
 
@@ -102,13 +102,13 @@ async fn main(spawner: Spawner) {
     }
     let caps = radio.init().await.unwrap();
     let mut config =
-        opentrust_instance::Config::router(opentrust_instance::RANDOM_EXT_ADDRESS, caps);
+        rs_thread_instance::Config::router(rs_thread_instance::RANDOM_EXT_ADDRESS, caps);
     config.mle.router.eligible = !cfg!(feature = "child-only");
     info!("router eligible: {}", config.mle.router.eligible);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
         Instance::init(slot, config, STORE.settings(), SoftCrypto, rng);
     });
-    let ot = OpenTrust::new(res);
+    let ot = RsThread::new(res);
 
     let app = async {
         ot.with(|i, now| {
@@ -213,7 +213,7 @@ async fn main(spawner: Spawner) {
                     }
                     #[cfg(feature = "radio-nrf802154")]
                     {
-                        let e = opentrust_nrf::tx_error_stats();
+                        let e = rs_thread_nrf::tx_error_stats();
                         info!(
                             "  tx errors: busy {} slot_ended {} slot_denied {} schedule {} no_ack {} no_mem {} aborted {} invalid_ack {} other {} (last {:#x})",
                             e.busy_channel,
@@ -225,7 +225,7 @@ async fn main(spawner: Spawner) {
                             e.aborted,
                             e.invalid_ack,
                             e.other,
-                            opentrust_nrf::last_other_tx_error()
+                            rs_thread_nrf::last_other_tx_error()
                         );
                     }
                     let c = i.mac_counters();

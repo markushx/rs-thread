@@ -1,6 +1,6 @@
 [package]
 name = "nrf52840-leader"
-description = "OpenTrust leader on the nRF52840 DK (standalone firmware, not a workspace member)"
+description = "rs-thread leader on the nRF52840 DK (standalone firmware, not a workspace member)"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -10,11 +10,11 @@ publish = false
 
 [features]
 default = ["radio-nrf802154"]
-# Radio backend of `opentrust-nrf`: exactly one. `radio-nrf802154` (Nordic driver + MPSL)
+# Radio backend of `rs-thread-nrf`: exactly one. `radio-nrf802154` (Nordic driver + MPSL)
 # is the default; `radio-embassy` is the pure-Rust one
 # (`--no-default-features --features radio-embassy`).
-radio-embassy = ["opentrust-nrf/radio-embassy", "cortex-m/critical-section-single-core"]
-radio-nrf802154 = ["opentrust-nrf/radio-nrf802154"]
+radio-embassy = ["rs-thread-nrf/radio-embassy", "cortex-m/critical-section-single-core"]
+radio-nrf802154 = ["rs-thread-nrf/radio-nrf802154"]
 # `node` binary: attach as a child and never upgrade to a router (default: router eligible).
 child-only = []
 # `node` binary: form the network as its Leader (it pings the realm-local all-routers
@@ -27,36 +27,36 @@ ble = ["radio-nrf802154", "dep:nrf-sdc", "dep:nrf-mpsl"]
 
 # CLI firmware (`cli` binary): the OpenThread-compatible CLI over the DK's VCOM
 # UART. `cli-all` builds every command group; pick single groups for size.
-cli = ["dep:opentrust-cli"]
-cli-dataset = ["cli", "opentrust-cli/dataset"]
-cli-scan = ["cli", "opentrust-cli/scan"]
-cli-ping = ["cli", "opentrust-cli/ping"]
-cli-tables = ["cli", "opentrust-cli/tables"]
-cli-netdata = ["cli", "opentrust-cli/netdata"]
-cli-srp = ["cli", "opentrust-cli/srp"]
-cli-dns = ["cli", "opentrust-cli/dns"]
-cli-udp = ["cli", "opentrust-cli/udp"]
-cli-commissioning = ["cli", "opentrust-cli/commissioning"]
+cli = ["dep:rs-thread-cli"]
+cli-dataset = ["cli", "rs-thread-cli/dataset"]
+cli-scan = ["cli", "rs-thread-cli/scan"]
+cli-ping = ["cli", "rs-thread-cli/ping"]
+cli-tables = ["cli", "rs-thread-cli/tables"]
+cli-netdata = ["cli", "rs-thread-cli/netdata"]
+cli-srp = ["cli", "rs-thread-cli/srp"]
+cli-dns = ["cli", "rs-thread-cli/dns"]
+cli-udp = ["cli", "rs-thread-cli/udp"]
+cli-commissioning = ["cli", "rs-thread-cli/commissioning"]
 cli-all = [
     "cli-dataset", "cli-scan", "cli-ping", "cli-tables", "cli-netdata", "cli-srp", "cli-dns",
     "cli-udp", "cli-commissioning",
 ]
 
 # RCP firmware (`rcp` binary): the radio behind Spinel on the DK's VCOM UART.
-rcp = ["dep:opentrust-ncp"]
+rcp = ["dep:rs-thread-ncp"]
 
 # Test aid: behave as if Button 1 were held at boot (factory reset on every start).
 test-factory-reset = []
 
 [dependencies]
-opentrust-core = { path = "../../crates/opentrust-core", features = ["defmt"] }
-opentrust-platform = { path = "../../crates/opentrust-platform", features = ["defmt"] }
-opentrust-instance = { path = "../../crates/opentrust-instance", default-features = false, features = ["ftd", "defmt"] }
-opentrust-embassy = { path = "../../crates/opentrust-embassy", default-features = false, features = ["ftd", "defmt"] }
-opentrust-flash = { path = "../../crates/opentrust-flash", features = ["defmt"] }
-opentrust-cli = { path = "../../crates/opentrust-cli", default-features = false, features = ["ftd"], optional = true }
-opentrust-nrf = { path = "../../crates/opentrust-nrf", default-features = false, features = ["defmt"] }
-opentrust-ncp = { path = "../../crates/opentrust-ncp", features = ["defmt"], optional = true }
+rs-thread-core = { path = "../../crates/rs-thread-core", features = ["defmt"] }
+rs-thread-platform = { path = "../../crates/rs-thread-platform", features = ["defmt"] }
+rs-thread-instance = { path = "../../crates/rs-thread-instance", default-features = false, features = ["ftd", "defmt"] }
+rs-thread-embassy = { path = "../../crates/rs-thread-embassy", default-features = false, features = ["ftd", "defmt"] }
+rs-thread-flash = { path = "../../crates/rs-thread-flash", features = ["defmt"] }
+rs-thread-cli = { path = "../../crates/rs-thread-cli", default-features = false, features = ["ftd"], optional = true }
+rs-thread-nrf = { path = "../../crates/rs-thread-nrf", default-features = false, features = ["defmt"] }
+rs-thread-ncp = { path = "../../crates/rs-thread-ncp", features = ["defmt"], optional = true }
 
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { version = "0.5", features = ["defmt"] }

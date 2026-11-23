@@ -18,32 +18,32 @@ keywords = ["thread", "openthread", "802154", "matter", "embedded"]
 categories = ["embedded", "network-programming", "no-std"]
 
 [workspace.dependencies]
-opentrust-core = { path = "crates/opentrust-core", version = "0.1.0" }
-opentrust-platform = { path = "crates/opentrust-platform", version = "0.1.0" }
-opentrust-mac = { path = "crates/opentrust-mac", version = "0.1.0" }
-opentrust-lowpan = { path = "crates/opentrust-lowpan", version = "0.1.0" }
-opentrust-net = { path = "crates/opentrust-net", version = "0.1.0" }
-opentrust-coap = { path = "crates/opentrust-coap", version = "0.1.0" }
-opentrust-dtls = { path = "crates/opentrust-dtls", version = "0.1.0" }
-opentrust-mle = { path = "crates/opentrust-mle", version = "0.1.0", default-features = false }
-opentrust-dns = { path = "crates/opentrust-dns", version = "0.1.0", default-features = false }
-opentrust-mesh = { path = "crates/opentrust-mesh", version = "0.1.0", default-features = false }
-opentrust-meshcop = { path = "crates/opentrust-meshcop", version = "0.1.0", default-features = false }
-opentrust-embassy = { path = "crates/opentrust-embassy", version = "0.1.0" }
-opentrust-matter = { path = "crates/opentrust-matter", version = "0.1.0" }
-opentrust-cli = { path = "crates/opentrust-cli", version = "0.1.0" }
-opentrust-ncp = { path = "crates/opentrust-ncp", version = "0.1.0" }
-opentrust-spinel = { path = "crates/opentrust-spinel", version = "0.1.0" }
-opentrust-instance = { path = "crates/opentrust-instance", version = "0.1.0", default-features = false }
-opentrust-sim = { path = "crates/opentrust-sim", version = "0.1.0", default-features = false }
-opentrust-flash = { path = "crates/opentrust-flash", version = "0.1.0" }
+rs-thread-core = { path = "crates/rs-thread-core", version = "0.1.0" }
+rs-thread-platform = { path = "crates/rs-thread-platform", version = "0.1.0" }
+rs-thread-mac = { path = "crates/rs-thread-mac", version = "0.1.0" }
+rs-thread-lowpan = { path = "crates/rs-thread-lowpan", version = "0.1.0" }
+rs-thread-net = { path = "crates/rs-thread-net", version = "0.1.0" }
+rs-thread-coap = { path = "crates/rs-thread-coap", version = "0.1.0" }
+rs-thread-dtls = { path = "crates/rs-thread-dtls", version = "0.1.0" }
+rs-thread-mle = { path = "crates/rs-thread-mle", version = "0.1.0", default-features = false }
+rs-thread-dns = { path = "crates/rs-thread-dns", version = "0.1.0", default-features = false }
+rs-thread-mesh = { path = "crates/rs-thread-mesh", version = "0.1.0", default-features = false }
+rs-thread-meshcop = { path = "crates/rs-thread-meshcop", version = "0.1.0", default-features = false }
+rs-thread-embassy = { path = "crates/rs-thread-embassy", version = "0.1.0" }
+rs-thread-matter = { path = "crates/rs-thread-matter", version = "0.1.0" }
+rs-thread-cli = { path = "crates/rs-thread-cli", version = "0.1.0" }
+rs-thread-ncp = { path = "crates/rs-thread-ncp", version = "0.1.0" }
+rs-thread-spinel = { path = "crates/rs-thread-spinel", version = "0.1.0" }
+rs-thread-instance = { path = "crates/rs-thread-instance", version = "0.1.0", default-features = false }
+rs-thread-sim = { path = "crates/rs-thread-sim", version = "0.1.0", default-features = false }
+rs-thread-flash = { path = "crates/rs-thread-flash", version = "0.1.0" }
 
 defmt = "1"
 heapless = "0.9"
 rand_core = { version = "0.10", default-features = false }
 log = { version = "0.4", default-features = false }
 
-# Crypto (soft-crypto backend of opentrust-core). Versions chosen for MSRV 1.85:
+# Crypto (soft-crypto backend of rs-thread-core). Versions chosen for MSRV 1.85:
 # aes >= 0.9.3 and sha2 >= 0.11.1 require rustc 1.89/1.88, hence the caps.
 aes = { version = ">=0.9.2, <0.9.3", default-features = false }
 cmac = { version = "0.8", default-features = false }
@@ -52,26 +52,26 @@ sha2 = { version = ">=0.11.0, <0.11.1", default-features = false }
 subtle = { version = "2.6", default-features = false }
 zeroize = { version = "1.8", default-features = false }
 bitflags = { version = "2", default-features = false }
-# `select` for the async drivers (opentrust-mac `MacDriver`); block_on /
+# `select` for the async drivers (rs-thread-mac `MacDriver`); block_on /
 # poll_once in async tests.
 embassy-futures = { version = "0.1.2", default-features = false }
-# Async facade (opentrust-embassy): blocking mutex, signal, waker registrations.
+# Async facade (rs-thread-embassy): blocking mutex, signal, waker registrations.
 embassy-sync = { version = "0.8", default-features = false }
-# EC-JPAKE (opentrust-core feature `ecjpake`, ADR 0001): P-256 arithmetic.
+# EC-JPAKE (rs-thread-core feature `ecjpake`, ADR 0001): P-256 arithmetic.
 # Same release line as rs-matter's `rustcrypto` backend (single copy).
 p256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 # Test-only: differential testing of CCM* against the RustCrypto `ccm` crate.
 ccm = { version = "0.6", default-features = false }
-# rs-matter (opentrust-matter): the `rs-matter-stack` crate of the 0.4.1
+# rs-matter (rs-thread-matter): the `rs-matter-stack` crate of the 0.4.1
 # workspace is not on crates.io yet, so the whole workspace is pinned to one
-# git revision (see the opentrust-matter crate docs). Needs Rust 1.92.
+# git revision (see the rs-thread-matter crate docs). Needs Rust 1.92.
 rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "95e41108f0a0e6ac896f0e7be3f4eecb951ed10a", default-features = false }
-# Virtual embassy-time driver of the test harness (opentrust-sim `testing`).
+# Virtual embassy-time driver of the test harness (rs-thread-sim `testing`).
 embassy-time-driver = { version = "0.2", default-features = false }
 embassy-time-queue-utils = { version = "0.3", default-features = false }
 critical-section = "1.1"
 
-# rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.OPENTRUST.md).
+# rs-matter-sc with early CASE acknowledgements (see third_party/rs-matter-sc/README.RSTHREAD.md).
 [patch."https://github.com/project-chip/rs-matter"]
 rs-matter-sc = { path = "third_party/rs-matter-sc" }
 

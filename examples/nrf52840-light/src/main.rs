@@ -1,20 +1,20 @@
-//! Matter on-off light over OpenTrust Thread on the nRF52840 DK.
+//! Matter on-off light over rs-thread Thread on the nRF52840 DK.
 //!
 //! RAM sizing firmware. With the `ble` feature (default) an unprovisioned
-//! light (nothing stored, no `OPENTRUST_DATASET`) keeps Thread off, advertises
+//! light (nothing stored, no `RSTHREAD_DATASET`) keeps Thread off, advertises
 //! the Matter BLE service and is commissioned with `chip-tool pairing
 //! ble-thread` (BTP over the Nordic SoftDevice Controller and trouble-host,
 //! `ble.rs`; `run_thread` with `ThreadCoexRunner`), after which BLE stops.
 //! Without a stored dataset and without BLE (`--no-default-features`) the node
 //! forms a Thread network with a preset dataset (channel 15, PAN ID 0x1234,
-//! network name "OpenTrust", as the leader firmware); with a build-time
+//! network name "rs-thread", as the leader firmware); with a build-time
 //! dataset it attaches to that network. It runs rs-matter's on-off light over
-//! Thread (`opentrust_matter::driver::ThreadRunner`). rs-matter
+//! Thread (`rs_thread_matter::driver::ThreadRunner`). rs-matter
 //! uses its test device attestation credentials and the RustCrypto backend
 //! (pure Rust, no hardware crypto). Everything rs-matter persists (fabrics,
 //! ACLs, counters, ...) lives in a key-value store in flash and the Thread
 //! settings (dataset, network info, ...) in a second region
-//! (`opentrust-flash`, regions in `memory.x`), so the light keeps its fabrics,
+//! (`rs-thread-flash`, regions in `memory.x`), so the light keeps its fabrics,
 //! its Thread network and its role over a reset. Button 1 held at boot erases the store (factory reset). LED1
 //! follows the On/Off attribute. The pairing code and discriminator are
 //! logged at start-up.
@@ -37,21 +37,21 @@ use embassy_nrf::gpio::Level;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use nrf52840_leader::Board;
-use opentrust_core::crypto::soft::SoftCrypto;
-use opentrust_core::settings::SettingsKey;
-use opentrust_embassy::{OpenTrust, Resources};
+use rs_thread_core::crypto::soft::SoftCrypto;
+use rs_thread_core::settings::SettingsKey;
+use rs_thread_embassy::{RsThread, Resources};
 use embassy_embedded_hal::flash::partition::Partition;
 use embassy_sync::mutex::Mutex as AsyncMutex;
-use opentrust_flash::{FlashWriter, Settings, Shared};
-use opentrust_instance::{ExtAddress, Instance};
+use rs_thread_flash::{FlashWriter, Settings, Shared};
+use rs_thread_instance::{ExtAddress, Instance};
 #[cfg(feature = "ble")]
-use opentrust_matter::ble::TroubleBtpGattContext;
+use rs_thread_matter::ble::TroubleBtpGattContext;
 #[cfg(feature = "ble")]
-use opentrust_matter::driver::ThreadCoexRunner;
-use opentrust_matter::driver::ThreadRunner;
-use opentrust_matter::flash_kv::FlashKv;
-use opentrust_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
-use opentrust_platform::{Radio, SettingsStore};
+use rs_thread_matter::driver::ThreadCoexRunner;
+use rs_thread_matter::driver::ThreadRunner;
+use rs_thread_matter::flash_kv::FlashKv;
+use rs_thread_nrf::{EmbassyAlarm, EmbassyClock, NrfRng};
+use rs_thread_platform::{Radio, SettingsStore};
 use panic_probe as _;
 use rs_matter::crypto::{Crypto, default_crypto};
 use rs_matter::dm::clusters::app::level_control::LevelControlHooks;
@@ -199,7 +199,7 @@ fn data_model<'a, OH: OnOffHooks, LH: LevelControlHooks>(
     )
 }
 
-/// The Active Dataset (TLVs) the light was built with (`OPENTRUST_DATASET`,
+/// The Active Dataset (TLVs) the light was built with (`RSTHREAD_DATASET`,
 /// see build.rs); empty for a standalone light that forms its own network.
 const BUILD_DATASET: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/dataset.bin"));
 
@@ -339,14 +339,14 @@ async fn main(spawner: Spawner) {
 
     // Thread: built in place in static memory.
     #[cfg(not(feature = "med"))]
-    let config = opentrust_instance::Config::router(ext, caps);
+    let config = rs_thread_instance::Config::router(ext, caps);
     // Minimal end device: attaches as a child and never becomes a router.
     #[cfg(feature = "med")]
-    let config = opentrust_instance::Config::end_device(ext, caps);
+    let config = rs_thread_instance::Config::end_device(ext, caps);
     let res: &'static Res = Resources::init(RES.uninit(), EmbassyClock, |slot| {
         Instance::init(slot, config, THREAD_STORE.settings(), SoftCrypto, rng);
     });
-    let ot = OpenTrust::new(res);
+    let ot = RsThread::new(res);
     info!("stack peak after Thread init {} bytes", stack_high_water());
 
     // Matter: the stack is built in place too.
@@ -469,8 +469,8 @@ async fn main(spawner: Spawner) {
                         ds.set_pan_id(0x1234).unwrap();
                         i.set_active_dataset(&ds, now).unwrap();
                     } else {
-                        let ds = opentrust_instance::Dataset::from_tlvs(BUILD_DATASET)
-                            .expect("OPENTRUST_DATASET is not a complete Active Dataset");
+                        let ds = rs_thread_instance::Dataset::from_tlvs(BUILD_DATASET)
+                            .expect("RSTHREAD_DATASET is not a complete Active Dataset");
                         i.set_active_dataset(&ds, now).unwrap();
                     }
                 }
@@ -485,7 +485,7 @@ async fn main(spawner: Spawner) {
                 // Thread first; both mean the same network, so start only if
                 // it is still off.
                 if have_network || !BUILD_DATASET.is_empty() {
-                    if i.role() == opentrust_instance::Role::Disabled {
+                    if i.role() == rs_thread_instance::Role::Disabled {
                         i.thread_start(now).unwrap();
                     }
                 } else {
@@ -507,8 +507,8 @@ async fn main(spawner: Spawner) {
                 last_on = Some(on);
             }
             {
-                let (rx, tx) = opentrust_nrf::frame_counts();
-                let e = opentrust_nrf::tx_error_stats();
+                let (rx, tx) = rs_thread_nrf::frame_counts();
+                let e = rs_thread_nrf::tx_error_stats();
                 info!(
                     "radio: rx {} tx {} busy {} ended {} denied {} sched {} noack {} abort {} other {}",
                     rx,

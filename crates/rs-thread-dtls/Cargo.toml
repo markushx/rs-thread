@@ -1,0 +1,36 @@
+[package]
+name = "rs-thread-dtls"
+description = "Sans-IO DTLS 1.2 with TLS_ECJPAKE_WITH_AES_128_CCM_8 (Thread commissioning, CoAPS) for OpenTrust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["soft-crypto", "dtls-server"]
+# Software P-256 / AES / SHA-256 (RustCrypto) via rs-thread-core.
+soft-crypto = ["rs-thread-core/soft-crypto"]
+# DTLS server role: Session::server, Coaps::server, the cookie / HelloVerifyRequest
+# path and the server-side handshake. The Joiner uses only the client; disable
+# this for a Joiner-only build to remove the server code.
+dtls-server = []
+defmt = ["dep:defmt", "rs-thread-core/defmt", "rs-thread-coap/defmt"]
+log = ["dep:log", "rs-thread-core/log", "rs-thread-coap/log"]
+
+[dependencies]
+rs-thread-core = { workspace = true, features = ["ecjpake"] }
+rs-thread-coap = { workspace = true }
+rand_core = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+defmt = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+
+[lints]
+workspace = true

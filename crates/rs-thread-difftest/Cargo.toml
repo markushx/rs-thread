@@ -1,0 +1,30 @@
+[package]
+name = "rs-thread-difftest"
+description = "Differential tests of OpenTrust codecs and crypto against OpenThread (dev-only)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# Build OpenThread (cmake + ninja, see `openthread-sys`) with the C++ shim and
+# run the differential tests; without it every test prints "skipped".
+ot = ["dep:openthread-sys"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-mac = { workspace = true }
+rs-thread-lowpan = { workspace = true }
+rs-thread-mle = { workspace = true }
+rs-thread-mesh = { workspace = true }
+rs-thread-meshcop = { workspace = true }
+openthread-sys = { path = "../../tools/openthread-sys", default-features = false, features = ["ftd", "diff-shim"], optional = true }
+
+[lints.rust]
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+# FFI into the C++ shim.
+unsafe_code = "allow"

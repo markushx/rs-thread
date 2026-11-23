@@ -5,7 +5,7 @@
 
 use embassy_executor::Spawner;
 use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pull};
-use opentrust_nrf::{NrfRadio, NrfRng};
+use rs_thread_nrf::{NrfRadio, NrfRng};
 
 /// Peripherals and radio of the board, ready for the stack.
 pub struct Board {
@@ -19,7 +19,7 @@ pub struct Board {
     pub radio: NrfRadio<'static>,
     /// The flash driver of the backend (through MPSL with `radio-nrf802154`).
     /// Only the regions of the [`flash`] module may be written.
-    pub flash: opentrust_nrf::Flash,
+    pub flash: rs_thread_nrf::Flash,
     /// Button 1 of the DK (P0.11, active low): held at boot it requests a
     /// factory reset, see [`flash::factory_reset_requested`].
     pub button1: Input<'static>,
@@ -48,7 +48,7 @@ pub struct Uart {
 /// the SoftDevice Controller takes (PPI channels 17, 18 and 20..=29).
 #[cfg(feature = "ble")]
 pub struct Ble {
-    pub mpsl: &'static opentrust_nrf::Mpsl,
+    pub mpsl: &'static rs_thread_nrf::Mpsl,
     pub sdc: nrf_sdc::Peripherals<'static>,
 }
 
@@ -116,7 +116,7 @@ pub fn init(_spawner: &Spawner) -> Board {
         rng: NrfRng::new_blocking(p.RNG),
         led1: Output::new(p.P0_13, Level::High, OutputDrive::Standard),
         radio: NrfRadio::new(HwRadio::new(p.RADIO, Irqs)),
-        flash: opentrust_nrf::take_flash(p.NVMC),
+        flash: rs_thread_nrf::take_flash(p.NVMC),
         button1: Input::new(p.P0_11, Pull::Up),
         uart: Uart {
             uarte: p.UARTE0,
@@ -132,7 +132,7 @@ pub fn init(_spawner: &Spawner) -> Board {
 
 #[cfg(feature = "radio-nrf802154")]
 #[embassy_executor::task]
-async fn mpsl_task(mpsl: &'static opentrust_nrf::Mpsl) -> ! {
+async fn mpsl_task(mpsl: &'static rs_thread_nrf::Mpsl) -> ! {
     mpsl.run().await
 }
 
@@ -144,13 +144,13 @@ async fn mpsl_task(mpsl: &'static opentrust_nrf::Mpsl) -> ! {
 pub fn init(spawner: &Spawner) -> Board {
     use static_cell::StaticCell;
 
-    static MPSL: StaticCell<opentrust_nrf::Mpsl> = StaticCell::new();
+    static MPSL: StaticCell<rs_thread_nrf::Mpsl> = StaticCell::new();
 
     let p = embassy_nrf::init(embassy_nrf::config::Config::default());
     let mpsl =
-        opentrust_nrf::init_mpsl(p.RTC0, p.TIMER0, p.TEMP, p.PPI_CH19, p.PPI_CH30, p.PPI_CH31)
+        rs_thread_nrf::init_mpsl(p.RTC0, p.TIMER0, p.TEMP, p.PPI_CH19, p.PPI_CH30, p.PPI_CH31)
             .unwrap();
-    let mpsl: &'static opentrust_nrf::Mpsl = MPSL.init(mpsl);
+    let mpsl: &'static rs_thread_nrf::Mpsl = MPSL.init(mpsl);
     spawner.spawn(mpsl_task(mpsl).unwrap());
     Board {
         // SAFETY: see `Board::rng2`.
@@ -158,7 +158,7 @@ pub fn init(spawner: &Spawner) -> Board {
         rng: NrfRng::new_blocking(p.RNG),
         led1: Output::new(p.P0_13, Level::High, OutputDrive::Standard),
         radio: NrfRadio::new(p.RADIO, p.EGU0, p.TIMER2, p.RTC2, mpsl),
-        flash: opentrust_nrf::take_flash(mpsl, p.NVMC),
+        flash: rs_thread_nrf::take_flash(mpsl, p.NVMC),
         button1: Input::new(p.P0_11, Pull::Up),
         uart: Uart {
             uarte: p.UARTE0,
@@ -182,7 +182,7 @@ pub fn init(spawner: &Spawner) -> Board {
 
 /// The Active Dataset (TLV encoded) shared by the firmware binaries and the
 /// OpenThread peer in the interoperability tests: channel 25, PAN ID 0x1234,
-/// network name "OpenTrust", extended PAN ID dead00beef00cafe, mesh-local
+/// network name "rs-thread", extended PAN ID dead00beef00cafe, mesh-local
 /// prefix fddead00beef::/64, network key 00112233445566778899aabbccddeeff.
 /// The same bytes, hex encoded, are [`DATASET_HEX`].
 pub const DATASET_TLVS: [u8; 100] = [

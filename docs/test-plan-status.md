@@ -2,7 +2,7 @@
 
 Maps every test-plan case that OpenThread ships as a `thread-cert` script
 (`tests/scripts/thread-cert/`, vendored at `tools/openthread-sys/vendor/openthread`)
-to its status with OpenTrust. **The source is OpenThread's script set, numbered as in the
+to its status with rs-thread. **The source is OpenThread's script set, numbered as in the
 Thread test plan (`Cert_5_1_01_RouterAttach.py` = 5.1.1, `v1_2_LowPower_5_3_01_SSEDAttachment.py` =
 LowPower 5.3.1), not the Thread Group test-plan document: a case that OpenThread has no script for
 is not covered here.** Titles are derived from the script names. Details of the 5.x runs and of the
@@ -10,20 +10,20 @@ harness are in [test-status.md](test-status.md).
 
 ## Method
 
-- Harness: `crates/opentrust-sim/tests/thread_cert.rs` (`OPENTRUST_CERT=1`), virtual time, OpenThread
+- Harness: `crates/rs-thread-sim/tests/thread_cert.rs` (`OPENTRUST_CERT=1`), virtual time, OpenThread
   `simulator.py`, `THREAD_VERSION=1.4`, `ot-cli-ftd` from `cargo build -p openthread-sys`
   (`OT_BORDER_ROUTER`, `OT_DUA`, `OT_MLR`, `OT_BACKBONE_ROUTER`, `OT_CSL_RECEIVER`, link metrics, SRP client and
   server; plus `ot-cli-ftd-1.1`, a Thread 1.1 build for the nodes with `'version': '1.1'`).
 - Configurations per case: `ot` (all nodes OpenThread, the baseline), `each` (one run per node of the
-  topology with only that node `opentrust-cli-vt`), `all` (all nodes OpenTrust). The "runs passed" column
+  topology with only that node `rs-thread-cli-vt`), `all` (all nodes rs-thread). The "runs passed" column
   counts these runs (without the MTD runs). The MTD column lists runs with the MED / SED nodes of the
-  case on `opentrust-cli-vt-mtd` (OpenThread for the rest): one run per case, every case that has MTD nodes.
+  case on `rs-thread-cli-vt-mtd` (OpenThread for the rest): one run per case, every case that has MTD nodes.
 - Packet verification is **off** for the status columns (CLI based assertions only): the Homebrew
   `tshark` 4.6 dissects some fields differently from the Wireshark the `pktverify` checks were written for,
   so `pktverify` results are unreliable (see the pktverify section).
 - Status: **pass** = every `ot`, `each` and `all` run passes; **partial** = the baseline passes but some
-  OpenTrust runs fail (the detail names the nodes); **fail** = every OpenTrust run fails;
-  **baseline-fail** = the all-OpenThread run fails (OpenTrust not judged); **NA** = cannot run in the
+  rs-thread runs fail (the detail names the nodes); **fail** = every rs-thread run fails;
+  **baseline-fail** = the all-OpenThread run fails (rs-thread not judged); **NA** = cannot run in the
   simulation harness (reason given); **not run**.
 - Cases were first run in several batches in parallel (about 8 processes on 8 cores); every failure of
   a case with a passing baseline was rerun alone, which removed all flakes (parallel runs collide on
@@ -207,7 +207,7 @@ Not scripts of the test plan: `addon_test_channel_manager_autocsl.py` (functiona
 ## OpenThread functional tests (`test_*.py`, `v1_2_test_*.py`)
 
 These are not test-plan cases; they exercise OpenThread features. Run with `ot,all` only
-(timeout 120 s each). **fail** here means the all-OpenTrust run fails, **baseline-fail** the all-OpenThread run.
+(timeout 120 s each). **fail** here means the all-rs-thread run fails, **baseline-fail** the all-OpenThread run.
 
 | area | scripts | pass | partial | fail | baseline-fail | NA |
 |---|---|---|---|---|---|---|
@@ -232,7 +232,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_srp_lease` | pass | 2/2 |  |
 | `test_srp_many_services_mtu_check` | pass | 2/2 |  |
 | `test_srp_name_conflicts` | pass | 2/2 |  |
-| `test_srp_register_500_services` | baseline-fail | 0/2 | all-OT: FAIL FAILED (failures=1); baseline: failed / timed out at the 120 s limit; all-OpenTrust: fails too (the server stores at most 16 services) |
+| `test_srp_register_500_services` | baseline-fail | 0/2 | all-OT: FAIL FAILED (failures=1); baseline: failed / timed out at the 120 s limit; all-rs-thread: fails too (the server stores at most 16 services) |
 | `test_srp_register_services_diff_lease` | pass | 2/2 |  |
 | `test_srp_register_single_service` | pass | 2/2 |  |
 | `test_srp_server_anycast_mode` | pass | 2/2 |  |
@@ -255,7 +255,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_coap` | NA | 2/2 | Python unit test, no simulated nodes |
 | `test_coap_block` | pass | 2/2 |  |
 | `test_coap_observe` | pass | 2/2 |  |
-| `test_coaps` | fail | 1/2 | fails: all; `coaps` CLI missing; the script needs DTLS PSK (`TLS_PSK_WITH_AES_128_CCM_8`) and X.509 certificates (ECDHE-ECDSA), OpenTrust's DTLS has EC-JPAKE only |
+| `test_coaps` | fail | 1/2 | fails: all; `coaps` CLI missing; the script needs DTLS PSK (`TLS_PSK_WITH_AES_128_CCM_8`) and X.509 certificates (ECDHE-ECDSA), rs-thread's DTLS has EC-JPAKE only |
 
 #### Backbone router / DUA / MLR (Thread 1.2)
 
@@ -273,8 +273,8 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 | script | status | runs passed | detail |
 |---|---|---|---|
-| `addon_test_channel_manager_autocsl` | baseline-fail | 0/2 | all-OT: TIMEOUT ValueError: MAC check failed; baseline timeout at the 120 s limit; OpenTrust: `Error 7: InvalidArgs` (no channel manager) |
-| `v1_2_test_csl_transmission` | pass | 4/4 | CSL transmission passes with every node OpenTrust |
+| `addon_test_channel_manager_autocsl` | baseline-fail | 0/2 | all-OT: TIMEOUT ValueError: MAC check failed; baseline timeout at the 120 s limit; rs-thread: `Error 7: InvalidArgs` (no channel manager) |
+| `v1_2_test_csl_transmission` | pass | 4/4 | CSL transmission passes with every node rs-thread |
 
 #### Link metrics / enhanced ack (Thread 1.2)
 
@@ -310,9 +310,9 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 | `test_dataset_updater` | pass | 2/2 | `dataset updater start|cancel`, 30 s default delay as OT |
 | `test_detach` | fail | 1/2 | fails: all; router stays `detached` (`detached` != `router`) |
 | `test_diag` | pass | 2/2 | `diag start|stop|channel|power|stats|send|repeat` as bookkeeping (no raw frames) |
-| `test_history_tracker` | pass | 2/2 | `history netinfo|rx|tx|rxtx` (feature `history`, on in `opentrust-cli-vt`); the other history lists are not implemented |
+| `test_history_tracker` | pass | 2/2 | `history netinfo|rx|tx|rxtx` (feature `history`, on in `rs-thread-cli-vt`); the other history lists are not implemented |
 | `test_inform_previous_parent_on_reattach` | pass | 2/2 | empty datagram to the previous parent, stale child removal also for plain frames |
-| `test_ipv6_fragmentation` | pass | 2/2 | UDP of 1952 bytes in two IPv6 fragments both ways (feature `ip6-fragmentation`, on in `opentrust-cli-vt`); the script's packet parser logs an extension-header error in all configurations |
+| `test_ipv6_fragmentation` | pass | 2/2 | UDP of 1952 bytes in two IPv6 fragments both ways (feature `ip6-fragmentation`, on in `rs-thread-cli-vt`); the script's packet parser logs an extension-header error in all configurations |
 | `test_ipv6_source_selection` | pass | 2/2 |  |
 | `test_key_rotation_and_key_guard_time` | pass | 2/2 | Dataset Updater; minimum key rotation time 2 as OT |
 | `test_leader_reboot_multiple_link_request` | pass | 2/2 |  |
@@ -341,7 +341,7 @@ These are not test-plan cases; they exercise OpenThread features. Run with `ot,a
 
 `OPENTRUST_CERT_PKTVERIFY=1`, configurations `ot` and `all` only, 105 cases (the cases of the tables above
 without the functional tests). The "pktverify (ot / all)" column is the result of the all-OpenThread run /
-the all-OpenTrust run. The CLI based status is the authoritative column: with `tshark` 4.6.x the dissection
+the all-rs-thread run. The CLI based status is the authoritative column: with `tshark` 4.6.x the dissection
 differs from the Wireshark version the `pktverify` checks were written for, so a failure in both
 columns is the tooling (63 cases fail with OpenThread nodes too).
 
@@ -349,8 +349,8 @@ columns is the tooling (63 cases fail with OpenThread nodes too).
   6.2.2, 6.5.1, 6.5.2, 6.6.1, 6.6.2, 9.2.12, 9.2.17, LowPower 5.3.1 (all fixed, see below) and 5.6.1 to 5.6.6,
   5.6.9, 7.1.1, 7.1.3 (these failed with OpenThread too until the shim reported tshark 4.6 booleans for list
   fields as 1/0).
-- Pass with OpenThread, fail with OpenTrust: none of the cases examined.
-- Packet-level root causes fixed in OpenTrust: `ipaddr rloc` while detached (OT prints the RLOC of
+- Pass with OpenThread, fail with rs-thread: none of the cases examined.
+- Packet-level root causes fixed in rs-thread: `ipaddr rloc` while detached (OT prints the RLOC of
   RLOC16 0xfffe; 5.2.4 harness KeyError); a newer key sequence on a secured data frame from a neighbor is adopted
   (5.8.2, 5.8.3, 6.6.x); the MAC filter's fixed RSS clears the RSS average (5.3.5, 6.1.x link quality);
   the DHCPv6 Reply lists the prefixes in reverse order (5.3.8); the CLI ping identifier counts up (6.6.x); a frame
@@ -362,4 +362,4 @@ columns is the tooling (63 cases fail with OpenThread nodes too).
   dissected: `p.coap.tlv.type`, `thread_meshcop.tlv.type`; `icmpv6.data.len` is gone, the Echo data is in the
   `data` layer minus an 8 byte timestamp). A shim for `icmpv6.data.len` was tried for 5.3.1 and did not make the
   baseline pass; the remaining 5.x / 7.1.x / 8.x / 9.2.x baseline failures were not analysed further.
-- Fail with OpenThread, pass with OpenTrust (4): 5.1.12, 5.3.1, 6.4.1, 6.5.3 (tool artefacts).
+- Fail with OpenThread, pass with rs-thread (4): 5.1.12, 5.3.1, 6.4.1, 6.5.3 (tool artefacts).
