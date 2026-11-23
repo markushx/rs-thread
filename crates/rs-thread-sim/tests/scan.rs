@@ -100,7 +100,7 @@ fn active_scan_hears_the_leader_beacon() {
     let beacons = active_scan(&mut net);
     assert_eq!(beacons.len(), 1, "{beacons:?}");
     let p = beacons[0].thread.expect("Thread beacon payload");
-    assert_eq!(&p.network_name[..9], b"RsThread");
+    assert_eq!(&p.network_name[..8], b"RsThread");
 }
 
 #[test]

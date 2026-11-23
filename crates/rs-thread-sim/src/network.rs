@@ -307,10 +307,14 @@ impl Network {
         match a {
             RadioAction::Configure(c) => self.nodes[i].radio.config = c,
             RadioAction::SetSrcMatch(c) => self.nodes[i].radio.src_match = c,
-            RadioAction::SetMacKeys(_)
-            | RadioAction::SetMacFrameCounter { .. }
-            | RadioAction::SetCsl(_) => {}
-            RadioAction::ReceiveAt { channel, .. } | RadioAction::Receive { channel } => {
+            RadioAction::SetMacKeys(_) | RadioAction::SetMacFrameCounter { .. } => {}
+            #[cfg(feature = "csl")]
+            RadioAction::SetCsl(_) => {}
+            #[cfg(feature = "csl")]
+            RadioAction::ReceiveAt { channel, .. } => {
+                self.nodes[i].radio.state = RadioState::Receive(channel);
+            }
+            RadioAction::Receive { channel } => {
                 self.nodes[i].radio.state = RadioState::Receive(channel);
             }
             RadioAction::Sleep => self.nodes[i].radio.state = RadioState::Sleep,

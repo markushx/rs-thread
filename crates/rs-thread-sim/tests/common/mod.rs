@@ -58,6 +58,7 @@ pub fn router_chain(seed: u64) -> Network {
 }
 
 /// Ping `dst` from node `from` and wait for the reply.
+#[cfg(feature = "ping")]
 pub fn ping(
     net: &mut Network,
     from: usize,

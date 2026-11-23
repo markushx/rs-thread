@@ -690,10 +690,14 @@ impl VtRadio {
         match a {
             RadioAction::Configure(c) => self.config = c,
             RadioAction::SetSrcMatch(c) => self.src_match = c,
-            RadioAction::SetMacKeys(_)
-            | RadioAction::SetMacFrameCounter { .. }
-            | RadioAction::SetCsl(_) => {}
-            RadioAction::ReceiveAt { channel, .. } | RadioAction::Receive { channel } => {
+            RadioAction::SetMacKeys(_) | RadioAction::SetMacFrameCounter { .. } => {}
+            #[cfg(feature = "csl")]
+            RadioAction::SetCsl(_) => {}
+            #[cfg(feature = "csl")]
+            RadioAction::ReceiveAt { channel, .. } => {
+                self.state = RxState::Receive(channel);
+            }
+            RadioAction::Receive { channel } => {
                 self.state = RxState::Receive(channel);
             }
             RadioAction::Sleep => self.state = RxState::Sleep,

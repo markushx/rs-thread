@@ -2,7 +2,7 @@
 //! `[THCI]` lines of a reference device build, `LogCert`): the
 //! `thread-cert` scripts read them from the CLI output to check the JOIN_FIN
 //! and JOIN_ENT exchange. With feature `cert-log` every message goes to the
-//! `log` crate with target [`TARGET`]; without it the calls compile to
+//! `log` crate with target `TARGET`; without it the calls compile to
 //! nothing.
 
 /// `log` target of the trace records.
