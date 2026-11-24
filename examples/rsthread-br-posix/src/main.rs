@@ -38,6 +38,9 @@ use rs_thread_platform::{Alarm, Clock, Radio, RamSettings};
 use std::os::unix::io::AsFd;
 use tokio::sync::mpsc;
 
+#[cfg(feature = "rest")]
+mod rest;
+
 // ── CLI (matches otbr-agent) ──────────────────────────────────────────────────
 
 /// Thread Border Router daemon — rs-thread implementation of ot-br-posix.
@@ -445,13 +448,6 @@ async fn main() -> Result<()> {
     log::info!("  dns addr  : {}", args.dns_addr);
     log::info!("  auto-attach: {}", args.auto_attach_enabled());
 
-    if !args.rest_listen_address.is_empty() {
-        log::info!(
-            "  REST API  : {}:{} (not yet implemented)",
-            args.rest_listen_address, args.rest_listen_port
-        );
-    }
-
     // 1. Open the Spinel transport and initialise the radio.
     let transport = open_transport(args.radio_url()).await?;
     let mut radio = RadioSpinel::new(transport);
@@ -471,6 +467,21 @@ async fn main() -> Result<()> {
         instance, clock,
     )));
     let rsthread: RsThread<'static, NoopRawMutex, _, _, _, _> = RsThread::new(resources);
+
+    // Derive the border router service name from the last 2 bytes of the EUI-64,
+    // matching the "rs-thread BorderRouter #XXXX" scheme (otbr uses "OpenThread BorderRouter #XXXX").
+    let ext_addr_bytes = rsthread.with(|inst, _| *inst.ext_address().as_bytes());
+    let br_name = format!(
+        "rs-thread BorderRouter #{:02X}{:02X}",
+        ext_addr_bytes[6],
+        ext_addr_bytes[7]
+    );
+    log::info!("  name      : {br_name}");
+
+    #[cfg(feature = "rest")]
+    if !args.rest_listen_address.is_empty() {
+        log::info!("  REST API  : {}:{}", args.rest_listen_address, args.rest_listen_port);
+    }
 
     // 4. Optionally form a new Thread network immediately, or auto-attach.
     if args.become_leader {
@@ -553,12 +564,13 @@ async fn main() -> Result<()> {
     let mut srp_proxy = SrpProxy::new();
     const BORDER_AGENT_PORT: u16 = 49191;
     srp_proxy
-        .start(BORDER_AGENT_PORT)
+        .start(&br_name, BORDER_AGENT_PORT)
         .context("SRP proxy start")?;
     log::info!("SRP proxy started (border agent port {BORDER_AGENT_PORT})");
     let srp = Rc::new(RefCell::new(srp_proxy));
 
     // 8. Create routing manager and DNS proxy.
+    let omr_prefix_str = format!("{}/{}", omr.prefix, omr.prefix_len);
     let mut routing = RoutingManager::new(args.backbone());
     routing.set_omr_prefix(omr);
 
@@ -572,6 +584,34 @@ async fn main() -> Result<()> {
     let (to_tun_tx, mut to_tun_rx) = mpsc::channel::<Vec<u8>>(8);
 
     // 9. Run everything concurrently until Ctrl-C / SIGTERM.
+
+    // Channels for the REST API: LocalSet tasks write state; axum reads it.
+    #[cfg(feature = "rest")]
+    let (node_tx, node_rx) = tokio::sync::watch::channel(rest::NodeSnapshot::default());
+    #[cfg(feature = "rest")]
+    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<rest::BrCommand>(4);
+
+    // Spawn the axum server outside the LocalSet so it can run on the runtime.
+    #[cfg(feature = "rest")]
+    if !args.rest_listen_address.is_empty() {
+        let listen: SocketAddr = format!("{}:{}", args.rest_listen_address, args.rest_listen_port)
+            .parse()
+            .context("parse REST listen address")?;
+        let app_state = rest::AppState { node_rx, cmd_tx: cmd_tx.clone() };
+        let app = rest::build_router(app_state);
+        tokio::spawn(async move {
+            match tokio::net::TcpListener::bind(listen).await {
+                Ok(listener) => {
+                    log::info!("REST API listening on http://{listen}");
+                    if let Err(e) = axum::serve(listener, app).await {
+                        log::error!("REST API: {e}");
+                    }
+                }
+                Err(e) => log::error!("REST API: bind {listen}: {e}"),
+            }
+        });
+    }
+
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async move {
@@ -720,6 +760,66 @@ async fn main() -> Result<()> {
                     }
                 }
             });
+
+            // REST API state monitor: publishes a NodeSnapshot on every OT change.
+            #[cfg(feature = "rest")]
+            {
+                let rsthread_st = rsthread.clone();
+                let omr_pstr = omr_prefix_str.clone();
+                tokio::task::spawn_local(async move {
+                    loop {
+                        rsthread_st.wait_changed().await;
+                        let role = format!("{:?}", rsthread_st.role());
+                        let rloc16_val = rsthread_st.rloc16().0;
+                        let snap = rsthread_st.with(|inst, now| {
+                            let ds = inst.active_dataset(now);
+                            rest::NodeSnapshot {
+                                role: role.clone(),
+                                ext_address: {
+                                    let b = *inst.ext_address().as_bytes();
+                                    b.iter().map(|x| format!("{x:02x}")).collect()
+                                },
+                                rloc16: format!("0x{rloc16_val:04x}"),
+                                network_name: ds.as_ref()
+                                    .and_then(|d| d.tlvs().network_name().ok())
+                                    .map(|n| n.as_str().to_owned())
+                                    .unwrap_or_default(),
+                                channel: ds.as_ref()
+                                    .and_then(|d| d.tlvs().channel().ok())
+                                    .map(|c| c.channel as u8)
+                                    .unwrap_or(0),
+                                pan_id: ds.as_ref()
+                                    .and_then(|d| d.tlvs().pan_id().ok())
+                                    .map(|p| format!("0x{p:04x}"))
+                                    .unwrap_or_default(),
+                                omr_prefix: omr_pstr.clone(),
+                                dataset_tlvs_hex: ds
+                                    .map(|d| d.as_bytes().iter().map(|b| format!("{b:02x}")).collect())
+                                    .unwrap_or_default(),
+                            }
+                        });
+                        let _ = node_tx.send(snap);
+                    }
+                });
+
+                // Command processor: applies dataset updates from the REST API.
+                tokio::task::spawn_local(async move {
+                    while let Some(cmd) = cmd_rx.recv().await {
+                        match cmd {
+                            rest::BrCommand::SetDatasetTlv(tlvs) => {
+                                match Dataset::from_tlvs(&tlvs) {
+                                    Ok(ds) => {
+                                        if let Err(e) = rsthread.set_active_dataset(&ds) {
+                                            log::warn!("REST SetDataset: {e:?}");
+                                        }
+                                    }
+                                    Err(e) => log::warn!("REST SetDataset: invalid TLVs: {e:?}"),
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             tokio::signal::ctrl_c().await.expect("ctrl-c failed");
             log::info!("shutting down");

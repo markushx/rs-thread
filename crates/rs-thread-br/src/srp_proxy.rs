@@ -72,12 +72,13 @@ impl SrpProxy {
 
     /// Starts the mDNS daemon and advertises `_meshcop._udp` for this border
     /// router on `border_agent_port`.
-    pub fn start(&mut self, border_agent_port: u16) -> std::io::Result<()> {
+    /// Starts the mDNS daemon and advertises `_meshcop._udp` with `service_name`
+    /// as the instance name (e.g. `"rs-thread BorderRouter #A1B2"`).
+    pub fn start(&mut self, service_name: &str, border_agent_port: u16) -> std::io::Result<()> {
         let daemon = ServiceDaemon::new()
             .map_err(|e| std::io::Error::other(format!("mdns-sd: {e}")))?;
 
-        // Advertise the border agent service so Thread Commissioning apps can
-        // find this border router on the backbone.
+        // Build the host name for DNS-SD host record from the system hostname.
         let host = std::process::Command::new("hostname")
             .output()
             .ok()
@@ -85,7 +86,6 @@ impl SrpProxy {
             .map(|s| s.trim().to_owned())
             .unwrap_or_else(|| "rsthread-br".to_owned());
         let host_name = format!("{host}.local.");
-        let meshcop_name = format!("{host} Border Router");
 
         let mut props = HashMap::new();
         props.insert("sb".to_string(), "0x0000".to_string());
@@ -93,7 +93,7 @@ impl SrpProxy {
 
         match ServiceInfo::new(
             "_meshcop._udp.local.",
-            &meshcop_name,
+            service_name,
             &host_name,
             IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             border_agent_port,

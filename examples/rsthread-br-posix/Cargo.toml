@@ -16,7 +16,8 @@ name = "rsthread-br-posix"
 path = "src/main.rs"
 
 [features]
-rest = ["dep:axum"]
+default = ["rest"]
+rest = ["dep:axum", "dep:serde", "dep:serde_json"]
 
 [dependencies]
 rs-thread-embassy = { workspace = true, features = ["log"] }
@@ -37,8 +38,10 @@ clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 # POSIX termios: serial port raw-mode and baud-rate setup.
 nix = { version = "0.29", default-features = false, features = ["term", "fs"] }
-# Optional REST API.
+# Optional REST API + status page.
 axum = { version = "0.8", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
 
 [lints.rust]
 unsafe_code = "deny"
