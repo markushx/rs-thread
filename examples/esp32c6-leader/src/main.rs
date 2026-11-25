@@ -7,6 +7,7 @@
 
 use defmt::info;
 use defmt_rtt as _;
+use esp_println::println;
 use embassy_executor::Spawner;
 use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -22,12 +23,18 @@ use static_cell::StaticCell;
 
 defmt::timestamp!("{=u64:us}", embassy_time::Instant::now().as_micros());
 
+#[defmt::panic_handler]
+fn defmt_panic() -> ! {
+    core::panic!("defmt panic")
+}
+
 type Res =
     Resources<NoopRawMutex, EmbassyClock, RamSettings<4096>, SoftCrypto, rs_thread_esp::EspRng>;
 static RES: StaticCell<Res> = StaticCell::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    println!("rs-thread: board init start");
     let Board {
         mut radio,
         rng,
@@ -35,6 +42,7 @@ async fn main(spawner: Spawner) {
         boot_button,
         ..
     } = esp32c6_leader::init(&spawner);
+    println!("rs-thread: board init done, MAC={:02X?}", esp_hal::efuse::Efuse::mac_address());
 
     // Factory reset if BOOT button is held at startup.
     if flash::factory_reset_requested(&boot_button).await {
@@ -44,6 +52,7 @@ async fn main(spawner: Spawner) {
             .expect("flash erase failed");
     }
 
+    println!("rs-thread: radio init start");
     let caps = radio.init().await.unwrap();
     info!("radio caps: {:?}", caps);
     info!("soft MAC needs: {:?}", caps.soft_mac_needs());
@@ -56,6 +65,8 @@ async fn main(spawner: Spawner) {
         Instance::init(slot, config, RamSettings::<4096>::new(), SoftCrypto, rng);
     });
     let ot = RsThread::new(res);
+
+    println!("rs-thread leader: radio init ok, starting Thread stack");
 
     let app = async {
         ot.with(|i, now| {
@@ -72,6 +83,7 @@ async fn main(spawner: Spawner) {
             let role = ot.role();
             if last_role != Some(role) {
                 info!("role: {:?}", defmt::Debug2Format(&role));
+                println!("rs-thread role: {:?}", role);
                 last_role = Some(role);
             }
             let (rloc, eid, c) = ot.with(|i, _| (i.rloc16(), i.ml_eid(), *i.mac_counters()));
@@ -80,6 +92,7 @@ async fn main(spawner: Spawner) {
                 rloc.0,
                 defmt::Display2Format(&eid)
             );
+            println!("rs-thread rloc16={:#06x} tx={} rx={}", rloc.0, c.tx_total, c.rx_total);
             info!(
                 "mac: tx_total {} tx_beacon {} tx_data {} tx_err_cca {} rx_total {} rx_beacon_req {}",
                 c.tx_total, c.tx_beacon, c.tx_data, c.tx_err_cca, c.rx_total, c.rx_beacon_request,

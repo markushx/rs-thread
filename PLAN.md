@@ -513,6 +513,12 @@ The `rs-thread-platform::Radio` trait is already identical to `esp-rs/openthread
 
 ### 17e – Interop and test coverage
 
+- [x] ESP32-C6 leader boots and becomes Thread Leader on hardware (single-board smoke test, 2026-11-25):
+  - Build fixes required: `generic-queue-8` on `embassy-time-queue-utils`, `#[defmt::panic_handler]`, `-Tdefmt.x` linker flag
+  - `probe-rs run --chip esp32c6 --features leader` → `role: "Leader"` at t=0.53s
+  - `rloc16 0x4400`, ML-EID `fdde:ad00:beef:0:82d5:6b91:537e:fa2`, active MAC traffic (tx=2, rx=2 at 29s)
+  - Native USB-C (USB-Serial-JTAG) required for RTT/defmt; UART port alone does not support RTT
+  - `esp-println` added for UART diagnostics alongside `defmt-rtt`
 - [ ] Hardware interop against `ot-cli-ftd` on a second board (ESP32-C6-DevKitC-1 as OT node, or nRF52840 DK):
   - Child attach, router upgrade, pings both ways, leader reset / partition merge; same 12-min protocol as nRF interop
   - [ ] CSL interop (rs-thread SSED under an OT parent; OT SSED under rs-thread parent) if `EspRadio` advertises `TIMED_RECEIVE` / `CSL_RECEIVER` caps
