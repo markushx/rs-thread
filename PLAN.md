@@ -431,7 +431,7 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 
 ### 16d – SRP advertising proxy (`rs_thread_br::srp_proxy`)
 
-- [x] `SrpProxy::start(port)` starts an `mdns-sd::ServiceDaemon` and advertises `_meshcop._udp` for the border router; `SrpProxy::register(SrpService)` creates a `ServiceInfo` and calls `daemon.register`; `SrpProxy::unregister_host(name)` removes all services for a given SRP host; IPv6 address registration not yet supported by mdns-sd (follow-up)
+- [x] `SrpProxy::start(name, port)` starts an `mdns-sd::ServiceDaemon` and advertises `_meshcop._udp`; instance name is `"rs-thread BorderRouter #XXXX"` (last 2 EUI-64 bytes), matching the otbr-agent naming scheme; `enable_addr_auto()` lets mdns-sd pick the host's real IP addresses; `SrpProxy::shutdown()` sends a stop signal to the daemon background thread for clean exit
 - [x] Wire `SrpProxy` to `Instance::srp_server_store()` in the border router binary: the SRP bridge task snapshots `all_services()` on each `wait_changed()`, diffs against a `(host_id, instance_label) → update_time` map, calls `register`/`unregister_host` for new/removed entries; `_meshcop-e._udp` and full state bitmap deferred
 
 ### 16e – DNS proxy (`rs_thread_br::dns_proxy`)
@@ -443,13 +443,17 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 - [x] `examples/rsthread-br-posix` (workspace crate, `std`, Linux/macOS): daemon binary that:
   1. opens the Spinel transport (`--radio-url` for UART path or `spinel+socket://…`)
   2. creates the rs-thread `Instance` with `RadioSpinel` as the radio and runs the embassy thread runner
-  3. creates the `TunInterface`, adds the OMR prefix route, starts border routing RA/RIO (spawn_local task)
+  3. creates the `TunInterface`, assigns the OMR address (`prefix::1`) to the TUN, adds the OMR prefix route, starts border routing RA/RIO (spawn_local task)
   4. starts the SRP advertising proxy (`--become-leader` to form a new network) and DNS proxy (spawn_local tasks)
   5. SRP bridge task: diffs `srp_server_store()` on each `wait_changed()` and calls `SrpProxy::register/unregister_host`; OMR prefix published to Network Data via `publish_external_route`; `srp_server_set_enabled(true)` on startup
-  6. handles `SIGTERM`/`SIGINT` with `rsthread.thread_stop()`; REST API (`feature = "rest"`) deferred
+  6. handles `SIGTERM`/`SIGINT` with `rsthread.thread_stop()` + `SrpProxy::shutdown()` then `process::exit(0)`
+  7. REST API (`feature = "rest"`, enabled by default): `GET /api/v1/node`, `/api/v1/node/state`, `/api/v1/node/dataset/active`, `POST /api/v1/node/dataset/active`, `DELETE /api/v1/node` (501); state shared via `tokio::sync::watch`, commands via `mpsc`; embedded HTML status page at `GET /` (polls `/api/v1/node` every 3 s, dark-mode aware, no external deps)
+- [x] otbr-agent CLI compatibility: same positional `RADIO_URL`, `-I`/`-B`/`-d`/`-v`/`--auto-attach`/`--rest-listen-address`/`--rest-listen-port` arguments; `spinel+hdlc+uart://` → `spinel+uart://` URL normalization; `tty.*` → `cu.*` on macOS; `uart-baudrate` query param parsed
+- [x] Serial port raw mode: `cfmakeraw()` + 8N1 + explicit baud via `nix::sys::termios`; required for binary Spinel over UART (without it line discipline mangles Spinel frames)
 - [x] Workspace `Cargo.toml`: add `examples/rsthread-br-posix`; shared `target/` dir
 - [x] Integration test skeleton (`examples/rsthread-br-posix/tests/integration.rs`): three `#[ignore]` tests (network formation, SRP bridge, DNS proxy); execution requires `rs-thread-rcp-sim` backend (run with `-- --ignored`)
-- [ ] Hardware smoke test (`docs/thread-border-router.md` section: rsthread-br-posix): run `rsthread-br-posix` with the nRF52840 Dongle RCP (`/dev/tty.usbmodem*`), join the nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle
+- [x] Hardware smoke test (nRF52840 Dongle RCP, macOS): radio init, Thread network formed as Leader (channel 15, PAN 0xface), TUN `utun9` with OMR address `fd…::1/64`, OMR route in routing table, `_meshcop._udp` discoverable via `dns-sd`, DNS proxy up; verified with `netstat -rn -f inet6` and `dns-sd -B _meshcop._udp local`
+- [ ] Hardware smoke test — full flow: join nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle (`docs/thread-border-router.md` section: rsthread-br-posix)
 
 ## Phase 17 – ESP32 targets
 
