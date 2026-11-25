@@ -63,7 +63,7 @@ impl core::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
 
 fn transport_err<E: core::fmt::Debug>(e: E) -> Error {
     Error::Transport(format!("{e:?}"))
@@ -173,9 +173,8 @@ impl<T: Transport> RadioSpinel<T> {
         loop {
             let n = self.io.read(&mut self.inbuf).await.map_err(transport_err)?;
             for &b in &self.inbuf[..n] {
-                match self.dec.feed(b) {
-                    Some(Ok(payload)) => return Ok(payload.to_vec()),
-                    Some(Err(_)) | None => {}
+                if let Some(Ok(payload)) = self.dec.feed(b) {
+                    return Ok(payload.to_vec());
                 }
             }
         }
@@ -187,14 +186,12 @@ impl<T: Transport> RadioSpinel<T> {
             let raw = self.read_one_raw().await?;
             let f = Frame::parse(&raw).map_err(|_| Error::Protocol)?;
             if f.header.tid == 0 {
-                if f.command == cmd::PROP_VALUE_IS {
-                    if let Ok((key, value)) = decode_prop(f.payload) {
-                        if key == prop::STREAM_RAW {
-                            if let Some(rx) = Self::parse_rx_frame(value) {
-                                self.rx_queue.push_back(rx);
-                            }
-                        }
-                    }
+                if f.command == cmd::PROP_VALUE_IS
+                    && let Ok((key, value)) = decode_prop(f.payload)
+                    && key == prop::STREAM_RAW
+                    && let Some(rx) = Self::parse_rx_frame(value)
+                {
+                    self.rx_queue.push_back(rx);
                 }
                 continue;
             }
@@ -223,14 +220,13 @@ impl<T: Transport> RadioSpinel<T> {
         self.send_cmd(tid, cmd::PROP_VALUE_SET, spinel_prop, value_fn)
             .await?;
         let resp = self.transact(tid).await?;
-        if resp.command == cmd::PROP_VALUE_IS {
-            if let Ok((key, val)) = resp.property() {
-                if key == prop::LAST_STATUS {
-                    let code = Reader::new(val).packed().unwrap_or(status::FAILURE);
-                    if code != status::OK {
-                        return Err(Error::Rcp(code));
-                    }
-                }
+        if resp.command == cmd::PROP_VALUE_IS
+            && let Ok((key, val)) = resp.property()
+            && key == prop::LAST_STATUS
+        {
+            let code = Reader::new(val).packed().unwrap_or(status::FAILURE);
+            if code != status::OK {
+                return Err(Error::Rcp(code));
             }
         }
         Ok(())
@@ -267,14 +263,13 @@ impl<T: Transport> RadioSpinel<T> {
             }
             let raw = self.read_one_raw().await?;
             let f = Frame::parse(&raw).map_err(|_| Error::Protocol)?;
-            if f.header.tid == 0 && f.command == cmd::PROP_VALUE_IS {
-                if let Ok((key, value)) = decode_prop(f.payload) {
-                    if key == prop::STREAM_RAW {
-                        if let Some(rx) = Self::parse_rx_frame(value) {
-                            return Ok(rx);
-                        }
-                    }
-                }
+            if f.header.tid == 0
+                && f.command == cmd::PROP_VALUE_IS
+                && let Ok((key, value)) = decode_prop(f.payload)
+                && key == prop::STREAM_RAW
+                && let Some(rx) = Self::parse_rx_frame(value)
+            {
+                return Ok(rx);
             }
         }
     }
@@ -293,15 +288,16 @@ impl<T: Transport> RadioSpinel<T> {
             if key == prop::MAC_ENERGY_SCAN_RESULT {
                 let mut r = Reader::new(value);
                 let _ch = r.u8().unwrap_or(0);
-                if let Ok(rssi) = r.i8() {
-                    if rssi != RSSI_INVALID && (best == RSSI_INVALID || rssi > best) {
-                        best = rssi;
-                    }
+                if let Ok(rssi) = r.i8()
+                    && rssi != RSSI_INVALID
+                    && (best == RSSI_INVALID || rssi > best)
+                {
+                    best = rssi;
                 }
-            } else if key == prop::MAC_SCAN_STATE {
-                if Reader::new(value).u8().unwrap_or(scan_state::IDLE) == scan_state::IDLE {
-                    return Ok(best);
-                }
+            } else if key == prop::MAC_SCAN_STATE
+                && Reader::new(value).u8().unwrap_or(scan_state::IDLE) == scan_state::IDLE
+            {
+                return Ok(best);
             }
         }
     }

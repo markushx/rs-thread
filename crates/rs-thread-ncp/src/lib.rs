@@ -12,13 +12,10 @@
 //! Deviations from OpenThread are listed in
 //! `RSTHREAD-OPENTHREAD-DIFFERENCES.md` ("Spinel").
 
-#[cfg(test)]
+#[cfg(any(test, feature = "radio-spinel"))]
 extern crate std;
 
 pub mod rcp;
-
-#[cfg(feature = "radio-spinel")]
-extern crate std;
 
 #[cfg(feature = "radio-spinel")]
 pub mod radio_spinel;

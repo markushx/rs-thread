@@ -31,6 +31,7 @@ log = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+rs-thread-platform = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

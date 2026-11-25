@@ -15,6 +15,16 @@ Re-use existing OpenThread Rust bindings.
 
 Thread 1.4.1 specification: spec/Threadv1.4.1SpecificationFinal_5345_1.pdf
 
+## Before creating a PR
+
+Run all three CI checks locally and fix any failures before pushing:
+
+```sh
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --exclude openthread-sys
+```
+
 ## Links
 
 OpenThread: <https://github.com/openthread/openthread>

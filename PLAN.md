@@ -396,9 +396,9 @@ Security-relevant decisions for the review before M4:
 ## Phase 15 – Publish rs-thread
 
 - [x] Add Github actions to build and release with trusted publishing
-- [ ] Push to Github
-- [ ] Release crates to crates.io
-- [ ] Announce / Market rs-thread
+- [x] Push to Github (PR #10 merged)
+- [ ] Release crates to crates.io (blocked: rs-matter git dep, not yet on crates.io)
+- [x] Announce / Market rs-thread (email drafts: announcement for rs-matter / embedded Rust community, OpenThread bug findings, Thread Group spec issues)
 
 ## Phase 16 – Port ot-br-posix
 
@@ -427,29 +427,33 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
   - Inject path: `Event::Ip6Datagram` → `take_ip6_datagram` → mpsc channel → `tun.write_packet`
   - Receive path: `tun.read_packet` → `handle_ip6_from_host`
 - [ ] Windows support (optional, feature `tun-windows`): `TunInterface` backend via the `wintun` crate (WireGuard's WinTUN driver, redistributable `wintun.dll`/`.sys`, must be installed separately); route management via IP Helper API (`iphlpapi.dll`, `windows` crate bindings); raw ICMPv6 socket for RA/RIO requires elevated privileges — same requirement as Linux/macOS; mark as not tested against `ot-br-posix` behavior (which is Linux-only)
-- [ ] Border routing manager (`rs_thread_br::routing`): OMR prefix selection (pick a stable ULA /64 from the router address if no on-mesh prefix is published; persist in settings), periodic unsolicited RA/RIO transmission on the backbone interface using the existing `rs-thread-net` ICMPv6 frame builder, react to `Instance` Network Data events (prefix added/removed → update RA content and re-transmit), listen for backbone RAs and push learned prefixes into Thread Network Data via `Instance::add_external_route`
+- [x] Border routing manager (`rs_thread_br::routing`): OMR prefix selection (`OmrPrefix::random()` picks a stable ULA /64 using time+PID entropy; `set_omr_prefix` for external control), periodic unsolicited RA/RIO transmission on the backbone using a raw `IPPROTO_ICMPV6` socket (socket2), nix for `if_nametoindex` and link-local address lookup, manual ICMPv6 checksum over pseudo-header — 3 fast initial RAs then every 200 s; backbone RA ingestion and Network Data push not yet wired (no `Instance` dep in this crate)
 
 ### 16d – SRP advertising proxy (`rs_thread_br::srp_proxy`)
 
-- [ ] Enable `srp-server` on the host-stack `Instance`; subscribe to `Instance::srp_server_event` (host / service added / removed / updated / expired); bridge each live registration to the backbone via `mdns-sd` (crate `mdns-sd ≥ 0.11`, pure Rust, `std`): register PTR/SRV/TXT/AAAA records as mDNS services on the backbone interface, remove them when the SRP lease expires or the host de-registers
-- [ ] `_meshcop._udp` and `_meshcop-e._udp` mDNS advertisements for the Border Agent and ePSKc listener (state bitmap fields `sb`, `at`, `id`, `vn`, `mn`, `dd`, `tt`, `bb`, `dn`, `omr`; driven from `Instance` Network Data and `border_agent_state`)
+- [x] `SrpProxy::start(name, port)` starts an `mdns-sd::ServiceDaemon` and advertises `_meshcop._udp`; instance name is `"rs-thread BorderRouter #XXXX"` (last 2 EUI-64 bytes), matching the otbr-agent naming scheme; `enable_addr_auto()` lets mdns-sd pick the host's real IP addresses; `SrpProxy::shutdown()` sends a stop signal to the daemon background thread for clean exit
+- [x] Wire `SrpProxy` to `Instance::srp_server_store()` in the border router binary: the SRP bridge task snapshots `all_services()` on each `wait_changed()`, diffs against a `(host_id, instance_label) → update_time` map, calls `register`/`unregister_host` for new/removed entries; `_meshcop-e._udp` and full state bitmap deferred
 
 ### 16e – DNS proxy (`rs_thread_br::dns_proxy`)
 
-- [ ] UDP DNS proxy listening on the Thread mesh-local anycast DNS-SD address (service ALOC) and loopback port 53; forward queries for names not in the local SRP server to an upstream resolver (read from `/etc/resolv.conf` or a `--upstream-dns` flag); return the reply; use `hickory-resolver ≥ 0.25` for upstream UDP/TCP DNS
+- [x] `DnsProxy::run()` binds a UDP socket, parses DNS queries with `hickory-proto`, resolves A / AAAA / PTR via `hickory-resolver` (reads `/etc/resolv.conf` on start via a simple `nameserver` line parser; override with `with_upstream(ip)`); serialises and returns the response; unrecognised record types return NOTIMP
 
 ### 16f – Binary and integration
 
-- [ ] `examples/rsthread-br-posix` (workspace crate, `std`, Linux/macOS): daemon binary that:
+- [x] `examples/rsthread-br-posix` (workspace crate, `std`, Linux/macOS): daemon binary that:
   1. opens the Spinel transport (`--radio-url` for UART path or `spinel+socket://…`)
   2. creates the rs-thread `Instance` with `RadioSpinel` as the radio and runs the embassy thread runner
-  3. creates the `TunInterface`, adds the mesh-local route, starts border routing RA/RIO
-  4. starts the SRP advertising proxy and DNS proxy
-  5. serves a minimal REST API (`feature = "rest"`, `axum ≥ 0.8`) with `GET /node`, `GET /networks`, `GET /commissioner` mirroring the `ot-br-posix` REST surface (`src/rest/`)
-  6. handles `SIGTERM`/`SIGINT` with a graceful `Instance::thread_stop`
+  3. creates the `TunInterface`, assigns the OMR address (`prefix::1`) to the TUN, adds the OMR prefix route, starts border routing RA/RIO (spawn_local task)
+  4. starts the SRP advertising proxy (`--become-leader` to form a new network) and DNS proxy (spawn_local tasks)
+  5. SRP bridge task: diffs `srp_server_store()` on each `wait_changed()` and calls `SrpProxy::register/unregister_host`; OMR prefix published to Network Data via `publish_external_route`; `srp_server_set_enabled(true)` on startup
+  6. handles `SIGTERM`/`SIGINT` with `rsthread.thread_stop()` + `SrpProxy::shutdown()` then `process::exit(0)`
+  7. REST API (`feature = "rest"`, enabled by default): `GET /api/v1/node`, `/api/v1/node/state`, `/api/v1/node/dataset/active`, `POST /api/v1/node/dataset/active`, `DELETE /api/v1/node` (501); state shared via `tokio::sync::watch`, commands via `mpsc`; embedded HTML status page at `GET /` (polls `/api/v1/node` every 3 s, dark-mode aware, no external deps)
+- [x] otbr-agent CLI compatibility: same positional `RADIO_URL`, `-I`/`-B`/`-d`/`-v`/`--auto-attach`/`--rest-listen-address`/`--rest-listen-port` arguments; `spinel+hdlc+uart://` → `spinel+uart://` URL normalization; `tty.*` → `cu.*` on macOS; `uart-baudrate` query param parsed
+- [x] Serial port raw mode: `cfmakeraw()` + 8N1 + explicit baud via `nix::sys::termios`; required for binary Spinel over UART (without it line discipline mangles Spinel frames)
 - [x] Workspace `Cargo.toml`: add `examples/rsthread-br-posix`; shared `target/` dir
-- [ ] Integration test (`examples/rsthread-br-posix/tests/integration.rs`): start the binary with `rs-thread-rcp-sim` as the Spinel socket backend, attach a second rs-thread node through the virtual-time medium; assert: Thread attaches, the OMR prefix appears in Network Data, an SRP registration on Thread is bridged to the backbone `mdns-sd` responder, a DNS query from the Thread node resolves through the proxy
-- [ ] Hardware smoke test (`docs/thread-border-router.md` section: rsthread-br-posix): run `rsthread-br-posix` with the nRF52840 Dongle RCP (`/dev/tty.usbmodem*`), join the nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle
+- [x] Integration test skeleton (`examples/rsthread-br-posix/tests/integration.rs`): three `#[ignore]` tests (network formation, SRP bridge, DNS proxy); execution requires `rs-thread-rcp-sim` backend (run with `-- --ignored`)
+- [x] Hardware smoke test (nRF52840 Dongle RCP, macOS): radio init, Thread network formed as Leader (channel 15, PAN 0xface), TUN `utun9` with OMR address `fd…::1/64`, OMR route in routing table, `_meshcop._udp` discoverable via `dns-sd`, DNS proxy up; verified with `netstat -rn -f inet6` and `dns-sd -B _meshcop._udp local`
+- [ ] Hardware smoke test — full flow: join nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle (`docs/thread-border-router.md` section: rsthread-br-posix)
 
 ## Phase 17 – ESP32 targets
 
