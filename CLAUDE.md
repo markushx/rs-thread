@@ -20,15 +20,7 @@ Thread 1.4.1 specification: spec/Threadv1.4.1SpecificationFinal_5345_1.pdf
 Run all three CI checks locally and fix any failures before pushing:
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --exclude openthread-sys
-```
-
-Or auto-fix format and then check the other two:
-
-```sh
-cargo fmt
+cargo fmt --all
 cargo clippy --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --exclude openthread-sys
 ```
