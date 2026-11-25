@@ -1,0 +1,3 @@
+[toolchain]
+channel = "1.95"
+targets = ["riscv32imac-unknown-none-elf"]

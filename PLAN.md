@@ -497,15 +497,19 @@ The `rs-thread-platform::Radio` trait is already identical to `esp-rs/openthread
 
 ### 17d – `examples/esp32c6-light` (rs-matter on-off light)
 
-- [ ] Thread + BLE commissioning:
-  - BLE: `esp-radio` BLE controller + `trouble-host` 0.8 (mirrors `nrf-sdc` + `trouble-host` on nRF)
-  - BTP GATT peripheral reused from `rs_thread_matter::ble` (`ble-trouble` feature); `ThreadCoexRunner` for BLE-next-to-Thread
-  - ESP COEX framework handles radio arbitration (no changes to the Thread stack)
-- [ ] Flash KV store: rs-matter settings and Thread settings in separate NVS partitions backed by `rs-thread-flash`
-- [ ] Hardware crypto: `EspP256` for EC-JPAKE and ECDSA P-256 (Phase 17c); `EspAesCcm` for AES
-- [ ] On-network rehearsal before BLE: `RSTHREAD_DATASET` build-time dataset, SLAAC address from an on-mesh prefix, SRP host and `_matterc._udp` registered with an OpenThread SRP server, ping from the peer
-- [ ] BLE commissioning rehearsal: `chip-tool pairing ble-thread` via OTBR; on/off toggle; soak test (≥ 1 hour, random resets, factory reset back to advertising)
-  - [ ] Document commissioning results in `docs/thread-border-router.md` (ESP32-C6 section) and `docs/memory-budget.md`
+- [x] Firmware skeleton in `examples/esp32c6-light/`; `cargo check` passes:
+  - Full Matter on-off light structure mirroring `nrf52840-light` for the ESP32-C6
+  - Thread stack uses `SoftCrypto`; `EspCrypto::init(aes)` called but Thread↔HW wiring deferred
+  - Two flash regions: Thread settings (`0x3F4000`, 48 KiB) + Matter KV (`0x3E4000`, 64 KiB)
+  - Random `ExtAddress` persisted in KV (same as nRF light; avoids replay after factory reset)
+  - `EspRng` (Clone/Copy — esp_hal::Rng is a ZST) for both Thread and Matter
+  - GPIO8 as simple on/off indicator (WS2812 data line, active-high)
+  - `build.rs` with `RSTHREAD_DATASET` build-time dataset support
+- [x] BLE stub (`src/ble.rs`): `EspWifiBleGatt` implements `GattPeripheral` with a warning and error return; wiring plan for `esp-wifi` documented in comments
+- [ ] Wire BLE: add `esp-wifi ≥ 0.13` with `ble` + coex feature; replace `EspWifiBleGatt::run` stub with `TroubleBtpGattPeripheral` over `BleConnector` from esp-wifi
+- [ ] On-network rehearsal: `RSTHREAD_DATASET` build-time dataset, SRP `_matterc._udp` service, ping from OTBR
+- [ ] BLE commissioning rehearsal: `chip-tool pairing ble-thread`; on/off toggle; soak test
+  - [ ] Document commissioning results in `docs/thread-border-router.md` and `docs/memory-budget.md`
 
 ### 17e – Interop and test coverage
 

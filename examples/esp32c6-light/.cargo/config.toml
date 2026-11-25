@@ -1,0 +1,14 @@
+[build]
+target = "riscv32imac-unknown-none-elf"
+target-dir = "/Users/markusbecker/src/opentrust/target/fw"
+
+[target.riscv32imac-unknown-none-elf]
+runner = "espflash flash --monitor"
+rustflags = [
+    "-C", "link-arg=-Tlinkall.x",
+    "-C", "force-frame-pointers=yes",
+]
+
+[env]
+DEFMT_LOG = "info"
+ESP_LOG = "info"

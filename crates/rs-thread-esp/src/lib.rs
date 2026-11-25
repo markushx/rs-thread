@@ -85,6 +85,7 @@ pub use radio::{EspRadio, EspRadioError};
 /// let rng = EspRng::new(esp_hal::rng::Rng::new(peripherals.RNG));
 /// ```
 #[cfg(target_arch = "riscv32")]
+#[derive(Clone, Copy)]
 pub struct EspRng(esp_hal::rng::Rng);
 
 #[cfg(target_arch = "riscv32")]
