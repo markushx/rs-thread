@@ -465,15 +465,14 @@ The `rs-thread-platform::Radio` trait is already identical to `esp-rs/openthread
 
 ### 17a – `rs-thread-esp` crate
 
-- [ ] New crate `crates/rs-thread-esp` mirroring `rs-thread-nrf` structure (`lib.rs`, `radio.rs`, `clock.rs`, `flash.rs`):
-  - 802.15.4 radio backend wrapping `EspRadio` from `esp-rs/openthread` (`esp-radio` feature): hardware ACK, CSMA-CA, transmit security, energy scan, BLE coexistence via ESP COEX — mirrors the `radio-nrf802154` backend
-  - `SoftMacNeeds` derived from `EspRadio::caps()` exactly as the nRF backend does
+- [x] New crate `crates/rs-thread-esp` mirroring `rs-thread-nrf` structure (`lib.rs`, `radio.rs`, `clock.rs`, `flash.rs`):
+  - Soft-MAC radio backend wrapping `esp-ieee802154 0.5` / `esp-hal 0.23`: no hardware ACK offload (`MacCapabilities::empty()`), no BLE coexistence (future work in 17d)
   - `Clock` / `Alarm` over `embassy-time` (esp-hal's `SystemTimer`-backed time driver)
   - Entropy from `esp-hal::rng::Rng` implementing `rand_core::CryptoRng`
-  - Flash-backed settings: `rs-thread-flash` over `embedded-storage-async` backed by `esp-storage` (a fixed NVS-compatible partition; factory reset via GPIO9 boot button)
+  - Flash-backed settings: `EspFlash` over `embedded-storage-async` backed by `esp-storage` with `nor-flash` feature
   - Target arch guard `cfg(target_arch = "riscv32")` for all hardware deps (same pattern as nRF's `target_arch = "arm"`)
-  - `defmt` via RTT or UART; `panic-halt` on release
-  - [ ] Verify `cargo check-esp32c6 -p rs-thread-esp` builds clean
+  - Chip selection via crate features `esp32c6` (default) / `esp32h2`; `defmt` optional feature
+  - [x] Verify `cargo check-esp32c6 -p rs-thread-esp` builds clean
 
 ### 17b – `examples/esp32c6-leader` (FTD firmware)
 

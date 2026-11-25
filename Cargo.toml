@@ -42,6 +42,7 @@ rs-thread-spinel = { path = "crates/rs-thread-spinel", version = "0.1.0" }
 rs-thread-instance = { path = "crates/rs-thread-instance", version = "0.1.0", default-features = false }
 rs-thread-sim = { path = "crates/rs-thread-sim", version = "0.1.0", default-features = false }
 rs-thread-flash = { path = "crates/rs-thread-flash", version = "0.1.0" }
+rs-thread-esp = { path = "crates/rs-thread-esp", version = "0.1.0" }
 
 defmt = "1"
 heapless = "0.9"
