@@ -174,8 +174,7 @@ impl RoutingManager {
 
 /// Returns the interface index for `name`.
 fn get_if_index(name: &str) -> std::io::Result<u32> {
-    nix::net::if_::if_nametoindex(name)
-        .map_err(std::io::Error::from)
+    nix::net::if_::if_nametoindex(name).map_err(std::io::Error::from)
 }
 
 /// Returns the link-local IPv6 address assigned to `ifname`.
