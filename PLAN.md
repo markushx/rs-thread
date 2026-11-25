@@ -486,12 +486,14 @@ The `rs-thread-platform::Radio` trait is already identical to `esp-rs/openthread
 
 ### 17c – Hardware crypto
 
-- [ ] `EspAesCcm` backend for AES-128-CCM* using the ESP32-C6 AES hardware accelerator (`esp-hal::aes`); implement the `CryptoBackend` AES-CCM* methods and benchmark vs. the RustCrypto software backend
-- [ ] `EspP256` backend for the `ecjpake::P256` trait (EC-JPAKE) and rs-matter `EcPoint`/`EcScalar` using the ESP32-C6 RSA/MPI hardware (`esp-hal::rsa`):
-  - ESP32-C6 has an RSA/MPI accelerator but no dedicated ECC accelerator; MPI-backed P-256 scalar multiply is 2–3× faster than software
-  - [ ] Confirm `esp-hal::rsa` exposes the modular multiply / reduce primitives needed for P-256 field arithmetic
-  - [ ] Wire into the `rs-thread-esp` default `CryptoBackend` and add `RustCrypto` feature for the software fallback; document flash / speed trade-off in `docs/memory-budget.md`
-- [ ] `EspAesCcm` and `EspP256` referenced in Phase 12 as "Phase 17" deliverables; close those items there once done
+- [x] `EspCrypto` backend in `crates/rs-thread-esp/src/crypto.rs` (feature `ecdsa`):
+  - `EspAes128`: hardware AES-128 block cipher via `esp-hal::aes::Aes` + critical-section mutex
+  - `EspCrypto: CryptoBackend` (hardware AES, software SHA-256/HMAC-SHA256)
+  - `EspP256: P256` delegates to `SoftP256`; note left that RSA/MPI acceleration is a future optimization
+  - `EcdsaP256 for EspCrypto` delegates to `SoftCrypto`
+  - ESP32-C6 RSA/MPI confirmed to expose `RsaModularMultiplication` for Montgomery multiply — full MPI-backed P-256 deferred (no ECC accelerator, 2–3× speedup estimate, needs §§ of field-arithmetic wrapper)
+- [ ] Benchmark `EspAes128` vs. `SoftAes128` and document in `docs/memory-budget.md`
+- [ ] `EspCrypto` referenced in Phase 12 as "Phase 17" deliverables; close those items once benchmarks done
 
 ### 17d – `examples/esp32c6-light` (rs-matter on-off light)
 

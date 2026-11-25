@@ -44,6 +44,9 @@ defmt = [
     "rs-thread-core/defmt",
 ]
 
+# Enable ECDSA P-256 and EC-JPAKE P-256 (EspP256 and EcdsaP256 for EspCrypto).
+ecdsa = ["rs-thread-core/ecdsa", "rs-thread-core/soft-crypto", "rs-thread-core/ecjpake"]
+
 [dependencies]
 rs-thread-core = { workspace = true }
 rs-thread-platform = { workspace = true }
@@ -71,6 +74,8 @@ embedded-storage = "0.3"
 # The firmware crate must provide a `critical-section` implementation
 # (normally via esp-hal's default features / esp-hal/critical-section-impl).
 embassy-sync = { workspace = true }
+# Used by EspCrypto to guard the AES peripheral static.
+critical-section = "1.1"
 
 [lints]
 workspace = true

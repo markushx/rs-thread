@@ -57,6 +57,8 @@
 
 #[cfg(target_arch = "riscv32")]
 mod clock;
+#[cfg(all(target_arch = "riscv32", feature = "ecdsa"))]
+pub mod crypto;
 #[cfg(target_arch = "riscv32")]
 mod flash;
 #[cfg(target_arch = "riscv32")]
@@ -64,6 +66,10 @@ mod radio;
 
 #[cfg(target_arch = "riscv32")]
 pub use clock::{EmbassyAlarm, EmbassyClock};
+#[cfg(all(target_arch = "riscv32", feature = "ecdsa"))]
+pub use crypto::EspP256;
+#[cfg(all(target_arch = "riscv32", feature = "ecdsa"))]
+pub use crypto::{EspAes128, EspCrypto};
 #[cfg(target_arch = "riscv32")]
 pub use flash::{EspFlash, Flash};
 #[cfg(target_arch = "riscv32")]

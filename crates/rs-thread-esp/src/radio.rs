@@ -186,7 +186,7 @@ impl rs_thread_platform::radio::Radio for EspRadio<'_> {
     ) -> Result<Option<PsduRxInfo>, Self::Error> {
         // Switch channel and power if needed.
         let cca_mode = if cca_threshold.is_some() {
-            CcaMode::Carrier
+            CcaMode::Ed
         } else {
             CcaMode::Carrier
         };
@@ -237,7 +237,7 @@ impl rs_thread_platform::radio::Radio for EspRadio<'_> {
                 // raw.data[0] = frame length including 2-byte FCS.
                 let frame_len = raw.data[0] as usize;
                 // Guard against a malformed length byte from the hardware.
-                if frame_len < 2 || frame_len > 129 {
+                if !(2..=129).contains(&frame_len) {
                     continue;
                 }
                 let psdu_len = frame_len - 2;
