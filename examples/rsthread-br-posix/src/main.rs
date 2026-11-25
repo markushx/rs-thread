@@ -8,7 +8,7 @@
 //! Usage (matches otbr-agent):
 //!   rsthread-br-posix [-I thread-ifname] [-B backbone-ifname]
 //!                     [-d debug-level] [-v] [--auto-attach[=0/1]]
-//!                     RADIO_URL [RADIO_URL_2]
+//!                     RADIO_URL \[RADIO_URL_2\]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,14 +20,16 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use rs_thread_br::{
-    dns_proxy::DnsProxy, routing::{OmrPrefix, RoutingManager}, srp_proxy::{SrpProxy, SrpService},
+    dns_proxy::DnsProxy,
+    routing::{OmrPrefix, RoutingManager},
+    srp_proxy::{SrpProxy, SrpService},
     tun::TunInterface,
 };
 use rs_thread_core::{crypto::soft::SoftCrypto, time::Instant, types::NetworkKey};
 use rs_thread_embassy::{Resources, RsThread};
 use rs_thread_instance::{
-    srp_server_types as sst, Config, Dataset, ExternalRouteConfig, Instance, NetPrefix,
-    RANDOM_EXT_ADDRESS,
+    Config, Dataset, ExternalRouteConfig, Instance, NetPrefix, RANDOM_EXT_ADDRESS,
+    srp_server_types as sst,
 };
 use rs_thread_ncp::{
     radio_spinel::RadioSpinel,
@@ -62,12 +64,24 @@ struct Args {
     /// Thread network interface (TUN device) name.
     /// On macOS the kernel assigns `utunN` names; pass `-I utun9` or similar.
     /// On Linux the default `wpan0` matches otbr-agent.
-    #[cfg_attr(target_os = "macos",
-        arg(short = 'I', long = "thread-ifname", value_name = "IFNAME",
-            default_value = "utun9"))]
-    #[cfg_attr(not(target_os = "macos"),
-        arg(short = 'I', long = "thread-ifname", value_name = "IFNAME",
-            default_value = "wpan0"))]
+    #[cfg_attr(
+        target_os = "macos",
+        arg(
+            short = 'I',
+            long = "thread-ifname",
+            value_name = "IFNAME",
+            default_value = "utun9"
+        )
+    )]
+    #[cfg_attr(
+        not(target_os = "macos"),
+        arg(
+            short = 'I',
+            long = "thread-ifname",
+            value_name = "IFNAME",
+            default_value = "wpan0"
+        )
+    )]
     thread_ifname: String,
 
     /// Backbone network interface name.  May be specified multiple times;
@@ -94,21 +108,25 @@ struct Args {
     auto_attach: Option<u8>,
 
     /// REST API listen address (not yet implemented; accepted for compatibility).
-    #[arg(long = "rest-listen-address", value_name = "ADDR",
-          default_value = "::")]
+    #[arg(
+        long = "rest-listen-address",
+        value_name = "ADDR",
+        default_value = "::"
+    )]
     rest_listen_address: String,
 
     /// REST API listen port (not yet implemented; accepted for compatibility).
-    #[arg(long = "rest-listen-port", value_name = "PORT",
-          default_value_t = 8081u16)]
+    #[arg(
+        long = "rest-listen-port",
+        value_name = "PORT",
+        default_value_t = 8081u16
+    )]
     rest_listen_port: u16,
 
     // ── rs-thread extensions (not in otbr-agent) ───────────────────────────
-
     /// UDP address the DNS proxy listens on.
     /// Use port 53 with CAP_NET_BIND_SERVICE or root.
-    #[arg(long = "dns-addr", value_name = "ADDR",
-          default_value = "[::1]:5300")]
+    #[arg(long = "dns-addr", value_name = "ADDR", default_value = "[::1]:5300")]
     dns_addr: String,
 
     /// Form a new Thread network immediately as leader.  Generates a random
@@ -277,34 +295,34 @@ impl core::fmt::Debug for RadioTransport {
 /// Configures a UART fd for raw binary Spinel: raw mode, 8N1, `baud_rate`.
 fn configure_serial(file: &tokio::fs::File, baud_rate: u32) -> std::io::Result<()> {
     use nix::sys::termios::{
-        BaudRate, ControlFlags, FlushArg, SetArg,
-        cfmakeraw, cfsetspeed, tcflush, tcgetattr, tcsetattr,
+        BaudRate, ControlFlags, FlushArg, SetArg, cfmakeraw, cfsetspeed, tcflush, tcgetattr,
+        tcsetattr,
     };
 
     let baud = match baud_rate {
-        9600    => BaudRate::B9600,
-        19200   => BaudRate::B19200,
-        38400   => BaudRate::B38400,
-        57600   => BaudRate::B57600,
-        115200  => BaudRate::B115200,
-        230400  => BaudRate::B230400,
-        _ => return Err(std::io::Error::other(format!(
-            "unsupported baud rate {baud_rate}"
-        ))),
+        9600 => BaudRate::B9600,
+        19200 => BaudRate::B19200,
+        38400 => BaudRate::B38400,
+        57600 => BaudRate::B57600,
+        115200 => BaudRate::B115200,
+        230400 => BaudRate::B230400,
+        _ => {
+            return Err(std::io::Error::other(format!(
+                "unsupported baud rate {baud_rate}"
+            )));
+        }
     };
 
-    let mut tios = tcgetattr(file.as_fd())
-        .map_err(|e| std::io::Error::other(format!("tcgetattr: {e}")))?;
+    let mut tios =
+        tcgetattr(file.as_fd()).map_err(|e| std::io::Error::other(format!("tcgetattr: {e}")))?;
 
     cfmakeraw(&mut tios);
-    tios.control_flags &=
-        !(ControlFlags::CSTOPB | ControlFlags::PARENB | ControlFlags::CRTSCTS);
+    tios.control_flags &= !(ControlFlags::CSTOPB | ControlFlags::PARENB | ControlFlags::CRTSCTS);
     tios.control_flags |= ControlFlags::CS8 | ControlFlags::CREAD | ControlFlags::CLOCAL;
     tios.control_chars[nix::sys::termios::SpecialCharacterIndices::VMIN as usize] = 1;
     tios.control_chars[nix::sys::termios::SpecialCharacterIndices::VTIME as usize] = 0;
 
-    cfsetspeed(&mut tios, baud)
-        .map_err(|e| std::io::Error::other(format!("cfsetspeed: {e}")))?;
+    cfsetspeed(&mut tios, baud).map_err(|e| std::io::Error::other(format!("cfsetspeed: {e}")))?;
     tcsetattr(file.as_fd(), SetArg::TCSANOW, &tios)
         .map_err(|e| std::io::Error::other(format!("tcsetattr: {e}")))?;
     tcflush(file.as_fd(), FlushArg::TCIOFLUSH)
@@ -339,7 +357,11 @@ async fn open_transport(url: &str) -> Result<RadioTransport> {
         .and_then(|q| {
             q.split('&').find_map(|kv| {
                 let (k, v) = kv.split_once('=')?;
-                if k == "uart-baudrate" { v.parse().ok() } else { None }
+                if k == "uart-baudrate" {
+                    v.parse().ok()
+                } else {
+                    None
+                }
             })
         })
         .unwrap_or(115200);
@@ -362,8 +384,7 @@ async fn open_transport(url: &str) -> Result<RadioTransport> {
             .open(&device_path)
             .await
             .with_context(|| format!("open {device_path}"))?;
-        configure_serial(&file, baud_rate)
-            .with_context(|| format!("configure {device_path}"))?;
+        configure_serial(&file, baud_rate).with_context(|| format!("configure {device_path}"))?;
         log::debug!("serial port configured (raw, 8N1, {} baud)", baud_rate);
 
         Ok(RadioTransport::Uart(UartTransport::new(file)))
@@ -473,14 +494,17 @@ async fn main() -> Result<()> {
     let ext_addr_bytes = rsthread.with(|inst, _| *inst.ext_address().as_bytes());
     let br_name = format!(
         "rs-thread BorderRouter #{:02X}{:02X}",
-        ext_addr_bytes[6],
-        ext_addr_bytes[7]
+        ext_addr_bytes[6], ext_addr_bytes[7]
     );
     log::info!("  name      : {br_name}");
 
     #[cfg(feature = "rest")]
     if !args.rest_listen_address.is_empty() {
-        log::info!("  REST API  : {}:{}", args.rest_listen_address, args.rest_listen_port);
+        log::info!(
+            "  REST API  : {}:{}",
+            args.rest_listen_address,
+            args.rest_listen_port
+        );
     }
 
     // 4. Optionally form a new Thread network immediately, or auto-attach.
@@ -490,8 +514,7 @@ async fn main() -> Result<()> {
         let network_key = NetworkKey(key_bytes);
 
         let mut ds = Dataset::default();
-        ds.set_channel(args.channel)
-            .context("invalid channel")?;
+        ds.set_channel(args.channel).context("invalid channel")?;
         ds.set_pan_id(0xface).context("set pan_id")?;
         ds.set_network_key(&network_key)
             .context("set network_key")?;
@@ -558,7 +581,12 @@ async fn main() -> Result<()> {
     tun.add_route(omr.prefix, omr.prefix_len)
         .await
         .context("add OMR route to TUN")?;
-    log::info!("OMR route {}/{} added to {}", omr.prefix, omr.prefix_len, tun.name());
+    log::info!(
+        "OMR route {}/{} added to {}",
+        omr.prefix,
+        omr.prefix_len,
+        tun.name()
+    );
 
     // 7. Create and start the SRP advertising proxy.
     let mut srp_proxy = SrpProxy::new();
@@ -574,10 +602,7 @@ async fn main() -> Result<()> {
     let mut routing = RoutingManager::new(args.backbone());
     routing.set_omr_prefix(omr);
 
-    let dns_addr: SocketAddr = args
-        .dns_addr
-        .parse()
-        .context("parse --dns-addr")?;
+    let dns_addr: SocketAddr = args.dns_addr.parse().context("parse --dns-addr")?;
     let dns_proxy = DnsProxy::new(dns_addr);
 
     // Channel: Thread→TUN datagrams.
@@ -595,14 +620,16 @@ async fn main() -> Result<()> {
     #[cfg(feature = "rest")]
     if !args.rest_listen_address.is_empty() {
         // Bracket IPv6 addresses (e.g. "::" → "[::]:8081").
-        let listen: SocketAddr = args.rest_listen_address
+        let listen: SocketAddr = args
+            .rest_listen_address
             .parse::<std::net::IpAddr>()
             .map(|ip| SocketAddr::from((ip, args.rest_listen_port)))
-            .or_else(|_| {
-                format!("{}:{}", args.rest_listen_address, args.rest_listen_port).parse()
-            })
+            .or_else(|_| format!("{}:{}", args.rest_listen_address, args.rest_listen_port).parse())
             .context("parse REST listen address")?;
-        let app_state = rest::AppState { node_rx, cmd_tx: cmd_tx.clone() };
+        let app_state = rest::AppState {
+            node_rx,
+            cmd_tx: cmd_tx.clone(),
+        };
         let app = rest::build_router(app_state);
         tokio::spawn(async move {
             match tokio::net::TcpListener::bind(listen).await {
@@ -694,18 +721,14 @@ async fn main() -> Result<()> {
                     // New or updated services → register on mDNS.
                     let mut to_register = Vec::new();
                     for (host, svc, domain) in &services {
-                        let inst_label =
-                            String::from_utf8_lossy(svc.instance_label()).into_owned();
+                        let inst_label = String::from_utf8_lossy(svc.instance_label()).into_owned();
                         let key = (host.id, inst_label.clone());
 
                         if known_svcs.get(&key) == Some(&svc.update_time) {
                             continue;
                         }
 
-                        let host_name = format!(
-                            "{}.local.",
-                            String::from_utf8_lossy(host.label())
-                        );
+                        let host_name = format!("{}.local.", String::from_utf8_lossy(host.label()));
                         let service_type = build_service_type(&svc.service_name, domain);
                         let txt = parse_srp_txt(svc.txt.as_slice());
                         let host_addrs = host.addresses.iter().copied().collect::<Vec<_>>();
@@ -769,7 +792,7 @@ async fn main() -> Result<()> {
             // REST API state monitor: publishes a NodeSnapshot on every OT change.
             #[cfg(feature = "rest")]
             {
-                let rsthread_st = rsthread.clone();
+                let rsthread_st = rsthread;
                 let omr_pstr = omr_prefix_str.clone();
                 tokio::task::spawn_local(async move {
                     loop {
@@ -785,21 +808,26 @@ async fn main() -> Result<()> {
                                     b.iter().map(|x| format!("{x:02x}")).collect()
                                 },
                                 rloc16: format!("0x{rloc16_val:04x}"),
-                                network_name: ds.as_ref()
+                                network_name: ds
+                                    .as_ref()
                                     .and_then(|d| d.tlvs().network_name().ok())
                                     .map(|n| n.as_str().to_owned())
                                     .unwrap_or_default(),
-                                channel: ds.as_ref()
+                                channel: ds
+                                    .as_ref()
                                     .and_then(|d| d.tlvs().channel().ok())
                                     .map(|c| c.channel as u8)
                                     .unwrap_or(0),
-                                pan_id: ds.as_ref()
+                                pan_id: ds
+                                    .as_ref()
                                     .and_then(|d| d.tlvs().pan_id().ok())
                                     .map(|p| format!("0x{p:04x}"))
                                     .unwrap_or_default(),
                                 omr_prefix: omr_pstr.clone(),
                                 dataset_tlvs_hex: ds
-                                    .map(|d| d.as_bytes().iter().map(|b| format!("{b:02x}")).collect())
+                                    .map(|d| {
+                                        d.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
+                                    })
                                     .unwrap_or_default(),
                             }
                         });

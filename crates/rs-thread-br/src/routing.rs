@@ -175,7 +175,6 @@ impl RoutingManager {
 /// Returns the interface index for `name`.
 fn get_if_index(name: &str) -> std::io::Result<u32> {
     nix::net::if_::if_nametoindex(name)
-        .map(|idx| idx as u32)
         .map_err(std::io::Error::from)
 }
 
@@ -186,7 +185,9 @@ fn get_link_local_addr(ifname: &str) -> std::io::Result<Ipv6Addr> {
             continue;
         }
         let Some(sa) = entry.address else { continue };
-        let Some(sin6) = sa.as_sockaddr_in6() else { continue };
+        let Some(sin6) = sa.as_sockaddr_in6() else {
+            continue;
+        };
         let ip = sin6.ip();
         let octs = ip.octets();
         // Link-local range: fe80::/10.

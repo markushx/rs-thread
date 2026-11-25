@@ -75,8 +75,8 @@ impl SrpProxy {
     /// Starts the mDNS daemon and advertises `_meshcop._udp` with `service_name`
     /// as the instance name (e.g. `"rs-thread BorderRouter #A1B2"`).
     pub fn start(&mut self, service_name: &str, border_agent_port: u16) -> std::io::Result<()> {
-        let daemon = ServiceDaemon::new()
-            .map_err(|e| std::io::Error::other(format!("mdns-sd: {e}")))?;
+        let daemon =
+            ServiceDaemon::new().map_err(|e| std::io::Error::other(format!("mdns-sd: {e}")))?;
 
         // Build the host name for DNS-SD host record from the system hostname.
         let host = std::process::Command::new("hostname")
@@ -191,10 +191,10 @@ impl SrpProxy {
     /// Shuts down the mDNS daemon.  Call this before process exit to let the
     /// daemon send mDNS goodbye packets and stop its background thread.
     pub fn shutdown(&self) {
-        if let Some(daemon) = self.daemon.as_ref() {
-            if let Err(e) = daemon.shutdown() {
-                log::debug!("SrpProxy: daemon shutdown: {e}");
-            }
+        if let Some(daemon) = self.daemon.as_ref()
+            && let Err(e) = daemon.shutdown()
+        {
+            log::debug!("SrpProxy: daemon shutdown: {e}");
         }
     }
 

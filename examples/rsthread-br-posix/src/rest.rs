@@ -15,7 +15,7 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
 use tokio::sync::{mpsc, watch};
@@ -94,11 +94,7 @@ async fn api_dataset_set(State(s): State<AppState>, body: Bytes) -> StatusCode {
     let Some(tlvs) = hex_to_bytes(text.trim()) else {
         return StatusCode::UNPROCESSABLE_ENTITY;
     };
-    if s.cmd_tx
-        .send(BrCommand::SetDatasetTlv(tlvs))
-        .await
-        .is_ok()
-    {
+    if s.cmd_tx.send(BrCommand::SetDatasetTlv(tlvs)).await.is_ok() {
         StatusCode::NO_CONTENT
     } else {
         StatusCode::SERVICE_UNAVAILABLE
@@ -112,7 +108,7 @@ async fn api_node_delete() -> StatusCode {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len())

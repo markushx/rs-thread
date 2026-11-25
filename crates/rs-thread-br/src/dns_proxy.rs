@@ -128,10 +128,10 @@ fn read_system_nameserver() -> IpAddr {
     if let Ok(content) = std::fs::read_to_string("/etc/resolv.conf") {
         for line in content.lines() {
             let line = line.trim();
-            if let Some(rest) = line.strip_prefix("nameserver") {
-                if let Ok(ip) = rest.trim().parse::<IpAddr>() {
-                    return ip;
-                }
+            if let Some(rest) = line.strip_prefix("nameserver")
+                && let Ok(ip) = rest.trim().parse::<IpAddr>()
+            {
+                return ip;
             }
         }
     }
@@ -140,8 +140,8 @@ fn read_system_nameserver() -> IpAddr {
 }
 
 async fn handle_query(resolver: &TokioResolver, raw: &[u8]) -> std::io::Result<Vec<u8>> {
-    let query = Message::from_vec(raw)
-        .map_err(|e| std::io::Error::other(format!("DNS parse: {e}")))?;
+    let query =
+        Message::from_vec(raw).map_err(|e| std::io::Error::other(format!("DNS parse: {e}")))?;
 
     let id = query.metadata.id;
     let rd = query.metadata.recursion_desired;
@@ -154,54 +154,48 @@ async fn handle_query(resolver: &TokioResolver, raw: &[u8]) -> std::io::Result<V
 
         let name = q.name().to_string();
         match q.query_type() {
-            RecordType::A => {
-                match resolver.lookup_ip(name.as_str()).await {
-                    Ok(ips) => {
-                        for ip in ips.iter() {
-                            if let IpAddr::V4(v4) = ip {
-                                response.add_answer(Record::from_rdata(
-                                    q.name().clone(),
-                                    300,
-                                    RData::A(rdata::A(v4)),
-                                ));
-                            }
+            RecordType::A => match resolver.lookup_ip(name.as_str()).await {
+                Ok(ips) => {
+                    for ip in ips.iter() {
+                        if let IpAddr::V4(v4) = ip {
+                            response.add_answer(Record::from_rdata(
+                                q.name().clone(),
+                                300,
+                                RData::A(rdata::A(v4)),
+                            ));
                         }
                     }
-                    Err(e) => log::debug!("DnsProxy: A lookup {name}: {e}"),
                 }
-            }
-            RecordType::AAAA => {
-                match resolver.lookup_ip(name.as_str()).await {
-                    Ok(ips) => {
-                        for ip in ips.iter() {
-                            if let IpAddr::V6(v6) = ip {
-                                response.add_answer(Record::from_rdata(
-                                    q.name().clone(),
-                                    300,
-                                    RData::AAAA(rdata::AAAA(v6)),
-                                ));
-                            }
+                Err(e) => log::debug!("DnsProxy: A lookup {name}: {e}"),
+            },
+            RecordType::AAAA => match resolver.lookup_ip(name.as_str()).await {
+                Ok(ips) => {
+                    for ip in ips.iter() {
+                        if let IpAddr::V6(v6) = ip {
+                            response.add_answer(Record::from_rdata(
+                                q.name().clone(),
+                                300,
+                                RData::AAAA(rdata::AAAA(v6)),
+                            ));
                         }
                     }
-                    Err(e) => log::debug!("DnsProxy: AAAA lookup {name}: {e}"),
                 }
-            }
-            RecordType::PTR => {
-                match resolver.reverse_lookup(name.as_str()).await {
-                    Ok(result) => {
-                        for rec in result.answers() {
-                            if let RData::PTR(ptr) = &rec.data {
-                                response.add_answer(Record::from_rdata(
-                                    q.name().clone(),
-                                    300,
-                                    RData::PTR(ptr.clone()),
-                                ));
-                            }
+                Err(e) => log::debug!("DnsProxy: AAAA lookup {name}: {e}"),
+            },
+            RecordType::PTR => match resolver.reverse_lookup(name.as_str()).await {
+                Ok(result) => {
+                    for rec in result.answers() {
+                        if let RData::PTR(ptr) = &rec.data {
+                            response.add_answer(Record::from_rdata(
+                                q.name().clone(),
+                                300,
+                                RData::PTR(ptr.clone()),
+                            ));
                         }
                     }
-                    Err(e) => log::debug!("DnsProxy: PTR lookup {name}: {e}"),
                 }
-            }
+                Err(e) => log::debug!("DnsProxy: PTR lookup {name}: {e}"),
+            },
             other => {
                 log::debug!("DnsProxy: unsupported query type {other:?} for {name}");
                 response.metadata.response_code = ResponseCode::NotImp;
