@@ -594,8 +594,13 @@ async fn main() -> Result<()> {
     // Spawn the axum server outside the LocalSet so it can run on the runtime.
     #[cfg(feature = "rest")]
     if !args.rest_listen_address.is_empty() {
-        let listen: SocketAddr = format!("{}:{}", args.rest_listen_address, args.rest_listen_port)
-            .parse()
+        // Bracket IPv6 addresses (e.g. "::" → "[::]:8081").
+        let listen: SocketAddr = args.rest_listen_address
+            .parse::<std::net::IpAddr>()
+            .map(|ip| SocketAddr::from((ip, args.rest_listen_port)))
+            .or_else(|_| {
+                format!("{}:{}", args.rest_listen_address, args.rest_listen_port).parse()
+            })
             .context("parse REST listen address")?;
         let app_state = rest::AppState { node_rx, cmd_tx: cmd_tx.clone() };
         let app = rest::build_router(app_state);
