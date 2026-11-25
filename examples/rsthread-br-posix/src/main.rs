@@ -137,6 +137,12 @@ struct Args {
     /// 802.15.4 channel to use with `--become-leader`.
     #[arg(long = "channel", default_value_t = 15u8)]
     channel: u8,
+
+    /// Active dataset to inject at startup, as a hex-encoded TLV string
+    /// (e.g. the output of `dataset convert` in `ot-cli`).  When supplied,
+    /// the dataset is set before `--auto-attach` or `--become-leader` runs.
+    #[arg(long = "dataset", value_name = "HEX")]
+    dataset_hex: Option<String>,
 }
 
 impl Args {
@@ -298,20 +304,7 @@ fn configure_serial(file: &tokio::fs::File, baud_rate: u32) -> std::io::Result<(
         BaudRate, ControlFlags, FlushArg, SetArg, cfmakeraw, cfsetspeed, tcflush, tcgetattr,
         tcsetattr,
     };
-
-    let baud = match baud_rate {
-        9600 => BaudRate::B9600,
-        19200 => BaudRate::B19200,
-        38400 => BaudRate::B38400,
-        57600 => BaudRate::B57600,
-        115200 => BaudRate::B115200,
-        230400 => BaudRate::B230400,
-        _ => {
-            return Err(std::io::Error::other(format!(
-                "unsupported baud rate {baud_rate}"
-            )));
-        }
-    };
+    use std::os::unix::io::AsRawFd;
 
     let mut tios =
         tcgetattr(file.as_fd()).map_err(|e| std::io::Error::other(format!("tcgetattr: {e}")))?;
@@ -322,12 +315,62 @@ fn configure_serial(file: &tokio::fs::File, baud_rate: u32) -> std::io::Result<(
     tios.control_chars[nix::sys::termios::SpecialCharacterIndices::VMIN as usize] = 1;
     tios.control_chars[nix::sys::termios::SpecialCharacterIndices::VTIME as usize] = 0;
 
-    cfsetspeed(&mut tios, baud).map_err(|e| std::io::Error::other(format!("cfsetspeed: {e}")))?;
-    tcsetattr(file.as_fd(), SetArg::TCSANOW, &tios)
-        .map_err(|e| std::io::Error::other(format!("tcsetattr: {e}")))?;
+    // nix::BaudRate only covers speeds available on all POSIX targets; for speeds
+    // that are platform-specific (e.g. 460800 on macOS) we fall through to cfsetspeed
+    // via the libc termios directly after tcsetattr.
+    let std_baud = match baud_rate {
+        9600 => Some(BaudRate::B9600),
+        19200 => Some(BaudRate::B19200),
+        38400 => Some(BaudRate::B38400),
+        57600 => Some(BaudRate::B57600),
+        115200 => Some(BaudRate::B115200),
+        230400 => Some(BaudRate::B230400),
+        _ => None,
+    };
+
+    if let Some(baud) = std_baud {
+        cfsetspeed(&mut tios, baud)
+            .map_err(|e| std::io::Error::other(format!("cfsetspeed: {e}")))?;
+        tcsetattr(file.as_fd(), SetArg::TCSANOW, &tios)
+            .map_err(|e| std::io::Error::other(format!("tcsetattr: {e}")))?;
+    } else {
+        // For non-standard speeds (e.g. 460800 on macOS) use the Apple-specific
+        // IOSSIOSPEED ioctl (_IOW('T', 2, speed_t) = 0x8008_5402 on 64-bit macOS).
+        // Apply cfmakeraw/flags first, then patch the speed.
+        tcsetattr(file.as_fd(), SetArg::TCSANOW, &tios)
+            .map_err(|e| std::io::Error::other(format!("tcsetattr(raw): {e}")))?;
+        // macOS: use the IOSSIOSPEED ioctl to set arbitrary baud rates.
+        // Other platforms can be added as needed.
+        #[cfg(target_os = "macos")]
+        macos_set_arbitrary_baud(file.as_raw_fd(), baud_rate)?;
+        #[cfg(not(target_os = "macos"))]
+        return Err(std::io::Error::other(format!(
+            "unsupported baud rate {baud_rate} on this platform"
+        )));
+    }
+
     tcflush(file.as_fd(), FlushArg::TCIOFLUSH)
         .map_err(|e| std::io::Error::other(format!("tcflush: {e}")))?;
 
+    Ok(())
+}
+
+/// Sets an arbitrary baud rate on macOS via the IOSSIOSPEED ioctl.
+///
+/// macOS's standard POSIX termios only supports the speeds defined in `BaudRate`.
+/// For higher speeds (e.g. 460800) the IOKit `IOSSIOSPEED` ioctl must be used;
+/// it takes a pointer to a `speed_t` (u64 on 64-bit macOS).
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn macos_set_arbitrary_baud(fd: std::os::unix::io::RawFd, baud: u32) -> std::io::Result<()> {
+    // IOSSIOSPEED = _IOW('T', 2, speed_t) = 0x8008_5402 on 64-bit macOS.
+    const IOSSIOSPEED: libc::c_ulong = 0x8008_5402;
+    let speed: libc::speed_t = baud.into();
+    // Safety: `fd` is a valid open file descriptor; `speed` lives for the call.
+    let rc = unsafe { libc::ioctl(fd, IOSSIOSPEED, &speed) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
     Ok(())
 }
 
@@ -507,7 +550,21 @@ async fn main() -> Result<()> {
         );
     }
 
-    // 4. Optionally form a new Thread network immediately, or auto-attach.
+    // 4a. Inject a dataset from the CLI if provided (must happen before thread_start).
+    if let Some(ref hex) = args.dataset_hex {
+        let tlvs: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
+            .collect::<Result<_, _>>()
+            .context("--dataset: invalid hex")?;
+        let ds = Dataset::from_tlvs(&tlvs).context("--dataset: invalid TLVs")?;
+        rsthread
+            .set_active_dataset(&ds)
+            .map_err(|e| anyhow::anyhow!("--dataset set_active_dataset: {e:?}"))?;
+        log::info!("dataset injected from --dataset flag");
+    }
+
+    // 4b. Optionally form a new Thread network immediately, or auto-attach.
     if args.become_leader {
         let mut key_bytes = [0u8; 16];
         getrandom::fill(&mut key_bytes).expect("getrandom failed");
