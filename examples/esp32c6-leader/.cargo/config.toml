@@ -1,0 +1,17 @@
+[build]
+target = "riscv32imac-unknown-none-elf"
+target-dir = "/Users/markusbecker/src/opentrust/target/fw"
+
+[target.riscv32imac-unknown-none-elf]
+# `cargo run --release` flashes and monitors via espflash.
+# Install: cargo install espflash
+runner = "espflash flash --monitor"
+# esp-hal provides `linkall.x`; force-frame-pointers aids backtraces via probe-rs.
+rustflags = [
+    "-C", "link-arg=-Tlinkall.x",
+    "-C", "force-frame-pointers=yes",
+]
+
+[env]
+DEFMT_LOG = "info"
+ESP_LOG = "info"

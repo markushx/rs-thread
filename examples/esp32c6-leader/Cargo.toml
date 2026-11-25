@@ -1,0 +1,92 @@
+[package]
+name = "esp32c6-leader"
+description = "rs-thread FTD leader on ESP32-C6 DevKitC-1 or M5Stack NanoC6 (standalone firmware)"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone: its own target, linker script and lock file.
+[workspace]
+
+[features]
+# Board variants — same chip (ESP32-C6), slightly different pin-outs.
+# `devkitc1`: Espressif ESP32-C6-DevKitC-1 (WS2812 on GPIO8, USB-JTAG on GPIO18/19)
+# `nanoc6`:   M5Stack NanoC6               (WS2812 on GPIO7, same UART/JTAG)
+default = ["board-devkitc1"]
+board-devkitc1 = []
+board-nanoc6   = []
+
+# Node role overrides for the `node` binary.
+child-only = []  # stay as child, never try to become a router
+leader     = []  # immediately assert Leader role (single-node test)
+
+# CLI firmware (`cli` binary): OpenThread-compatible CLI over USB-Serial-JTAG.
+cli             = ["dep:rs-thread-cli"]
+cli-dataset     = ["cli", "rs-thread-cli/dataset"]
+cli-scan        = ["cli", "rs-thread-cli/scan"]
+cli-ping        = ["cli", "rs-thread-cli/ping"]
+cli-tables      = ["cli", "rs-thread-cli/tables"]
+cli-netdata     = ["cli", "rs-thread-cli/netdata"]
+cli-srp         = ["cli", "rs-thread-cli/srp"]
+cli-dns         = ["cli", "rs-thread-cli/dns"]
+cli-udp         = ["cli", "rs-thread-cli/udp"]
+cli-commissioning = ["cli", "rs-thread-cli/commissioning"]
+cli-all = [
+    "cli-dataset", "cli-scan", "cli-ping", "cli-tables", "cli-netdata",
+    "cli-srp", "cli-dns", "cli-udp", "cli-commissioning",
+]
+
+# Factory-reset-on-every-boot (test aid, same as nRF example).
+test-factory-reset = []
+
+[dependencies]
+rs-thread-core     = { path = "../../crates/rs-thread-core",     features = ["defmt", "soft-crypto", "ecdsa"] }
+rs-thread-platform = { path = "../../crates/rs-thread-platform", features = ["defmt"] }
+rs-thread-instance = { path = "../../crates/rs-thread-instance", default-features = false, features = ["ftd", "defmt"] }
+rs-thread-embassy  = { path = "../../crates/rs-thread-embassy",  default-features = false, features = ["ftd", "defmt"] }
+rs-thread-flash    = { path = "../../crates/rs-thread-flash",    features = ["defmt"] }
+rs-thread-cli      = { path = "../../crates/rs-thread-cli",      default-features = false, features = ["ftd"], optional = true }
+rs-thread-esp      = { path = "../../crates/rs-thread-esp",      features = ["esp32c6", "defmt"] }
+
+# ESP32-C6 HAL and drivers.
+# `unstable` is required by esp-ieee802154.
+esp-hal      = { version = "0.23", features = ["esp32c6", "unstable"] }
+# esp-ieee802154 wraps the IEEE 802.15.4 radio peripheral (re-exported from rs-thread-esp).
+esp-ieee802154 = { version = "0.5", default-features = false, features = ["esp32c6"] }
+# `embassy-executor` arch-riscv32 generates `#[riscv_rt::entry]`.
+# esp-hal uses `esp-riscv-rt` (a fork) for the ESP32-C6 entry point.
+# Renaming it as `riscv-rt` satisfies the macro's crate path lookup.
+riscv-rt = { package = "esp-riscv-rt", version = "0.9" }
+
+# Embassy async runtime.
+# esp-hal-embassy 0.4 uses embassy-time 0.3 (embassy-time-driver 0.1) which
+# conflicts with the workspace's embassy-time 0.5 (driver 0.2). We implement
+# the embassy-time 0.5 driver inline in `src/time_driver.rs` instead.
+embassy-executor = { version = "0.6",  features = ["arch-riscv32", "executor-thread", "defmt"] }
+embassy-time     = { version = "0.5",  features = ["defmt", "tick-hz-16_000_000"] }
+embassy-time-driver = "0.2"
+embassy-time-queue-utils = "0.3"
+embassy-sync     = "0.8"
+embassy-futures  = "0.1"
+embedded-storage-async = "0.4"
+
+defmt            = "1"
+defmt-rtt        = "1"
+# panic-probe is Cortex-M only; use esp-backtrace for RISC-V.
+esp-backtrace    = { version = "0.15", features = ["esp32c6", "panic-handler", "defmt"] }
+static_cell      = "2"
+rand_core        = { version = "0.10", default-features = false }
+embedded-storage = "0.3"
+critical-section = "1.1"
+
+[[bin]]
+name = "cli"
+path = "src/bin/cli.rs"
+required-features = ["cli"]
+
+[profile.release]
+opt-level     = "s"
+lto           = "fat"
+codegen-units = 1
+debug         = 2
+panic         = "abort"

@@ -69,9 +69,58 @@ pub use flash::{EspFlash, Flash};
 #[cfg(target_arch = "riscv32")]
 pub use radio::{EspRadio, EspRadioError};
 
-/// The ESP32-C6 RNG peripheral as a `rand_core` `CryptoRng` entropy source
-/// (`rs_thread_platform::Entropy`).
+/// The ESP32-C6 RNG peripheral as a `rand_core` 0.10 `CryptoRng` entropy source.
 ///
-/// In esp-hal 0.23, obtain one with `esp_hal::rng::Rng::new(peripherals.RNG)`.
+/// esp-hal 0.23 implements `rand_core 0.6` on its `Rng`; this newtype bridges
+/// the gap to `rand_core 0.10` required by `rs-thread-instance`.
+///
+/// Create with:
+/// ```ignore
+/// let rng = EspRng::new(esp_hal::rng::Rng::new(peripherals.RNG));
+/// ```
 #[cfg(target_arch = "riscv32")]
-pub type EspRng = esp_hal::rng::Rng;
+pub struct EspRng(esp_hal::rng::Rng);
+
+#[cfg(target_arch = "riscv32")]
+impl core::fmt::Debug for EspRng {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("EspRng")
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl EspRng {
+    /// Wrap the esp-hal hardware RNG.
+    pub fn new(rng: esp_hal::rng::Rng) -> Self {
+        Self(rng)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl rand_core::TryRng for EspRng {
+    type Error = core::convert::Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.0.random())
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        let lo = self.0.random() as u64;
+        let hi = self.0.random() as u64;
+        Ok((hi << 32) | lo)
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        for chunk in dst.chunks_mut(4) {
+            let word = self.0.random().to_le_bytes();
+            chunk.copy_from_slice(&word[..chunk.len()]);
+        }
+        Ok(())
+    }
+}
+
+// SAFETY: the ESP32-C6 TRNG draws entropy from multiple analog sources and
+// radio noise; output is cryptographically unpredictable when the radio is
+// active (the standard requirement for embedded platforms).
+#[cfg(target_arch = "riscv32")]
+impl rand_core::TryCryptoRng for EspRng {}

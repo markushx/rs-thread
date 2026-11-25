@@ -49,7 +49,7 @@ rcp = ["dep:rs-thread-ncp"]
 test-factory-reset = []
 
 [dependencies]
-rs-thread-core = { path = "../../crates/rs-thread-core", features = ["defmt"] }
+rs-thread-core = { path = "../../crates/rs-thread-core", features = ["defmt", "soft-crypto", "ecdsa"] }
 rs-thread-platform = { path = "../../crates/rs-thread-platform", features = ["defmt"] }
 rs-thread-instance = { path = "../../crates/rs-thread-instance", default-features = false, features = ["ftd", "defmt"] }
 rs-thread-embassy = { path = "../../crates/rs-thread-embassy", default-features = false, features = ["ftd", "defmt"] }
