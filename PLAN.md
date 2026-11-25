@@ -455,13 +455,68 @@ Reference source: `/Users/markusbecker/src/ot-br-posix` (tag `v2026.11.0`); comp
 - [x] Hardware smoke test (nRF52840 Dongle RCP, macOS): radio init, Thread network formed as Leader (channel 15, PAN 0xface), TUN `utun9` with OMR address `fd…::1/64`, OMR route in routing table, `_meshcop._udp` discoverable via `dns-sd`, DNS proxy up; verified with `netstat -rn -f inet6` and `dns-sd -B _meshcop._udp local`
 - [ ] Hardware smoke test — full flow: join nRF52840 light DK to the network, verify SRP registration on Thread and mDNS on macOS, on-network commissioning with `chip-tool`, one on/off toggle (`docs/thread-border-router.md` section: rsthread-br-posix)
 
-## Phase 17 – ESP32 targets
+## Phase 17 – ESP32-C6/H2 targets
 
-- [ ] ESP32-C6/H2 (802.15.4 capable; RISC-V): radio via `esp-ieee802154` (esp-hal), reuse esp-rs/openthread platform glue; `Clock` / `Alarm` on the target timer, entropy, flash-backed settings
-- [ ] Light on ESP32-C6: radio over `esp-ieee802154`, timer, flash KV, BLE (Matter commissioning through the ESP BLE controller next to 802.15.4)
-- [ ] Hardware crypto: ESP AES and ESP ECC backends for `CryptoBackend` / the `ecjpake::P256` trait and rs-matter
-- [ ] Example apps (FTD router / leader, CLI over UART / USB-CDC) and interop against OpenThread / an OTBR as on the nRF52840
-- [ ] ESP32-C6 part of milestone M5
+Target boards: **ESP32-C6-DevKitC-1** and **M5Stack NanoC6** (both ESP32-C6 RISC-V; same firmware binary, board feature flags for LED / button pins).
+Target is `riscv32imac-unknown-none-elf` (already in toolchain and `check-esp32c6` alias).
+Reference: Phase 12 (nRF52840 bring-up). Radio notes: `docs/radio-contract.md` §EspRadio row.
+
+The `rs-thread-platform::Radio` trait is already identical to `esp-rs/openthread`'s `Radio` (by design — ADR research); the `EspRadio` wrapper in that crate drops in directly. BLE coexistence is handled by the ESP COEX framework inside `esp-radio`, not by the Thread stack.
+
+### 17a – `rs-thread-esp` crate
+
+- [ ] New crate `crates/rs-thread-esp` mirroring `rs-thread-nrf` structure (`lib.rs`, `radio.rs`, `clock.rs`, `flash.rs`):
+  - 802.15.4 radio backend wrapping `EspRadio` from `esp-rs/openthread` (`esp-radio` feature): hardware ACK, CSMA-CA, transmit security, energy scan, BLE coexistence via ESP COEX — mirrors the `radio-nrf802154` backend
+  - `SoftMacNeeds` derived from `EspRadio::caps()` exactly as the nRF backend does
+  - `Clock` / `Alarm` over `embassy-time` (esp-hal's `SystemTimer`-backed time driver)
+  - Entropy from `esp-hal::rng::Rng` implementing `rand_core::CryptoRng`
+  - Flash-backed settings: `rs-thread-flash` over `embedded-storage-async` backed by `esp-storage` (a fixed NVS-compatible partition; factory reset via GPIO9 boot button)
+  - Target arch guard `cfg(target_arch = "riscv32")` for all hardware deps (same pattern as nRF's `target_arch = "arm"`)
+  - `defmt` via RTT or UART; `panic-halt` on release
+  - [ ] Verify `cargo check-esp32c6 -p rs-thread-esp` builds clean
+
+### 17b – `examples/esp32c6-leader` (FTD firmware)
+
+- [ ] Board bring-up: clock init, radio init, RNG, LED (GPIO / WS2812; feature flags `devkitc1` / `nanoc6`), panic handler (RTT + halt)
+- [ ] Standalone FTD leader firmware (channel 15, PAN 0x1234, `rs-thread`), beacons out, `scan` variant with energy and active scan
+  - Only one radio backend (`esp-radio`), no `radio-embassy` pitfall from Phase 12
+  - [ ] Flash / RAM budget measured and recorded in `docs/memory-budget.md` (ESP32-C6: 4 MB flash, 512 KB SRAM; target ≤ 450 KB flash / ≤ 100 KB static RAM for a bare FTD leader)
+- [ ] CLI firmware (`--bin cli`, USB-CDC serial or UART0): same `rs-thread-cli` command set as `examples/nrf52840-leader --bin cli`; persistent settings via `rs-thread-flash`, factory reset via GPIO9 at boot
+- [ ] Interop against `ot-cli-ftd`: rs-thread attaches as child, upgrades to router, pings both ways with 0 loss; rs-thread Leader with an OT node joining as child / router; leader reset / partition merge (same test protocol as `docs/csl-hardware.md` for nRF)
+  - [ ] Document results in `docs/memory-budget.md` (flash / RAM) and a new `docs/esp32c6-hardware.md` (interop results, radio quirks)
+
+### 17c – Hardware crypto
+
+- [ ] `EspAesCcm` backend for AES-128-CCM* using the ESP32-C6 AES hardware accelerator (`esp-hal::aes`); implement the `CryptoBackend` AES-CCM* methods and benchmark vs. the RustCrypto software backend
+- [ ] `EspP256` backend for the `ecjpake::P256` trait (EC-JPAKE) and rs-matter `EcPoint`/`EcScalar` using the ESP32-C6 RSA/MPI hardware (`esp-hal::rsa`):
+  - ESP32-C6 has an RSA/MPI accelerator but no dedicated ECC accelerator; MPI-backed P-256 scalar multiply is 2–3× faster than software
+  - [ ] Confirm `esp-hal::rsa` exposes the modular multiply / reduce primitives needed for P-256 field arithmetic
+  - [ ] Wire into the `rs-thread-esp` default `CryptoBackend` and add `RustCrypto` feature for the software fallback; document flash / speed trade-off in `docs/memory-budget.md`
+- [ ] `EspAesCcm` and `EspP256` referenced in Phase 12 as "Phase 17" deliverables; close those items there once done
+
+### 17d – `examples/esp32c6-light` (rs-matter on-off light)
+
+- [ ] Thread + BLE commissioning:
+  - BLE: `esp-radio` BLE controller + `trouble-host` 0.8 (mirrors `nrf-sdc` + `trouble-host` on nRF)
+  - BTP GATT peripheral reused from `rs_thread_matter::ble` (`ble-trouble` feature); `ThreadCoexRunner` for BLE-next-to-Thread
+  - ESP COEX framework handles radio arbitration (no changes to the Thread stack)
+- [ ] Flash KV store: rs-matter settings and Thread settings in separate NVS partitions backed by `rs-thread-flash`
+- [ ] Hardware crypto: `EspP256` for EC-JPAKE and ECDSA P-256 (Phase 17c); `EspAesCcm` for AES
+- [ ] On-network rehearsal before BLE: `RSTHREAD_DATASET` build-time dataset, SLAAC address from an on-mesh prefix, SRP host and `_matterc._udp` registered with an OpenThread SRP server, ping from the peer
+- [ ] BLE commissioning rehearsal: `chip-tool pairing ble-thread` via OTBR; on/off toggle; soak test (≥ 1 hour, random resets, factory reset back to advertising)
+  - [ ] Document commissioning results in `docs/thread-border-router.md` (ESP32-C6 section) and `docs/memory-budget.md`
+
+### 17e – Interop and test coverage
+
+- [ ] Hardware interop against `ot-cli-ftd` on a second board (ESP32-C6-DevKitC-1 as OT node, or nRF52840 DK):
+  - Child attach, router upgrade, pings both ways, leader reset / partition merge; same 12-min protocol as nRF interop
+  - [ ] CSL interop (rs-thread SSED under an OT parent; OT SSED under rs-thread parent) if `EspRadio` advertises `TIMED_RECEIVE` / `CSL_RECEIVER` caps
+- [ ] Thread-cert pass-rate with ESP32-C6 in virtual time (`rs-thread-cli-vt` built for `riscv32imac`):
+  - 5.x / 9.x all-OT, each-node, all-rs-thread; LowPower (SED/SSED); same harness as `crates/rs-thread-sim/tests/thread_cert.rs`
+  - [ ] Update `docs/test-status.md` with ESP32-C6 results
+- [ ] Commissioning interop: rs-thread Joiner against OTBR commissioner on macOS (blocked on Phase 12 open item: `otbr-agent` exits on petition; resolve that first)
+- [ ] Update `docs/test-plan-status.md` and `docs/memory-budget.md` with ESP32-C6 numbers
+- [ ] Close M5 milestone when: ESP32-C6 leader attaches to an OT/OTBR network and the light is commissioned on hardware
 
 ## Phase 18 – Maintenance
 
