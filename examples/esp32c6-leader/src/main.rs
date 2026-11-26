@@ -76,6 +76,9 @@ async fn main(spawner: Spawner) {
 
             #[cfg(feature = "leader")]
             i.become_leader(now).unwrap();
+
+            #[cfg(not(feature = "leader"))]
+            i.thread_start(now).unwrap();
         });
 
         let mut last_role = None;

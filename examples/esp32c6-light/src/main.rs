@@ -79,6 +79,11 @@ use rs_thread_matter::ble::TroubleBtpGattContext;
 
 defmt::timestamp!("{=u64:us}", embassy_time::Instant::now().as_micros());
 
+#[defmt::panic_handler]
+fn defmt_panic() -> ! {
+    core::panic!("defmt panic")
+}
+
 #[global_allocator]
 static HEAP: embedded_alloc::LlffHeap = embedded_alloc::LlffHeap::empty();
 const HEAP_SIZE: usize = 8192;

@@ -36,8 +36,8 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use esp_ieee802154::{CcaMode, Config, Ieee802154};
 use rs_thread_platform::radio::{
-    Capabilities, Config as RadioConfig, MacCapabilities, PsduRxInfo, PsduTxInfo, RSSI_INVALID,
-    RadioCaps, RadioError, RadioErrorKind, SrcMatchConfig,
+    Capabilities, Config as RadioConfig, MacCapabilities, PsduRxInfo, PsduTxInfo, RadioCaps,
+    RadioError, RadioErrorKind, SrcMatchConfig,
 };
 
 // Module-level signals: safe because there is exactly one EspRadio at a time.
@@ -250,16 +250,28 @@ impl rs_thread_platform::radio::Radio for EspRadio<'_> {
                     continue;
                 }
                 psdu_buf[..psdu_len].copy_from_slice(&raw.data[1..1 + psdu_len]);
+                // esp-ieee802154 stores the RSSI byte just after the PSDU (at
+                // the position where the hardware would place FCS byte 0).
+                // This matches how `Ieee802154::received()` extracts RSSI:
+                //   raw.data[raw.data[0] as usize - 1]  =  raw.data[frame_len-1]
+                //                                       =  raw.data[psdu_len+1]
+                let rssi = raw.data[psdu_len + 1] as i8;
                 return Ok(PsduRxInfo {
                     len: psdu_len,
                     channel: raw.channel,
-                    // No RSSI in RawReceived; use RSSI_INVALID.
-                    rssi: Some(RSSI_INVALID),
+                    rssi: Some(rssi),
                     lqi: None,
                     timestamp_us: None,
                     ack_security: None,
                     acked_with_frame_pending: None,
                 });
+            }
+            // With rx_when_idle=false (the esp-ieee802154 default) the hardware
+            // goes IDLE after each received frame via next_operation().  Restart
+            // reception so the radio is not stuck IDLE between frames.
+            // ieee802154_receive() is a no-op when the state is already Receive.
+            if self.receiving {
+                self.hw.start_receive();
             }
             // No frame ready; wait for the RX-available ISR callback.
             // Reset first so a signal fired after the raw_received() check
