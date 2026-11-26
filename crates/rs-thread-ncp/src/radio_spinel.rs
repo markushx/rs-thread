@@ -271,6 +271,14 @@ impl<T: Transport> RadioSpinel<T> {
             {
                 return Ok(rx);
             }
+            // Log unexpected frames to diagnose cases where the nRF sends
+            // responses that are silently discarded here.
+            rs_thread_core::trace!(
+                "radio_spinel: wait_rx_frame discarded tid={} cmd={:#x} len={}",
+                f.header.tid,
+                f.command,
+                raw.len()
+            );
         }
     }
 
@@ -404,6 +412,7 @@ impl<T: Transport> Radio for RadioSpinel<T> {
     }
 
     async fn set_receive(&mut self, channel: u8) -> Result<(), Self::Error> {
+        rs_thread_core::debug!("radio_spinel: set_receive(ch={})", channel);
         self.set_prop(prop::PHY_CHAN, |w| w.u8(channel)).await?;
         self.set_prop(prop::PHY_ENABLED, |w| w.bool(true)).await?;
         self.set_prop(prop::MAC_RAW_STREAM_ENABLED, |w| w.bool(true))
@@ -414,6 +423,7 @@ impl<T: Transport> Radio for RadioSpinel<T> {
     }
 
     async fn set_sleep(&mut self) -> Result<(), Self::Error> {
+        rs_thread_core::debug!("radio_spinel: set_sleep");
         self.set_prop(prop::MAC_RAW_STREAM_ENABLED, |w| w.bool(false))
             .await?;
         self.set_prop(prop::PHY_ENABLED, |w| w.bool(false)).await?;

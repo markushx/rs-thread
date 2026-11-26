@@ -566,25 +566,31 @@ async fn main() -> Result<()> {
 
     // 4b. Optionally form a new Thread network immediately, or auto-attach.
     if args.become_leader {
-        let mut key_bytes = [0u8; 16];
-        getrandom::fill(&mut key_bytes).expect("getrandom failed");
-        let network_key = NetworkKey(key_bytes);
+        // Only generate a fresh dataset when --dataset was not supplied.
+        // When --dataset is present the dataset was already injected in 4a;
+        // --become-leader then just forms the network on top of it.
+        if args.dataset_hex.is_none() {
+            let mut key_bytes = [0u8; 16];
+            getrandom::fill(&mut key_bytes).expect("getrandom failed");
+            let network_key = NetworkKey(key_bytes);
 
-        let mut ds = Dataset::default();
-        ds.set_channel(args.channel).context("invalid channel")?;
-        ds.set_pan_id(0xface).context("set pan_id")?;
-        ds.set_network_key(&network_key)
-            .context("set network_key")?;
-        rsthread
-            .set_active_dataset(&ds)
-            .map_err(|e| anyhow::anyhow!("set_active_dataset: {e:?}"))?;
+            let mut ds = Dataset::default();
+            ds.set_channel(args.channel).context("invalid channel")?;
+            ds.set_pan_id(0xface).context("set pan_id")?;
+            ds.set_network_key(&network_key)
+                .context("set network_key")?;
+            rsthread
+                .set_active_dataset(&ds)
+                .map_err(|e| anyhow::anyhow!("set_active_dataset: {e:?}"))?;
+            log::info!(
+                "Thread network formed (channel {}, PAN 0xface, random key)",
+                args.channel
+            );
+        }
         rsthread
             .become_leader()
             .map_err(|e| anyhow::anyhow!("become_leader: {e:?}"))?;
-        log::info!(
-            "Thread network formed (channel {}, PAN 0xface)",
-            args.channel
-        );
+        log::info!("Thread Leader started");
     } else if args.auto_attach_enabled() {
         // Try to resume Thread from saved settings; non-fatal if no dataset.
         rsthread
