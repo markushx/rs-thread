@@ -127,30 +127,32 @@ pub fn ext_address() -> rs_thread_instance::ExtAddress {
     rs_thread_instance::ExtAddress(a)
 }
 
-/// Active Dataset (TLV encoded) shared by the binaries and the OT interop tests.
+/// Active Dataset (TLV encoded) shared by all hardware interop tests.
 ///
-/// Channel 15, PAN ID 0x1234, network name "rs-thread",
-/// extended PAN ID dead00beef00cafe, mesh-local prefix fddead00beef::/64,
-/// network key 00112233445566778899aabbccddeeff.
+/// Channel 24, PAN ID 0x5b69, network name "5b69",
+/// extended PAN ID 5b69dead5b69beef, mesh-local prefix fdd7:3492:7a6a:011c::/64,
+/// network key 00112233445566778899aabbccddeeff,
+/// PSKc 721ef943643a788134d0aa78cd53b1d0.
 ///
-/// Channel 15 avoids overlap with the nRF default (channel 25) when both
-/// boards run simultaneously.
-pub const DATASET_TLVS: [u8; 100] = [
-    0x00, 0x03, 0x00, 0x00, 0x0F, // channel 15
+/// Matches the dataset in `~/src/otbr_start.sh` so the same binary works
+/// against both rsthread-br-posix (T1) and ot-br-posix (T2).
+pub const DATASET_TLVS: [u8; 95] = [
+    0x00, 0x03, 0x00, 0x00, 0x18, // channel 24
     0x35, 0x06, 0x00, 0x04, 0x00, 0x1f, 0xff, 0xe0, // channel mask (11..=26)
-    0x02, 0x08, 0xde, 0xad, 0x00, 0xbe, 0xef, 0x00, 0xca, 0xfe, // ext PAN ID
-    0x03, 0x09, b'r', b's', b'-', b't', b'h', b'r', b'e', b'a', b'd', // name
-    0x04, 0x10, 0x3a, 0xa5, 0x5f, 0x91, 0xca, 0x47, 0xd1, 0xe4, 0xe7, 0x1a, 0x08, 0xcb, 0x35, 0xe9,
-    0x15, 0x91, // PSKc (same as nRF interop tests)
+    0x02, 0x08, 0x5b, 0x69, 0xde, 0xad, 0x5b, 0x69, 0xbe, 0xef, // ext PAN ID
+    0x03, 0x04, b'5', b'b', b'6', b'9', // name "5b69"
+    0x04, 0x10, 0x72, 0x1e, 0xf9, 0x43, 0x64, 0x3a, 0x78, 0x81, 0x34, 0xd0, 0xaa, 0x78, 0xcd, 0x53,
+    0xb1, 0xd0, // PSKc
     0x05, 0x10, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd,
     0xee, 0xff, // network key
-    0x07, 0x08, 0xfd, 0xde, 0xad, 0x00, 0xbe, 0xef, 0x00, 0x00, // mesh-local prefix
+    0x07, 0x08, 0xfd, 0xd7, 0x34, 0x92, 0x7a, 0x6a, 0x01, 0x1c, // mesh-local prefix fdd7:3492:7a6a:011c::
     0x0c, 0x04, 0x02, 0xa0, 0xf7, 0xf8, // security policy
     0x0e, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, // active timestamp
-    0x01, 0x02, 0x12, 0x34, // PAN ID
+    0x01, 0x02, 0x5b, 0x69, // PAN ID 0x5b69
 ];
 
 /// [`DATASET_TLVS`] as the hex string for `dataset set active` in the OT CLI.
-pub const DATASET_HEX: &str = "000300000f35060004001fffe00208dead00beef00cafe030972732d7468726561640410\
-3aa55f91ca47d1e4e71a08cb35e9159105100011223344556677889\
-9aabbccddeeff0708fddead00beef00000c0402a0f7f80e08000000000001000001021234";
+pub const DATASET_HEX: &str = "000300001835060004001fffe002085b69dead5b69beef030435623639\
+0410721ef943643a788134d0aa78cd53b1d0\
+051000112233445566778899aabbccddeeff\
+0708fdd734927a6a011c0c0402a0f7f80e08000000000001000001025b69";
