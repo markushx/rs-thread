@@ -32,9 +32,7 @@ use rs_thread_instance::{
     srp_server_types as sst,
 };
 use rs_thread_ncp::{
-    radio_spinel::RadioSpinel,
-    rcp::Transport as RcpTransport,
-    transport::{SocketTransport, UartTransport},
+    radio_spinel::RadioSpinel, rcp::Transport as RcpTransport, transport::SocketTransport,
 };
 use rs_thread_platform::{Alarm, Clock, Radio, RamSettings};
 use std::os::unix::io::AsFd;
@@ -263,11 +261,121 @@ impl Alarm for TokioAlarm {
     }
 }
 
+// ── Serial transport (AsyncFd) ────────────────────────────────────────────────
+
+/// UART transport backed by `AsyncFd<std::fs::File>` with `O_NONBLOCK`.
+///
+/// `tokio::fs::File` serialises reads and writes through an internal `Busy`
+/// state machine: while a `spawn_blocking(read)` is running, any `write_all`
+/// call returns `Pending` and blocks until the read completes.  When the
+/// embassy loop's `select3` exits early (timer or kick), the abandoned read
+/// task can hold the file busy for several seconds, delaying the next radio
+/// transmit command beyond the MLE Parent Request scan window.
+///
+/// `AsyncFd` with `O_NONBLOCK` avoids this: `readable()` / `writable()` are
+/// independent kqueue interests and never block each other.
+struct SerialTransport {
+    fd: tokio::io::unix::AsyncFd<std::fs::File>,
+}
+
+impl SerialTransport {
+    #[allow(unsafe_code)]
+    fn new(file: std::fs::File) -> std::io::Result<Self> {
+        // Safety: `file` owns its fd uniquely; we are on a Tokio runtime.
+        let fd = unsafe { tokio::io::unix::AsyncFd::register(file) }
+            .map_err(|e| std::io::Error::other(format!("AsyncFd::register: {e}")))?;
+        Ok(Self { fd })
+    }
+}
+
+impl core::fmt::Debug for SerialTransport {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SerialTransport").finish_non_exhaustive()
+    }
+}
+
+/// Non-blocking `read(2)` on the serial fd; returns `WouldBlock` on `EAGAIN`.
+#[allow(unsafe_code)]
+fn serial_read_raw(
+    afd: &tokio::io::unix::AsyncFd<std::fs::File>,
+    buf: &mut [u8],
+) -> std::io::Result<usize> {
+    use std::os::unix::io::AsRawFd;
+    loop {
+        let n = unsafe {
+            libc::read(
+                afd.as_raw_fd(),
+                buf.as_mut_ptr() as *mut libc::c_void,
+                buf.len(),
+            )
+        };
+        if n >= 0 {
+            return Ok(n as usize);
+        }
+        let e = std::io::Error::last_os_error();
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e);
+        }
+    }
+}
+
+/// Non-blocking `write(2)` on the serial fd; returns `WouldBlock` on `EAGAIN`.
+#[allow(unsafe_code)]
+fn serial_write_raw(
+    afd: &tokio::io::unix::AsyncFd<std::fs::File>,
+    buf: &[u8],
+) -> std::io::Result<usize> {
+    use std::os::unix::io::AsRawFd;
+    loop {
+        let n = unsafe {
+            libc::write(
+                afd.as_raw_fd(),
+                buf.as_ptr() as *const libc::c_void,
+                buf.len(),
+            )
+        };
+        if n >= 0 {
+            return Ok(n as usize);
+        }
+        let e = std::io::Error::last_os_error();
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e);
+        }
+    }
+}
+
+impl RcpTransport for SerialTransport {
+    type Error = std::io::Error;
+
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        loop {
+            let mut guard = self.fd.readable().await?;
+            match guard.try_io(|afd| serial_read_raw(afd, buf)) {
+                Ok(r) => return r,
+                Err(_would_block) => continue,
+            }
+        }
+    }
+
+    async fn write_all(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        let mut sent = 0;
+        while sent < data.len() {
+            let mut guard = self.fd.writable().await?;
+            match guard.try_io(|afd| serial_write_raw(afd, &data[sent..])) {
+                Ok(Ok(n)) => sent += n,
+                Ok(Err(e)) => return Err(e),
+                Err(_would_block) => continue,
+            }
+        }
+        Ok(())
+    }
+}
+
 // ── Transport enum ───────────────────────────────────────────────────────────
 
 #[allow(clippy::large_enum_variant)]
 enum RadioTransport {
-    Uart(UartTransport),
+    Serial(SerialTransport),
     Socket(SocketTransport),
 }
 
@@ -276,14 +384,14 @@ impl RcpTransport for RadioTransport {
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         match self {
-            RadioTransport::Uart(t) => t.read(buf).await,
+            RadioTransport::Serial(t) => t.read(buf).await,
             RadioTransport::Socket(t) => t.read(buf).await,
         }
     }
 
     async fn write_all(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         match self {
-            RadioTransport::Uart(t) => t.write_all(data).await,
+            RadioTransport::Serial(t) => t.write_all(data).await,
             RadioTransport::Socket(t) => t.write_all(data).await,
         }
     }
@@ -292,14 +400,14 @@ impl RcpTransport for RadioTransport {
 impl core::fmt::Debug for RadioTransport {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            RadioTransport::Uart(_) => write!(f, "RadioTransport::Uart(...)"),
+            RadioTransport::Serial(_) => write!(f, "RadioTransport::Serial(...)"),
             RadioTransport::Socket(_) => write!(f, "RadioTransport::Socket(...)"),
         }
     }
 }
 
 /// Configures a UART fd for raw binary Spinel: raw mode, 8N1, `baud_rate`.
-fn configure_serial(file: &tokio::fs::File, baud_rate: u32) -> std::io::Result<()> {
+fn configure_serial(file: &std::fs::File, baud_rate: u32) -> std::io::Result<()> {
     use nix::sys::termios::{
         BaudRate, ControlFlags, FlushArg, SetArg, cfmakeraw, cfsetspeed, tcflush, tcgetattr,
         tcsetattr,
@@ -421,16 +529,23 @@ async fn open_transport(url: &str) -> Result<RadioTransport> {
         let device_path = raw_path.to_owned();
 
         log::info!("opening UART: {device_path} @ {baud_rate} baud");
-        let file = tokio::fs::OpenOptions::new()
+        // Open with O_NONBLOCK so that AsyncFd can use kqueue for read/write
+        // readiness independently.  tokio::fs::File serialises reads and writes
+        // through an internal Busy state, causing multi-second stalls when a
+        // read future is cancelled mid-flight (e.g. inside embassy's select3).
+        use std::os::unix::fs::OpenOptionsExt;
+        let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
+            .custom_flags(libc::O_NONBLOCK)
             .open(&device_path)
-            .await
             .with_context(|| format!("open {device_path}"))?;
         configure_serial(&file, baud_rate).with_context(|| format!("configure {device_path}"))?;
         log::debug!("serial port configured (raw, 8N1, {} baud)", baud_rate);
 
-        Ok(RadioTransport::Uart(UartTransport::new(file)))
+        Ok(RadioTransport::Serial(
+            SerialTransport::new(file).with_context(|| format!("AsyncFd {device_path}"))?,
+        ))
     } else if let Some(addr) = path_part.strip_prefix("spinel+socket://") {
         log::info!("connecting TCP socket: {addr}");
         let stream = SocketTransport::connect(addr)
