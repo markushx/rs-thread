@@ -1,0 +1,81 @@
+[package]
+name = "rs-thread-esp"
+description = "ESP32-C6/H2 platform drivers (802.15.4 radio, RNG, clock/alarm) for rs-thread"
+version.workspace = true
+edition.workspace = true
+# esp-hal 0.23 requires Rust 1.88; matches the workspace MSRV.
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[features]
+# Default to ESP32-C6 (the primary target: DevKitC-1 and M5Stack NanoC6).
+# For ESP32-H2 builds pass --no-default-features --features esp32h2.
+default = ["esp32c6"]
+
+# Chip selection — exactly one must be active when targeting RISC-V.
+# `dep:xyz` activates the optional dep; `dep?/feature` forwards the chip
+# feature to it only when the dep is present (safely ignored on other targets).
+esp32c6 = [
+    "dep:esp-ieee802154",
+    "dep:esp-hal",
+    "dep:esp-storage",
+    "esp-ieee802154?/esp32c6",
+    "esp-hal?/esp32c6",
+    "esp-storage?/esp32c6",
+]
+esp32h2 = [
+    "dep:esp-ieee802154",
+    "dep:esp-hal",
+    "dep:esp-storage",
+    "esp-ieee802154?/esp32h2",
+    "esp-hal?/esp32h2",
+    "esp-storage?/esp32h2",
+]
+
+defmt = [
+    "dep:defmt",
+    "rs-thread-platform/defmt",
+    "rs-thread-core/defmt",
+]
+
+# Enable ECDSA P-256 and EC-JPAKE P-256 (EspP256 and EcdsaP256 for EspCrypto).
+ecdsa = ["rs-thread-core/ecdsa", "rs-thread-core/soft-crypto", "rs-thread-core/ecjpake"]
+
+[dependencies]
+rs-thread-core = { workspace = true }
+rs-thread-platform = { workspace = true }
+embassy-time = { version = "0.5", default-features = false }
+rand_core = { workspace = true }
+defmt = { workspace = true, optional = true }
+
+# Hardware drivers are only available on RISC-V targets (ESP32-C6/H2).
+# On the host (x86-64, aarch64) the target-conditional block is not compiled;
+# the crate builds as an empty stub so the workspace still checks there.
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+# IEEE 802.15.4 radio driver for ESP32-C6/H2.
+# Requires the `unstable` esp-hal feature; BLE coexistence not yet supported.
+esp-ieee802154 = { version = "0.5", default-features = false, optional = true }
+# esp-hal for the RNG peripheral and peripheral type aliases.
+# 0.23 is the latest version whose full dependency tree is on crates.io;
+# update to 1.x once esp-riscv-rt 0.14 is published.
+esp-hal = { version = "0.23", default-features = false, optional = true }
+# Flash storage for the settings log (synchronous NorFlash, wrapped async).
+esp-storage = { version = "0.4", default-features = false, features = ["nor-flash"], optional = true }
+# Async NorFlash trait for the flash module.
+embedded-storage-async = "0.4"
+embedded-storage = "0.3"
+# Signal for ISR-to-async notification in the radio driver.
+# The firmware crate must provide a `critical-section` implementation
+# (normally via esp-hal's default features / esp-hal/critical-section-impl).
+embassy-sync = { workspace = true }
+# Used by EspCrypto to guard the AES peripheral static.
+critical-section = "1.1"
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[build]
+target = "riscv32imac-unknown-none-elf"
+target-dir = "/Users/markusbecker/src/opentrust/target/fw"
+
+[target.riscv32imac-unknown-none-elf]
+# `cargo run --release` flashes and monitors via probe-rs (native USB-JTAG port).
+# Fall back to: espflash flash --port /dev/cu.usbserial-110 <elf>
+runner = "probe-rs run --chip esp32c6"
+# esp-hal provides `linkall.x`; defmt.x merges the .defmt.* sections for probe-rs;
+# force-frame-pointers aids backtraces.
+rustflags = [
+    "-C", "link-arg=-Tlinkall.x",
+    "-C", "link-arg=-Tdefmt.x",
+    "-C", "force-frame-pointers=yes",
+]
+
+[env]
+DEFMT_LOG = "info"
+ESP_LOG = "info"

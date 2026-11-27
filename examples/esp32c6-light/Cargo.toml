@@ -1,0 +1,78 @@
+[package]
+name = "esp32c6-light"
+description = "Matter on-off light over rs-thread Thread on the ESP32-C6 (RAM sizing firmware, not a workspace member)"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone: its own target, linker script and lock file.
+[workspace]
+
+[features]
+# BLE commissioning (Matter over BTP) with esp-wifi BLE controller and
+# trouble-host, next to the 802.15.4 driver through the ESP COEX framework.
+# An unprovisioned light (nothing stored, no RSTHREAD_DATASET) advertises
+# and waits for its Thread network over BLE.
+# `--no-default-features` builds the Thread-only light (as before).
+#
+# NOTE: The BLE controller wiring (`src/ble.rs`) is a stub in this phase.
+# Wire up `esp-wifi` with the `ble` Cargo feature when esp-wifi ≥ 0.13 is
+# confirmed compatible with esp-hal 0.23 and esp-ieee802154 0.5 coexistence.
+default = ["ble"]
+ble = ["rs-thread-matter/ble-trouble"]
+
+# Test aid: factory reset on every start, as if BOOT button were held.
+test-factory-reset = []
+
+# Minimal end device (not router eligible) instead of an FTD router.
+med = []
+
+[dependencies]
+# Board constants (flash layout, test dataset, ext_address) and time driver
+# from the leader firmware; we do our own esp_hal::init() here to also get
+# the AES peripheral for EspCrypto.
+esp32c6-leader = { path = "../esp32c6-leader" }
+
+rs-thread-core     = { path = "../../crates/rs-thread-core",     features = ["defmt", "soft-crypto", "ecdsa", "ecjpake"] }
+rs-thread-platform = { path = "../../crates/rs-thread-platform", features = ["defmt"] }
+rs-thread-instance = { path = "../../crates/rs-thread-instance", default-features = false, features = ["ftd", "defmt"] }
+rs-thread-embassy  = { path = "../../crates/rs-thread-embassy",  default-features = false, features = ["ftd", "defmt"] }
+rs-thread-flash    = { path = "../../crates/rs-thread-flash",    features = ["defmt"] }
+rs-thread-esp      = { path = "../../crates/rs-thread-esp",      features = ["esp32c6", "defmt", "ecdsa"] }
+rs-thread-matter   = { path = "../../crates/rs-thread-matter",   default-features = false, features = ["ftd", "defmt"] }
+
+# rs-matter: Matter stack.
+# Same git revision as nrf52840-light; uses the RustCrypto backend (p256,
+# aes, sha2) for Matter's CASE/PASE and device attestation.
+rs-matter = { git = "https://github.com/project-chip/rs-matter", rev = "1c2e0a9edaf99a92e0a2e104d2cf46bbdf672608", default-features = false, features = ["rustcrypto", "defmt", "case-responder-only"] }
+
+esp-hal        = { version = "0.23", features = ["esp32c6", "unstable"] }
+esp-ieee802154 = { version = "0.5", default-features = false, features = ["esp32c6"] }
+riscv-rt       = { package = "esp-riscv-rt", version = "0.9" }
+
+embassy-executor    = { version = "0.6", features = ["arch-riscv32", "executor-thread", "defmt"] }
+embassy-time        = { version = "0.5", features = ["defmt", "tick-hz-16_000_000"] }
+embassy-time-driver = "0.2"
+embassy-time-queue-utils = { version = "0.3", features = ["generic-queue-8"] }
+embassy-sync        = "0.8"
+embassy-futures     = "0.1"
+embedded-storage-async = "0.4"
+embedded-storage    = "0.3"
+embedded-alloc      = "0.6"
+static_cell         = "2"
+rand_core           = { version = "0.10", default-features = false }
+critical-section    = "1.1"
+
+defmt        = "1"
+defmt-rtt    = "1"
+esp-backtrace = { version = "0.15", features = ["esp32c6", "panic-handler", "defmt"] }
+
+[patch."https://github.com/project-chip/rs-matter"]
+rs-matter-sc = { path = "../../third_party/rs-matter-sc" }
+
+[profile.release]
+opt-level     = "s"
+lto           = "fat"
+codegen-units = 1
+debug         = 2
+panic         = "abort"

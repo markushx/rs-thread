@@ -567,17 +567,27 @@ impl<const C: usize> Mle<C> {
             PARENT_RSP_REED_JITTER
         };
         let delay = Duration::from_millis(1).saturating_add(Self::rand_duration(env, max));
-        // A repeated request replaces the pending response.
-        self.parent_side.pending.retain(|p| p.child != ext);
-        self.parent_side
-            .pending
-            .push(PendingParentResponse {
-                child: ext,
-                challenge: ch,
-                challenge_len: n,
-                due: now.saturating_add(delay),
-            })
-            .map_err(|_| Error::NoBufs)?;
+        let new_due = now.saturating_add(delay);
+        // A repeated request updates the challenge but never pushes the deadline further.
+        // Resetting the deadline on each repeat would delay the response past the child's
+        // scan window when several requests arrive in a burst (e.g. queued in the RCP).
+        if let Some(existing) = self.parent_side.pending.iter_mut().find(|p| p.child == ext) {
+            existing.challenge = ch;
+            existing.challenge_len = n;
+            if new_due < existing.due {
+                existing.due = new_due;
+            }
+        } else {
+            self.parent_side
+                .pending
+                .push(PendingParentResponse {
+                    child: ext,
+                    challenge: ch,
+                    challenge_len: n,
+                    due: new_due,
+                })
+                .map_err(|_| Error::NoBufs)?;
+        }
         Ok(RxClass::Peer)
     }
 
